@@ -1614,7 +1614,10 @@ class SimpleXmlGenerator
 
     private function callWSAA(string $signedTicket): array
     {
-        $wsdlUrl = 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl';
+        $environment = $this->config['environment'] ?? 'testing';
+        $wsdlUrl = $environment === 'production'
+            ? 'https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl'
+            : 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl';
         
         $client = new \SoapClient($wsdlUrl, [
             'trace' => true,
@@ -2788,7 +2791,7 @@ class SimpleXmlGenerator
 
                 // Parámetros RegistrarViaje
                 $w->startElement('argRegistrarViaje');
-                    $w->writeElement('IdTransaccion', substr($transactionId, 0, 15));
+                    $w->writeElement('IdTransaccion', $this->requireIaTransactionId($transactionId));
 
                     // Información Anticipada Marítima (estructura principal)
                     $w->startElement('InformacionAnticipadaMaritimaDoc');
@@ -2861,7 +2864,7 @@ class SimpleXmlGenerator
 
                 // Parámetros RectificarViaje
                 $w->startElement('argRectificarViaje');
-                    $w->writeElement('IdTransaccion', substr($transactionId, 0, 15));
+                    $w->writeElement('IdTransaccion', $this->requireIaTransactionId($transactionId));
 
                     // Información Anticipada Marítima (estructura principal)
                     $w->startElement('InformacionAnticipadaMaritimaDoc');
@@ -2900,177 +2903,70 @@ class SimpleXmlGenerator
      */
     public function createRegistrarTitulosCbcXml(Voyage $voyage, array $titulosData, string $transactionId): string
     {
-        try {
-            // Validar datos obligatorios
-            $this->validateVoyageData($voyage);
+        $this->validateVoyageData($voyage);
 
-            // Buscar IdentificadorViaje del último RegistrarViaje exitoso
-            $previousTransaction = $voyage->webserviceTransactions()
-                ->where('webservice_type', 'anticipada')
-                ->where('status', 'success')
-                ->whereNotNull('external_reference')
-                ->latest()
-                ->first();
+        $voyage->loadMissing([
+            'shipments.billsOfLading.consignee',
+            'shipments.billsOfLading.notifyParty',
+            'shipments.billsOfLading.loadingPort.country',
+            'shipments.billsOfLading.dischargePort.country',
+            'shipments.billsOfLading.transshipmentPort.country',
+            'shipments.billsOfLading.shipmentItems.packagingType',
+            'shipments.billsOfLading.shipmentItems.cargoType',
+            'shipments.billsOfLading.shipmentItems.containers.containerType',
+        ]);
 
-            if (!$previousTransaction) {
-                throw new Exception('Debe registrar el viaje con RegistrarViaje antes de enviar títulos CBC');
-            }
+        $identifier = $this->iaRequired(
+            $voyage->argentina_voyage_id,
+            'IdentificadorViaje',
+            16
+        );
 
-            $identificadorViaje = $previousTransaction->external_reference;
+        $bills = $voyage->shipments
+            ->flatMap(fn ($shipment) => $shipment->billsOfLading)
+            ->values();
 
-            // Obtener tokens WSAA
-            $wsaa = $this->getWSAATokens('wgesinformacionanticipada');
-
-            // Crear XMLWriter
-            $w = new \XMLWriter();
-            $w->openMemory();
-            $w->startDocument('1.0', 'UTF-8');
-
-            // SOAP Envelope
-            $w->startElementNs('soapenv', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:ar', self::AFIP_ANTICIPADA_NAMESPACE);
-
-            // SOAP Body
-            $w->startElementNs('soapenv', 'Body', null);
-                $w->startElement('ar:RegistrarTitulosCbc');
-
-                    // Autenticación empresa
-                    $w->startElement('ar:argWSAutenticacionEmpresa');
-                        $w->writeElement('ar:Token', $wsaa['token']);
-                        $w->writeElement('ar:Sign', $wsaa['sign']);
-                        $w->writeElement('ar:CuitEmpresaConectada', (string)$this->company->tax_id);
-                        $w->writeElement('ar:TipoAgente', 'TRSP');
-                        $w->writeElement('ar:Rol', 'TRSP');
-                    $w->endElement();
-
-                    // Parámetros RegistrarTitulosCBC
-                    $w->startElement('ar:argRegistrarTitulosCBC');
-                        $w->writeElement('ar:IdTransaccion', substr($transactionId, 0, 15));
-                        
-                        // Información de Títulos
-                        $w->startElement('ar:InformacionTitulosDoc');
-                            $w->writeElement('ar:IdentificadorViaje', $identificadorViaje);
-                            
-                            // Obtener conocimientos (BillsOfLading) del viaje
-                            $billsOfLading = collect();
-                            foreach ($voyage->shipments as $shipment) {
-                                $billsOfLading = $billsOfLading->merge($shipment->billsOfLading);
-                            }
-
-                            if ($billsOfLading->isEmpty()) {
-                                throw new Exception('No hay conocimientos de embarque para registrar');
-                            }
-
-                            // Títulos (array de conocimientos)
-                            $w->startElement('ar:Titulos');
-                            
-                            foreach ($billsOfLading as $bol) {
-                                $w->startElement('ar:Titulo');
-                                    
-                                    // 1. FechaEmbarque (obligatorio)
-                                    $embarqueDate = $bol->issue_date ?? $voyage->departure_date ?? now();
-                                    $w->writeElement('ar:FechaEmbarque', $embarqueDate->format('Y-m-d\TH:i:s'));
-                                    
-                                    // 2. CodigoPuertoEmbarque (obligatorio)
-                                    $loadingPortCode = $this->getPortCustomsCode($bol->loadingPort?->code ?? $voyage->originPort?->code ?? 'ARBUE');
-                                    $w->writeElement('ar:CodigoPuertoEmbarque', $loadingPortCode);
-                                    
-                                    // 3. NumeroConocimiento (obligatorio - máx 18 chars)
-                                    $bolNumber = substr($bol->bill_number ?? 'BL' . $bol->id, 0, 18);
-                                    $w->writeElement('ar:NumeroConocimiento', $bolNumber);
-                                    
-                                    // 4. Líneas de Mercadería (obligatorio)
-                                    $w->startElement('ar:LineasMercaderia');
-                                    
-                                    $items = $bol->shipmentItems;
-                                    if ($items->isEmpty()) {
-                                        // Si no hay items, crear uno genérico
-                                        $w->startElement('ar:LineaMercaderia');
-                                            $w->writeElement('ar:NumeroLinea', '1');
-                                            $w->writeElement('ar:Descripcion', $bol->cargo_description ?? 'MERCADERIA GENERAL');
-                                            $w->writeElement('ar:Peso', number_format($bol->total_weight ?? 1000, 2, '.', ''));
-                                            $w->writeElement('ar:Cantidad', (string)($bol->total_packages ?? 1));
-                                        $w->endElement();
-                                    } else {
-                                        foreach ($items as $index => $item) {
-                                            $w->startElement('ar:LineaMercaderia');
-                                                $w->writeElement('ar:NumeroLinea', (string)($index + 1));
-                                                $w->writeElement('ar:Descripcion', substr($item->description ?? 'MERCADERIA', 0, 100));
-                                                $w->writeElement('ar:Peso', number_format($item->weight ?? 100, 2, '.', ''));
-                                                $w->writeElement('ar:Cantidad', (string)($item->quantity ?? 1));
-                                            $w->endElement();
-                                        }
-                                    }
-                                    
-                                    $w->endElement(); // LineasMercaderia
-                                    
-                                    // 5. Contenedores (opcional pero recomendado)
-                                    $containers = collect();
-                                    foreach ($items as $item) {
-                                        $containers = $containers->merge($item->containers);
-                                    }
-                                    
-                                    if ($containers->isNotEmpty()) {
-                                        $w->startElement('ar:Contenedores');
-                                        
-                                        foreach ($containers as $container) {
-                                            $w->startElement('ar:Contenedor');
-                                                
-                                                // ID contenedor (obligatorio)
-                                                $containerId = substr($container->container_number ?? 'CONT' . $container->id, 0, 20);
-                                                $w->writeElement('ar:Id', $containerId);
-                                                
-                                                // Código medida (obligatorio)
-                                                $containerType = $container->containerType?->iso_code ?? '42G1';
-                                                $w->writeElement('ar:codMedida', $containerType);
-                                                
-                                                // Condición (obligatorio: P=pleno, V=vacío)
-                                                $condition = ($container->condition === 'empty' || $container->condition === 'V') ? 'V' : 'P';
-                                                $w->writeElement('ar:condicion', $condition);
-                                                
-                                                // Precintos (opcional)
-                                                $seals = $container->customsSeals ?? collect();
-                                                if ($seals->isNotEmpty()) {
-                                                    $w->startElement('ar:precintos');
-                                                    foreach ($seals as $seal) {
-                                                        $w->writeElement('ar:precinto', (string)$seal->seal_number);
-                                                    }
-                                                    $w->endElement();
-                                                }
-                                                
-                                            $w->endElement(); // Contenedor
-                                        }
-                                        
-                                        $w->endElement(); // Contenedores
-                                    }
-                                    
-                                $w->endElement(); // Titulo
-                            }
-                            
-                            $w->endElement(); // Titulos
-                        $w->endElement(); // InformacionTitulosDoc
-
-                    $w->endElement(); // argRegistrarTitulosCBC
-                $w->endElement(); // RegistrarTitulosCbc
-            $w->endElement(); // Body
-            $w->endElement(); // Envelope
-
-            $w->endDocument();
-            
-            $xmlContent = $w->outputMemory();
-            
-            \Log::info('XML RegistrarTitulosCbc generado', [
-                'identificador_viaje' => $identificadorViaje,
-                'bills_count' => $billsOfLading->count(),
-                'xml_size' => strlen($xmlContent)
-            ]);
-            
-            return $xmlContent;
-
-        } catch (Exception $e) {
-            \Log::error('Error en createRegistrarTitulosCbcXml: ' . $e->getMessage());
-            throw $e;
+        if ($bills->isEmpty()) {
+            throw new Exception('Información Anticipada: no hay conocimientos para RegistrarTitulosCbc.');
         }
+
+        $wsaa = $this->getWSAATokens('wgesinformacionanticipada');
+
+        $w = new \XMLWriter();
+        $w->openMemory();
+        $w->startDocument('1.0', 'UTF-8');
+        $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+        $w->writeAttribute('xmlns:ar', self::AFIP_ANTICIPADA_NAMESPACE);
+        $w->startElementNs('soap', 'Body', null);
+        $w->startElement('ar:RegistrarTitulosCbc');
+
+        $w->startElement('ar:argWSAutenticacionEmpresa');
+        $w->writeElement('ar:Token', $wsaa['token']);
+        $w->writeElement('ar:Sign', $wsaa['sign']);
+        $w->writeElement('ar:CuitEmpresaConectada', $this->iaNumeric($this->company->tax_id, 'CuitEmpresaConectada', 11));
+        $w->writeElement('ar:TipoAgente', 'TRSP');
+        $w->writeElement('ar:Rol', 'TRSP');
+        $w->endElement();
+
+        $w->startElement('ar:argRegistrarTitulosCBC');
+        $w->writeElement('ar:IdTransaccion', $this->requireIaTransactionId($transactionId));
+        $w->startElement('ar:InformacionTitulosDoc');
+        $w->writeElement('ar:IdentificadorViaje', $identifier);
+        $w->startElement('ar:Titulos');
+
+        foreach ($bills as $bill) {
+            $this->writeIaTitle($w, $bill, false);
+        }
+
+        $w->endElement();
+        $w->endElement();
+        $w->endElement();
+        $w->endElement();
+        $w->endElement();
+        $w->endElement();
+        $w->endDocument();
+
+        return $w->outputMemory();
     }
 
     /**
@@ -3087,80 +2983,84 @@ class SimpleXmlGenerator
      * @param Company $company
      * @return string XML generado
      */
-    public function generateCerrarViajeXml(Voyage $voyage, Company $company): string
-    {
-        // Generar IdTransaccion único
-        $idTransaccion = 'CV' . date('YmdHis') . str_pad($voyage->id, 6, '0', STR_PAD_LEFT);
-        
-        // Verificar que el viaje tenga IdentificadorViaje de AFIP
-        if (empty($voyage->argentina_voyage_id)) {
-            throw new \Exception("El viaje debe tener argentina_voyage_id para cerrar. Primero ejecute RegistrarViaje.");
-        }
-        
-        // Obtener Bills of Lading que NO descargan en Argentina
-        $billsNoArgentina = $voyage->billsOfLading()
+    public function generateCerrarViajeXml(
+        Voyage $voyage,
+        Company $company,
+        ?string $transactionId = null
+    ): string {
+        $identifier = $this->iaRequired(
+            $voyage->argentina_voyage_id,
+            'IdentificadorViaje',
+            16
+        );
+
+        $bills = $voyage->billsOfLading()
             ->with([
+                'consignee',
+                'notifyParty',
                 'loadingPort.country',
                 'dischargePort.country',
                 'transshipmentPort.country',
                 'shipmentItems.cargoType',
                 'shipmentItems.packagingType',
-                'shipmentItems.containers.containerType'
+                'shipmentItems.containers.containerType',
             ])
-            ->whereHas('dischargePort.country', function($query) {
-                $query->where('code', '!=', 'AR');
+            ->whereHas('dischargePort.country', function ($query) {
+                $query->where('alpha2_code', '!=', 'AR');
             })
             ->get();
-        
-        // Si no hay conocimientos que NO descargan en Argentina, no se puede cerrar
-        if ($billsNoArgentina->isEmpty()) {
-            throw new \Exception("No hay conocimientos que descarguen fuera de Argentina para cerrar el viaje.");
+
+        if ($bills->isEmpty()) {
+            throw new Exception(
+                'Información Anticipada: no hay conocimientos con descarga fuera de Argentina para CerrarViaje.'
+            );
         }
-        
-        // Iniciar construcción del XML
-        $xml = '<?xml version="1.0" encoding="utf-8"?>' . "\n";
-        $xml .= '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" ';
-        $xml .= 'xmlns:ar="Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada">' . "\n";
-        $xml .= '  <soap:Body>' . "\n";
-        $xml .= '    <ar:CerrarViaje>' . "\n";
-        
-        // argWSAutenticacionEmpresa (será llenado por el servicio con tokens WSAA)
-        $xml .= '      <ar:argWSAutenticacionEmpresa>' . "\n";
-        $xml .= '        <ar:Token>__TOKEN__</ar:Token>' . "\n";
-        $xml .= '        <ar:Sign>__SIGN__</ar:Sign>' . "\n";
-        $xml .= '        <ar:CuitEmpresaConectada>' . $this->cleanNumeric($company->tax_id) . '</ar:CuitEmpresaConectada>' . "\n";
-        $xml .= '        <ar:TipoAgente>TRSP</ar:TipoAgente>' . "\n";
-        $xml .= '        <ar:Rol>TRSP</ar:Rol>' . "\n";
-        $xml .= '      </ar:argWSAutenticacionEmpresa>' . "\n";
-        
-        // argCerrarViaje
-        $xml .= '      <ar:argCerrarViaje>' . "\n";
-        $xml .= '        <ar:IdTransaccion>' . $this->cleanString($idTransaccion) . '</ar:IdTransaccion>' . "\n";
-        
-        // InformacionTitulosCierreDoc
-        $xml .= '        <ar:InformacionTitulosCierreDoc>' . "\n";
-        $xml .= '          <ar:IdentificadorViaje>' . $this->cleanString($voyage->argentina_voyage_id) . '</ar:IdentificadorViaje>' . "\n";
-        
-        // Titulos (conocimientos que NO descargan en Argentina)
-        $xml .= '          <ar:Titulos>' . "\n";
-        
-        foreach ($billsNoArgentina as $bill) {
-            $xml .= $this->generateTituloCierreXml($bill);
+
+        $transactionId ??= 'CV'
+            . now()->format('ymdHis')
+            . str_pad((string) ($voyage->id % 1000000), 6, '0', STR_PAD_LEFT);
+        $transactionId = $this->requireIaTransactionId($transactionId);
+
+        $wsaa = $this->getWSAATokens('wgesinformacionanticipada');
+
+        $w = new \XMLWriter();
+        $w->openMemory();
+        $w->startDocument('1.0', 'UTF-8');
+        $w->startElementNs('soap', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
+        $w->writeAttribute('xmlns:ar', self::AFIP_ANTICIPADA_NAMESPACE);
+        $w->startElementNs('soap', 'Body', null);
+        $w->startElement('ar:CerrarViaje');
+
+        $w->startElement('ar:argWSAutenticacionEmpresa');
+        $w->writeElement('ar:Token', $this->iaRequired($wsaa['token'] ?? null, 'Token WSAA'));
+        $w->writeElement('ar:Sign', $this->iaRequired($wsaa['sign'] ?? null, 'Sign WSAA'));
+        $w->writeElement(
+            'ar:CuitEmpresaConectada',
+            $this->iaNumeric($company->tax_id, 'CuitEmpresaConectada', 11)
+        );
+        $w->writeElement('ar:TipoAgente', 'TRSP');
+        $w->writeElement('ar:Rol', 'TRSP');
+        $w->endElement();
+
+        $w->startElement('ar:argCerrarViaje');
+        $w->writeElement('ar:IdTransaccion', $transactionId);
+        $w->startElement('ar:InformacionTitulosCierreDoc');
+        $w->writeElement('ar:IdentificadorViaje', $identifier);
+        $w->startElement('ar:Titulos');
+
+        foreach ($bills as $bill) {
+            $this->writeIaTitle($w, $bill, true);
         }
-        
-        $xml .= '          </ar:Titulos>' . "\n";
-        
-        // ContenedoresVaciosCorreo (opcional - por ahora no lo implementamos)
-        // Este campo es para contenedores vacíos que se envían por correo
-        // Si en el futuro se necesita, se puede agregar aquí
-        
-        $xml .= '        </ar:InformacionTitulosCierreDoc>' . "\n";
-        $xml .= '      </ar:argCerrarViaje>' . "\n";
-        $xml .= '    </ar:CerrarViaje>' . "\n";
-        $xml .= '  </soap:Body>' . "\n";
-        $xml .= '</soap:Envelope>';
-        
-        return $xml;
+
+        $w->endElement();
+        $w->endElement();
+        $w->endElement();
+        $w->endElement();
+        $w->endElement();
+        $w->endElement();
+        $w->endDocument();
+
+        return $w->outputMemory();
     }
 
     /**
@@ -3460,227 +3360,606 @@ class SimpleXmlGenerator
      */
     private function addVoyageInformation(\XMLWriter $w, Voyage $voyage): void
     {
-        // 1. IdentificadorViajeAnterior (opcional)
-        if ($voyage->parent_voyage_id) {
-            $w->writeElement('IdentificadorViajeAnterior', (string)$voyage->parent_voyage_id);
+        $voyage->loadMissing([
+            'leadVessel.flagCountry',
+            'captain.documentCountry',
+            'originPort.country',
+            'destinationPort.country',
+            'originPort.primaryCustomsOffice',
+            'destinationPort.primaryCustomsOffice',
+            'originCustoms',
+            'destinationCustoms',
+        ]);
+
+        $vessel = $voyage->leadVessel;
+        $vesselId = $vessel?->registration_number ?: $vessel?->name;
+
+        $w->writeElement('IdentificadorMedioTransporte', $this->iaRequired($vesselId, 'IdentificadorMedioTransporte', 40));
+        $w->writeElement('CodigoPaisProcedencia', $this->iaCountry($voyage->originPort?->country, 'CodigoPaisProcedencia'));
+        $w->writeElement('CodigoPuertoOrigen', $this->iaPort($voyage->originPort, 'CodigoPuertoOrigen'));
+
+        if ($voyage->destinationPort?->country) {
+            $w->writeElement('CodigoPaisFinViaje', $this->iaCountry($voyage->destinationPort->country, 'CodigoPaisFinViaje'));
         }
-
-        // 2. IdentificadorMedioTransporte (obligatorio)
-        $vesselNumber = $voyage->leadVessel?->registration_number ?? $voyage->leadVessel?->name ?? 'SIN_REGISTRO';
-        $w->writeElement('IdentificadorMedioTransporte', substr($vesselNumber, 0, 20));
-
-        // 3. CodigoPaisProcedencia (obligatorio)
-        $originCountryCode = $this->getCountryCode($voyage->originPort?->country?->alpha2_code ?? 'AR');
-        $w->writeElement('CodigoPaisProcedencia', $originCountryCode);
-
-        // 4. CodigoPuertoOrigen (obligatorio)
-        $originPortCode = $this->getPortCustomsCode($voyage->originPort?->code ?? 'ARBUE');
-        $w->writeElement('CodigoPuertoOrigen', $originPortCode);
-
-        // 5. CodigoPaisFinViaje (obligatorio)
-        $destinationCountryCode = $this->getCountryCode($voyage->destinationPort?->country?->alpha2_code ?? 'PY');
-        $w->writeElement('CodigoPaisFinViaje', $destinationCountryCode);
-
-        // 6. CodigoPuertoDestino (obligatorio)
-        $destinationPortCode = $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT');
-        $w->writeElement('CodigoPuertoDestino', $destinationPortCode);
-
-        // 7. FechaArribo (obligatorio) - CORREGIDO sin mutar objeto original
-        if ($voyage->estimated_arrival_date) {
-            $w->writeElement('FechaArribo', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s'));
-        } elseif ($voyage->departure_date) {
-            $w->writeElement('FechaArribo', $voyage->departure_date->copy()->addDay()->format('Y-m-d\TH:i:s'));
-        } else {
-            $w->writeElement('FechaArribo', now()->addDay()->format('Y-m-d\TH:i:s'));
-        }
-
-        if ($voyage->estimated_arrival_date) {
-            $w->writeElement('FechaArribo', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s.000-03:00'));
-        } else {
-            $w->writeElement('FechaArribo', $voyage->departure_date->copy()->addDay()->format('Y-m-d\TH:i:s.000-03:00'));
-        }
-
-        // 8. FechaEmbarque (opcional)
         if ($voyage->departure_date) {
-            $w->writeElement('FechaEmbarque', $voyage->departure_date->format('Y-m-d\TH:i:s'));
+            $w->writeElement('FechaInicioViaje', $this->iaDate($voyage->departure_date));
+        }
+        if (!$voyage->estimated_arrival_date) {
+            throw new Exception('Información Anticipada: FechaArribo es obligatoria.');
         }
 
-        // 9. FechaCargaLugarOrigen (opcional)
-        if ($voyage->departure_date) {
-            $w->writeElement('FechaCargaLugarOrigen', $voyage->departure_date->copy()->subHours(2)->format('Y-m-d\TH:i:s'));
+        $w->writeElement('FechaArribo', $this->iaDate($voyage->estimated_arrival_date));
+        $w->writeElement('IndicadorTransporteVacio', $this->iaYesNoRequired($voyage->is_empty_transport, 'IndicadorTransporteVacio'));
+        $w->writeElement('IndicadorMercaderiaAbordo', $this->iaYesNoRequired($voyage->has_cargo_onboard, 'IndicadorMercaderiaAbordo'));
+        $w->writeElement('DesignacionTransportista', $this->iaRequired($this->company->legal_name ?: $this->company->commercial_name, 'DesignacionTransportista', 35));
+        $w->writeElement('CodigoPaisTransportista', $this->iaCountryValue($this->company->country, 'CodigoPaisTransportista'));
+        $w->writeElement('CodigoNacionalidadMediodeTransporte', $this->iaCountry($vessel?->flagCountry, 'CodigoNacionalidadMediodeTransporte'));
+
+        $operative = $this->iaVoyageOperativeLocation($voyage);
+        if ($operative) {
+            $w->writeElement('CodigoLugarOperativo', $operative);
+        }
+        $w->writeElement('CodigoAduana', $this->iaVoyageCustomsCode($voyage));
+
+        $captain = $voyage->captain;
+        if ($captain) {
+            $name = trim((string) ($captain->full_name ?: trim((string) $captain->first_name . ' ' . (string) $captain->last_name)));
+            if ($name !== '') {
+                $w->writeElement('NombreCapitanBuque', $this->iaRequired($name, 'NombreCapitanBuque', 70));
+            }
+            if ($captain->document_type) {
+                $w->writeElement('TipoIdentificadorCapitan', $this->iaRequired(strtoupper(trim($captain->document_type)), 'TipoIdentificadorCapitan', 4));
+            }
+            if ($captain->document_number) {
+                $w->writeElement('NumeroIdentificadorCapitan', $this->iaRequired(trim($captain->document_number), 'NumeroIdentificadorCapitan', 35));
+            }
+            if ($captain->documentCountry) {
+                $w->writeElement('CodigoPaisEmisorIdentificadorCapitan', $this->iaCountry($captain->documentCountry, 'CodigoPaisEmisorIdentificadorCapitan'));
+            }
         }
 
-        // 10. CodigoLugarOrigen (opcional)
-        $w->writeElement('CodigoLugarOrigen', $voyage->originPort?->code ?? 'ARBUE');
-
-        // 11. CodigoPaisLugarOrigen (opcional)
-        $w->writeElement('CodigoPaisLugarOrigen', $originCountryCode);
-
-        // 12. CodigoPuertoDescarga (opcional)
-        $w->writeElement('CodigoPuertoDescarga', $destinationPortCode);
-
-        // 13. FechaDescarga (opcional)
-        if ($voyage->estimated_arrival_date) {
-            $w->writeElement('FechaDescarga', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s'));
-        }
-
-        // 14. Comentario (opcional)
         if ($voyage->special_instructions) {
-            $w->writeElement('Comentario', substr($voyage->special_instructions, 0, 100));
+            $w->writeElement('Comentario', $this->iaRequired($voyage->special_instructions, 'Comentario', 60));
         }
-
-        // 15. CodigoAduana (opcional)
-        $w->writeElement('CodigoAduana', $destinationPortCode);
-
-        // 16. CodigoLugarOperativoDescarga (opcional)
-        $w->writeElement('CodigoLugarOperativoDescarga', $voyage->destinationPort?->code ?? 'PYTVT');
     }
 
-    /**
-     * Agregar información de contenedores vacíos y de correo
-     */
-    /**
-     * CORREGIDO según especificación AFIP exacta
-     */
     private function addContainersInformation(\XMLWriter $w, Voyage $voyage): void
     {
-        $w->startElement('ContenedoresVaciosCorreo');
-        
-        // Obtener contenedores reales de forma segura
-        $hasContainers = false;
-        $containers = collect();
-        
-        // Método seguro para obtener contenedores
-        try {
-            if ($voyage->shipments()->count() > 0) {
-                foreach ($voyage->shipments as $shipment) {
-                    if ($shipment->billsOfLading()->count() > 0) {
-                        foreach ($shipment->billsOfLading as $bol) {
-                            if ($bol->shipmentItems()->count() > 0) {
-                                foreach ($bol->shipmentItems as $item) {
-                                    if ($item->containers()->count() > 0) {
-                                        $containers = $containers->merge($item->containers);
-                                        $hasContainers = true;
-                                    }
-                                }
-                            }
+        $voyage->loadMissing([
+            'shipments.billsOfLading.loadingPort',
+            'shipments.billsOfLading.dischargePort',
+            'shipments.billsOfLading.shipmentItems.containers.containerType',
+        ]);
+
+        $entries = collect();
+
+        foreach ($voyage->shipments as $shipment) {
+            foreach ($shipment->billsOfLading as $bill) {
+                foreach ($bill->shipmentItems as $item) {
+                    foreach ($item->containers as $container) {
+                        $condition = $this->iaContainerCondition($container, $item);
+                        if (!in_array($condition, ['V', 'C'], true)) {
+                            continue;
                         }
+                        $entries->put($container->container_number, compact('container', 'bill', 'item'));
                     }
                 }
             }
-        } catch (Exception $e) {
-            \Log::info('Error obteniendo contenedores: ' . $e->getMessage());
         }
 
-        // Si no hay contenedores reales, crear uno básico para cumplir con AFIP
-        if (!$hasContainers || $containers->isEmpty()) {
-            $w->startElement('Contenedor');
-                // CAMPOS OBLIGATORIOS mínimos según AFIP
-                $w->writeElement('IdentificadorContenedor', 'VACIOS000001');
-                $w->writeElement('CuitOperadorContenedores', (string)$this->company->tax_id);
-                $w->writeElement('CaracteristicasContenedor', '40HC');
-                $w->writeElement('CondicionContenedor', 'V'); // V = Vacío
-                $w->writeElement('Tara', '3800'); // Peso tara estándar contenedor 40HC
-                $w->writeElement('PesoBruto', '3800'); // Solo tara si está vacío
-                $w->writeElement('NumeroPrecintoOrigen', 'VACIO001');
-                
-                // Fechas obligatorias
-                if ($voyage->departure_date) {
-                    $w->writeElement('FechaVencimientoContenedor', $voyage->departure_date->copy()->addMonths(6)->format('Y-m-d\TH:i:s'));
-                    $w->writeElement('FechaEmbarque', $voyage->departure_date->format('Y-m-d\TH:i:s'));
-                    $w->writeElement('FechaCargaLugarOrigen', $voyage->departure_date->copy()->subHours(2)->format('Y-m-d\TH:i:s'));
-                } else {
-                    $fechaBase = now();
-                    $w->writeElement('FechaVencimientoContenedor', $fechaBase->copy()->addMonths(6)->format('Y-m-d\TH:i:s'));
-                    $w->writeElement('FechaEmbarque', $fechaBase->format('Y-m-d\TH:i:s'));
-                    $w->writeElement('FechaCargaLugarOrigen', $fechaBase->copy()->subHours(2)->format('Y-m-d\TH:i:s'));
-                }
-                
-                // Códigos de lugar obligatorios
-                $w->writeElement('CodigoLugarOrigen', $voyage->originPort?->code ?? 'ARBUE');
-                $w->writeElement('CodigoPaisLugarOrigen', $this->getCountryCode($voyage->originPort?->country?->alpha2_code ?? 'AR'));
-                $w->writeElement('CodigoPuertoDescarga', $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT'));
-                
-                // Fecha descarga
-                if ($voyage->estimated_arrival_date) {
-                    $w->writeElement('FechaDescarga', $voyage->estimated_arrival_date->format('Y-m-d\TH:i:s'));
-                } else {
-                    $w->writeElement('FechaDescarga', now()->addDay()->format('Y-m-d\TH:i:s'));
-                }
-                
-                // Campos adicionales opcionales pero recomendados
-                $w->writeElement('Comentario', 'Contenedor vacío para transporte de correo');
-                $w->writeElement('CodigoAduana', $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT'));
-                $w->writeElement('CodigoLugarOperativoDescarga', $voyage->destinationPort?->code ?? 'PYTVT');
-                
-            $w->endElement(); // Contenedor
-        } else {
-            // Procesar contenedores reales si existen
-            foreach ($containers->take(10) as $index => $container) { // Limitar a 10 contenedores
-                $w->startElement('Contenedor');
-                    
-                    // CAMPOS OBLIGATORIOS
-                    $w->writeElement('IdentificadorContenedor', $container->container_number ?? 'CONT' . ($index + 1));
-                    
-                    if ($container->operator_tax_id) {
-                        $w->writeElement('CuitOperadorContenedores', $container->operator_tax_id);
-                    } else {
-                        $w->writeElement('CuitOperadorContenedores', (string)$this->company->tax_id);
-                    }
-                    
-                    $w->writeElement('CaracteristicasContenedor', $container->containerType?->code ?? '40HC');
-                    $w->writeElement('CondicionContenedor', $container->condition ?? 'V');
-                    
-                    // Pesos seguros
-                    $tara = $container->tare_weight ?? 3800;
-                    $pesoBruto = $container->gross_weight ?? $tara;
-                    $w->writeElement('Tara', (string)$tara);
-                    $w->writeElement('PesoBruto', (string)$pesoBruto);
-                    
-                    $w->writeElement('NumeroPrecintoOrigen', $container->shipper_seal ?? $container->customs_seal ?? 'SEAL' . ($index + 1));
-                    
-                    // Fechas con fallbacks seguros
-                    $fechaBase = $voyage->departure_date ?? now();
-                    
-                    if ($container->loading_date) {
-                        $w->writeElement('FechaCargaLugarOrigen', $container->loading_date->format('Y-m-d\TH:i:s'));
-                    } else {
-                        $w->writeElement('FechaCargaLugarOrigen', $fechaBase->copy()->subHours(2)->format('Y-m-d\TH:i:s'));
-                    }
-                    
-                    $w->writeElement('FechaEmbarque', $fechaBase->format('Y-m-d\TH:i:s'));
-                    
-                    if ($container->expiry_date) {
-                        $w->writeElement('FechaVencimientoContenedor', $container->expiry_date->format('Y-m-d\TH:i:s'));
-                    } else {
-                        $w->writeElement('FechaVencimientoContenedor', $fechaBase->copy()->addMonths(6)->format('Y-m-d\TH:i:s'));
-                    }
-                    
-                    // Códigos de lugar
-                    $w->writeElement('CodigoLugarOrigen', $voyage->originPort?->code ?? 'ARBUE');
-                    $w->writeElement('CodigoPaisLugarOrigen', $this->getCountryCode($voyage->originPort?->country?->alpha2_code ?? 'AR'));
-                    $w->writeElement('CodigoPuertoDescarga', $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT'));
-                    
-                    if ($container->discharge_date) {
-                        $w->writeElement('FechaDescarga', $container->discharge_date->format('Y-m-d\TH:i:s'));
-                    } else {
-                        $fechaDescarga = $voyage->estimated_arrival_date ?? $fechaBase->copy()->addDay();
-                        $w->writeElement('FechaDescarga', $fechaDescarga->format('Y-m-d\TH:i:s'));
-                    }
-                    
-                    // Comentarios y códigos adicionales
-                    if ($container->notes) {
-                        $w->writeElement('Comentario', substr($container->notes, 0, 100));
-                    }
-                    
-                    $w->writeElement('CodigoAduana', $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYTVT'));
-                    $w->writeElement('CodigoLugarOperativoDescarga', $voyage->destinationPort?->code ?? 'PYTVT');
+        if ($entries->isEmpty()) {
+            return;
+        }
 
-                $w->endElement(); // Contenedor
+        $w->startElement('ContenedoresVaciosCorreo');
+        foreach ($entries as $entry) {
+            $this->writeIaContainer($w, $entry['container'], $entry['bill'], $entry['item']);
+        }
+        $w->endElement();
+    }
+
+    private function writeIaContainer(\XMLWriter $w, $container, BillOfLading $bill, $item): void
+    {
+        $number = $this->iaRequired($container->container_number, 'IdentificadorContenedor', 20);
+        $type = $container->containerType?->iso_code ?: $container->containerType?->code;
+        $type = $this->iaRequired($type, "Contenedor {$number}: CaracteristicasContenedor", 4);
+        if (mb_strlen($type) !== 4) {
+            throw new Exception("Contenedor {$number}: CaracteristicasContenedor debe tener 4 caracteres.");
+        }
+
+        $condition = $this->iaContainerCondition($container, $item);
+        if (!in_array($condition, ['V', 'C'], true)) {
+            throw new Exception("Contenedor {$number}: RegistrarViaje sólo admite contenedores vacíos o de correo.");
+        }
+
+        $tare = $container->tare_weight_kg;
+        $gross = $container->current_gross_weight_kg ?? $item?->pivot?->gross_weight_kg;
+        if ($tare === null || !is_numeric($tare)) {
+            throw new Exception("Contenedor {$number}: Tara es obligatoria.");
+        }
+        if ($gross === null || !is_numeric($gross)) {
+            throw new Exception("Contenedor {$number}: PesoBruto es obligatorio.");
+        }
+        if ((float) $tare > (float) $gross) {
+            throw new Exception("Contenedor {$number}: Tara no puede superar PesoBruto.");
+        }
+
+        $w->startElement('Contenedor');
+        $w->writeElement('CaracteristicasContenedor', $type);
+        $w->writeElement('IdentificadorContenedor', $number);
+        $w->writeElement('CondicionContenedor', $condition);
+        $w->writeElement('Tara', (string) (int) round((float) $tare));
+        $w->writeElement('PesoBruto', rtrim(rtrim(number_format((float) $gross, 3, '.', ''), '0'), '.'));
+
+        $seal = trim((string) ($container->customs_seal ?: $container->shipper_seal ?: $container->carrier_seal));
+        if ($seal !== '') {
+            $w->writeElement('NumeroPrecintoOrigen', $this->iaRequired($seal, 'NumeroPrecintoOrigen', 35));
+        }
+
+        $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+        $acep = data_get($container->webservice_data, 'acep');
+        if (!$expiry && !$acep) {
+            throw new Exception("Contenedor {$number}: debe informar FechaVencimientoContenedor o ACEP.");
+        }
+        if ($expiry) {
+            $w->writeElement('FechaVencimientoContenedor', $this->iaDate($expiry));
+        }
+        if ($acep) {
+            $w->writeElement('Acep', $this->iaRequired($acep, 'ACEP', 20));
+        }
+
+        if ($condition === 'V') {
+            $w->writeElement('CodigoPuertoEmbarque', $this->iaPort($bill->loadingPort, 'CodigoPuertoEmbarque'));
+            if ($bill->loading_date) {
+                $w->writeElement('FechaEmbarque', $this->iaDate($bill->loading_date));
+            }
+            $w->writeElement('CodigoPuertoDescarga', $this->iaPort($bill->dischargePort, 'CodigoPuertoDescarga'));
+            if ($bill->discharge_date) {
+                $w->writeElement('FechaDescarga', $this->iaDate($bill->discharge_date));
             }
         }
 
-        $w->endElement(); // ContenedoresVaciosCorreo
+        $w->endElement();
+    }
+
+    private function iaRequired($value, string $label, ?int $maxLength = null): string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            throw new Exception("Información Anticipada: {$label} es obligatorio.");
+        }
+        if ($maxLength !== null && mb_strlen($value) > $maxLength) {
+            throw new Exception("Información Anticipada: {$label} supera {$maxLength} caracteres.");
+        }
+        return $value;
+    }
+
+    private function iaYesNoRequired($value, string $label): string
+    {
+        $value = strtoupper(trim((string) $value));
+        if (!in_array($value, ['S', 'N'], true)) {
+            throw new Exception("Información Anticipada: {$label} debe ser S o N.");
+        }
+        return $value;
+    }
+
+    private function iaCountry($country, string $label): string
+    {
+        if (!$country) {
+            throw new Exception("Información Anticipada: {$label} no está configurado.");
+        }
+        foreach ([$country->customs_code, $country->codigo_afip, $country->numeric_code] as $candidate) {
+            $value = trim((string) $candidate);
+            if ($value === '') {
+                continue;
+            }
+            if (ctype_digit($value)) {
+                $value = str_pad($value, 3, '0', STR_PAD_LEFT);
+            }
+            if (strlen($value) === 3) {
+                return $value;
+            }
+        }
+        throw new Exception("Información Anticipada: {$label} no tiene código PAY_PAIS de 3 caracteres.");
+    }
+
+    private function iaCountryValue($value, string $label): string
+    {
+        $value = trim((string) $value);
+        if (strlen($value) === 2) {
+            $country = \App\Models\Country::where('alpha2_code', strtoupper($value))->first();
+            return $this->iaCountry($country, $label);
+        }
+        if (ctype_digit($value)) {
+            $value = str_pad($value, 3, '0', STR_PAD_LEFT);
+        }
+        if (strlen($value) !== 3) {
+            throw new Exception("Información Anticipada: {$label} debe tener 3 caracteres.");
+        }
+        return $value;
+    }
+
+    private function iaPort($port, string $label): string
+    {
+        if (!$port) {
+            throw new Exception("Información Anticipada: {$label} no está configurado.");
+        }
+        $code = strtoupper(trim((string) $port->code));
+        if (strlen($code) !== 5) {
+            throw new Exception("Información Anticipada: {$label} debe tener 5 caracteres POR_PAIS.");
+        }
+        return $code;
+    }
+
+    private function iaVoyageCustomsCode(Voyage $voyage): string
+    {
+        $candidates = [];
+        if ($voyage->originPort?->country?->alpha2_code === 'AR') {
+            $candidates = [$voyage->originCustoms?->webservice_code, $voyage->originCustoms?->code, $voyage->originPort?->primaryCustomsOffice?->webservice_code, $voyage->originPort?->primaryCustomsOffice?->code, $voyage->originPort?->afip_code];
+        } elseif ($voyage->destinationPort?->country?->alpha2_code === 'AR') {
+            $candidates = [$voyage->destinationCustoms?->webservice_code, $voyage->destinationCustoms?->code, $voyage->destinationPort?->primaryCustomsOffice?->webservice_code, $voyage->destinationPort?->primaryCustomsOffice?->code, $voyage->destinationPort?->afip_code];
+        }
+
+        foreach ($candidates as $candidate) {
+            $digits = preg_replace('/\D+/', '', (string) $candidate);
+            if (strlen($digits) === 3) {
+                return $digits;
+            }
+        }
+        throw new Exception('Información Anticipada: no se pudo resolver CodigoAduana BUR_DESC.');
+    }
+
+    private function iaVoyageOperativeLocation(Voyage $voyage): ?string
+    {
+        $port = $voyage->originPort?->country?->alpha2_code === 'AR'
+            ? $voyage->originPort
+            : ($voyage->destinationPort?->country?->alpha2_code === 'AR' ? $voyage->destinationPort : null);
+
+        if (!$port) {
+            return null;
+        }
+
+        $location = \App\Models\AfipOperativeLocation::where('port_id', $port->id)
+            ->where('is_active', true)
+            ->first();
+
+        if (!$location) {
+            return null;
+        }
+
+        $code = $this->iaRequired($location->location_code, 'CodigoLugarOperativo', 5);
+        if (mb_strlen($code) !== 5) {
+            throw new Exception('Información Anticipada: CodigoLugarOperativo debe tener 5 caracteres.');
+        }
+        return $code;
+    }
+
+    private function iaContainerCondition($container, $item = null): string
+    {
+        $value = strtoupper(trim((string) ($item?->pivot?->container_condition ?: $item?->container_condition ?: $container->container_condition)));
+        if (in_array($value, ['H', 'P', 'V', 'C'], true)) {
+            return $value;
+        }
+        if (strtoupper(trim((string) $container->condition)) === 'V') {
+            return 'V';
+        }
+        return $value;
+    }
+
+    private function iaDate($date): string
+    {
+        return \Illuminate\Support\Carbon::parse($date)->format('Y-m-d\TH:i:s');
+    }
+
+    private function requireIaTransactionId(string $transactionId): string
+    {
+        return $this->iaRequired($transactionId, 'IdTransaccion', 20);
+    }
+
+    private function iaNumeric($value, string $label, int $length): string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $value);
+        if (strlen($digits) !== $length) {
+            throw new Exception("Información Anticipada: {$label} debe tener exactamente {$length} dígitos.");
+        }
+        return $digits;
+    }
+
+    private function iaYesNo($value): string
+    {
+        if ($value === true || $value === 1 || $value === '1' || strtoupper(trim((string) $value)) === 'S') {
+            return 'S';
+        }
+        if ($value === false || $value === 0 || $value === '0' || strtoupper(trim((string) $value)) === 'N') {
+            return 'N';
+        }
+        throw new Exception('Información Anticipada: indicador S/N sin valor válido.');
+    }
+
+    private function iaUniqueItemValue($items, string $field)
+    {
+        $values = $items->pluck($field)
+            ->filter(fn ($value) => $value !== null && trim((string) $value) !== '')
+            ->map(fn ($value) => trim((string) $value))
+            ->unique()
+            ->values();
+
+        if ($values->count() > 1) {
+            throw new Exception("Información Anticipada: los ítems tienen valores distintos para {$field}.");
+        }
+
+        return $values->first();
+    }
+
+    private function writeIaTitle(\XMLWriter $w, BillOfLading $bill, bool $closing = false): void
+    {
+        $bill->loadMissing([
+            'consignee',
+            'notifyParty',
+            'loadingPort.country',
+            'dischargePort.country',
+            'transshipmentPort.country',
+            'shipmentItems.packagingType',
+            'shipmentItems.cargoType',
+            'shipmentItems.containers.containerType',
+        ]);
+
+        $number = $this->iaRequired($bill->bill_number, 'NumeroConocimiento', 18);
+        if (!$bill->loading_date) {
+            throw new Exception("Conocimiento {$number}: FechaEmbarque es obligatoria.");
+        }
+        if (!$bill->loadingPort || !$bill->dischargePort) {
+            throw new Exception("Conocimiento {$number}: puertos de embarque y descarga son obligatorios.");
+        }
+        if ($bill->shipmentItems->isEmpty()) {
+            throw new Exception("Conocimiento {$number}: debe tener líneas de mercadería.");
+        }
+
+        $items = $bill->shipmentItems;
+        $firstItem = $items->first();
+        $consolidated = $this->iaYesNo($bill->is_consolidated);
+        $transit = $this->iaYesNo($bill->is_transit_transshipment);
+
+        $tariff = $bill->commodity_code
+            ?: $items->pluck('tariff_position')->filter()->first()
+            ?: $items->pluck('commodity_code')->filter()->first();
+        $tariff = $this->iaRequired($tariff, "Conocimiento {$number}: PosicionArancelaria", 16);
+        if ($consolidated === 'N' && (mb_strlen($tariff) < 7 || mb_strlen($tariff) > 15)) {
+            throw new Exception("Conocimiento {$number}: PosicionArancelaria debe tener entre 7 y 15 caracteres cuando no es consolidado.");
+        }
+
+        $forwarder = $this->iaRequired(
+            $this->iaUniqueItemValue($items, 'foreign_forwarder_name'),
+            "Conocimiento {$number}: RazonSocialFowarderExterior",
+            70
+        );
+        $customs = $bill->discharge_customs_code ?: $items->pluck('discharge_customs_code')->filter()->first();
+        $customs = $this->iaNumeric($customs, "Conocimiento {$number}: CodigoAduanaDescarga", 3);
+        $operative = $bill->operational_discharge_code ?: $items->pluck('operational_discharge_code')->filter()->first();
+        $operative = $this->iaRequired($operative, "Conocimiento {$number}: CodigoLugarOperativoDescarga", 5);
+        if (mb_strlen($operative) !== 5) {
+            throw new Exception("Conocimiento {$number}: CodigoLugarOperativoDescarga debe tener 5 caracteres.");
+        }
+
+        $marks = $bill->cargo_marks ?: $items->pluck('cargo_marks')->filter()->first();
+        $marks = $this->iaRequired($marks, "Conocimiento {$number}: MarcaBultos", 80);
+        $countryDestination = $bill->destination_country_code
+            ? $this->iaCountryValue($bill->destination_country_code, 'CodigoPaisDestino')
+            : $this->iaCountry($bill->dischargePort?->country, 'CodigoPaisDestino');
+
+        $w->startElement('ar:' . ($closing ? 'TituloCierre' : 'Titulo'));
+        $w->writeElement('ar:FechaEmbarque', $this->iaDate($bill->loading_date));
+        $w->writeElement('ar:CodigoPuertoEmbarque', $this->iaPort($bill->loadingPort, 'CodigoPuertoEmbarque'));
+
+        if ($bill->origin_loading_date) {
+            $w->writeElement('ar:FechaCargaLugarOrigen', $this->iaDate($bill->origin_loading_date));
+        }
+        if ($bill->origin_location) {
+            $w->writeElement('ar:LugarOrigen', $this->iaRequired($bill->origin_location, 'LugarOrigen', 50));
+        }
+        if ($bill->origin_country_code) {
+            $w->writeElement('ar:CodigoPaisLugarOrigen', $this->iaCountryValue($bill->origin_country_code, 'CodigoPaisLugarOrigen'));
+        }
+
+        $w->writeElement('ar:NumeroConocimiento', $number);
+
+        if ($bill->transshipmentPort) {
+            $w->writeElement('ar:CodigoPuertoTrasbordo', $this->iaPort($bill->transshipmentPort, 'CodigoPuertoTrasbordo'));
+        }
+
+        $w->writeElement('ar:CodigoPuertoDescarga', $this->iaPort($bill->dischargePort, 'CodigoPuertoDescarga'));
+        if ($bill->discharge_date) {
+            $w->writeElement('ar:FechaDescarga', $this->iaDate($bill->discharge_date));
+        }
+        $w->writeElement('ar:CodigoPaisDestino', $countryDestination);
+        $w->writeElement('ar:MarcaBultos', $marks);
+
+        if (!$closing) {
+            $consignee = trim((string) ($bill->consignee?->legal_name ?? ''));
+            if ($consignee !== '') {
+                $w->writeElement('ar:Consignatario', $this->iaRequired($consignee, 'Consignatario', 80));
+            }
+            $notify = trim((string) ($bill->notify_party_text ?: $bill->notifyParty?->legal_name));
+            if ($notify !== '') {
+                $w->writeElement('ar:NotificarA', $this->iaRequired($notify, 'NotificarA', 35));
+            }
+
+            $docType = $this->iaUniqueItemValue($items, 'consignee_document_type');
+            if ($docType) {
+                $w->writeElement('ar:TipoDocumentoDestinatarioMercaderia', $this->iaRequired(strtoupper($docType), 'TipoDocumentoDestinatarioMercaderia', 4));
+            }
+            $destId = $this->iaUniqueItemValue($items, 'consignee_tax_id');
+            if ($destId) {
+                $w->writeElement('ar:IdentificadorDestinatarioMercaderia', $this->iaNumeric($destId, 'IdentificadorDestinatarioMercaderia', 11));
+            }
+        }
+
+        $w->writeElement('ar:IndicadorConsolidado', $consolidated);
+        $w->writeElement('ar:IndicadorTransitoTrasbordo', $transit);
+        $w->writeElement('ar:PosicionArancelaria', $tariff);
+        $w->writeElement('ar:IndicadorOperadorLogisticoSeguro', $this->iaYesNoRequired($this->iaUniqueItemValue($items, 'is_secure_logistics_operator'), 'IndicadorOperadorLogisticoSeguro'));
+        $w->writeElement('ar:IndicadorTransitoMonitoreado', $this->iaYesNoRequired($this->iaUniqueItemValue($items, 'is_monitored_transit'), 'IndicadorTransitoMonitoreado'));
+        $w->writeElement('ar:IndicadorRenar', $this->iaYesNoRequired($this->iaUniqueItemValue($items, 'is_renar'), 'IndicadorRenar'));
+        $w->writeElement('ar:RazonSocialFowarderExterior', $forwarder);
+
+        $forwarderTax = $this->iaUniqueItemValue($items, 'foreign_forwarder_tax_id');
+        if ($forwarderTax) {
+            $w->writeElement('ar:IndicadorTributarioForwarderExterior', $this->iaRequired($forwarderTax, 'IndicadorTributarioForwarderExterior', 35));
+        }
+        $forwarderCountry = $this->iaUniqueItemValue($items, 'foreign_forwarder_country');
+        if ($forwarderCountry) {
+            $w->writeElement('ar:CodigoPaisEmisorIdentificadorForwarderExterior', $this->iaCountryValue($forwarderCountry, 'CodigoPaisEmisorIdentificadorForwarderExterior'));
+        }
+
+        if ($firstItem?->comments) {
+            $w->writeElement('ar:Comentario', $this->iaRequired($firstItem->comments, 'Comentario', 60));
+        }
+
+        $w->writeElement('ar:CodigoAduanaDescarga', $customs);
+        $w->writeElement('ar:CodigoLugarOperativoDescarga', $operative);
+
+        $w->startElement('ar:Mercaderias');
+        $usedLines = [];
+        foreach ($items as $index => $item) {
+            $line = (int) ($item->line_number ?: ($index + 1));
+            if ($line < 1 || $line > 999 || isset($usedLines[$line])) {
+                throw new Exception("Conocimiento {$number}: NumeroLinea inválido o repetido ({$line}).");
+            }
+            $usedLines[$line] = true;
+
+            $packCode = $this->iaRequired(
+                $item->packaging_code ?: $item->packagingType?->code,
+                "Conocimiento {$number}, línea {$line}: CodigoEmbalaje",
+                2
+            );
+            if (mb_strlen($packCode) !== 2) {
+                throw new Exception("Conocimiento {$number}, línea {$line}: CodigoEmbalaje debe tener 2 caracteres.");
+            }
+
+            $quantity = (int) $item->package_quantity;
+            if ($quantity < 0 || $quantity > 999999999) {
+                throw new Exception("Conocimiento {$number}, línea {$line}: CantidadManifestada fuera de rango.");
+            }
+
+            if ($item->gross_weight_kg === null || !is_numeric($item->gross_weight_kg)) {
+                throw new Exception("Conocimiento {$number}, línea {$line}: PesoVolumenManifestado es obligatorio.");
+            }
+            $weight = (float) $item->gross_weight_kg;
+            if ($weight < 0 || $weight > 99999999.999) {
+                throw new Exception("Conocimiento {$number}, línea {$line}: PesoVolumenManifestado fuera de rango.");
+            }
+
+            $description = $this->iaRequired($item->item_description, "Conocimiento {$number}, línea {$line}: DescripcionMercaderia", 80);
+            $packageMarks = $this->iaRequired($item->cargo_marks, "Conocimiento {$number}, línea {$line}: NumeroBultos", 100);
+
+            $w->startElement('ar:LineaMercaderia');
+            $w->writeElement('ar:NumeroLinea', (string) $line);
+            $w->writeElement('ar:CodigoEmbalaje', $packCode);
+
+            if ($packCode !== '05' && $item->package_type_description) {
+                $w->writeElement('ar:TipoEmbalaje', $this->iaRequired($item->package_type_description, 'TipoEmbalaje', 1));
+            }
+
+            if ($packCode === '05') {
+                $condition = strtoupper(trim((string) $item->container_condition));
+                if (!in_array($condition, ['H', 'P', 'V', 'C'], true)) {
+                    throw new Exception("Conocimiento {$number}, línea {$line}: CondicionContenedor inválida.");
+                }
+                $w->writeElement('ar:CondicionContenedor', $condition);
+            }
+
+            $w->writeElement('ar:CantidadManifestada', (string) $quantity);
+            $w->writeElement('ar:PesoVolumenManifestado', rtrim(rtrim(number_format($weight, 3, '.', ''), '0'), '.'));
+            $w->writeElement('ar:DescripcionMercaderia', $description);
+            $w->writeElement('ar:NumeroBultos', $packageMarks);
+
+            if ($item->cargoType?->code) {
+                $w->writeElement('ar:TipoCarga', $this->iaRequired($item->cargoType->code, 'TipoCarga', 3));
+            }
+            if ($item->comments) {
+                $w->writeElement('ar:Comentario', $this->iaRequired($item->comments, 'Comentario', 60));
+            }
+            $w->endElement();
+        }
+        $w->endElement();
+
+        $containers = collect();
+        foreach ($items as $item) {
+            foreach ($item->containers as $container) {
+                $containers->put($container->container_number, ['container' => $container, 'item' => $item]);
+            }
+        }
+
+        if ($containers->isNotEmpty()) {
+            $w->startElement('ar:Contenedores');
+            foreach ($containers as $entry) {
+                $this->writeIaTitleContainer($w, $entry['container'], $bill, $entry['item']);
+            }
+            $w->endElement();
+        }
+
+        $w->endElement();
+    }
+
+    private function writeIaTitleContainer(\XMLWriter $w, $container, BillOfLading $bill, $item): void
+    {
+        $number = $this->iaRequired($container->container_number, 'IdentificadorContenedor', 20);
+        $type = $container->containerType?->iso_code ?: $container->containerType?->code;
+        $type = $this->iaRequired($type, "Contenedor {$number}: CaracteristicasContenedor", 4);
+        if (mb_strlen($type) !== 4) {
+            throw new Exception("Contenedor {$number}: CaracteristicasContenedor debe tener 4 caracteres.");
+        }
+
+        $condition = $this->iaContainerCondition($container, $item);
+        if (!in_array($condition, ['H', 'P', 'V', 'C'], true)) {
+            throw new Exception("Contenedor {$number}: CondicionContenedor inválida.");
+        }
+
+        $tare = $container->tare_weight_kg;
+        $gross = $container->current_gross_weight_kg ?? $item?->pivot?->gross_weight_kg;
+        if ($tare === null || !is_numeric($tare)) {
+            throw new Exception("Contenedor {$number}: Tara es obligatoria.");
+        }
+        if ($gross === null || !is_numeric($gross)) {
+            throw new Exception("Contenedor {$number}: PesoBruto es obligatorio.");
+        }
+        if ((float) $tare > (float) $gross) {
+            throw new Exception("Contenedor {$number}: Tara no puede superar PesoBruto.");
+        }
+
+        $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+        $acep = data_get($container->webservice_data, 'acep');
+        if (!$expiry && !$acep) {
+            throw new Exception("Contenedor {$number}: debe informar FechaVencimientoContenedor o ACEP.");
+        }
+
+        $w->startElement('ar:Contenedor');
+        $w->writeElement('ar:CaracteristicasContenedor', $type);
+        $w->writeElement('ar:IdentificadorContenedor', $number);
+        $w->writeElement('ar:CondicionContenedor', $condition);
+        $w->writeElement('ar:Tara', (string) (int) round((float) $tare));
+        $w->writeElement('ar:PesoBruto', rtrim(rtrim(number_format((float) $gross, 3, '.', ''), '0'), '.'));
+
+        $seal = trim((string) ($container->customs_seal ?: $container->shipper_seal ?: $container->carrier_seal));
+        if ($seal !== '') {
+            $w->writeElement('ar:NumeroPrecintoOrigen', $this->iaRequired($seal, 'NumeroPrecintoOrigen', 35));
+        }
+        if ($expiry) {
+            $w->writeElement('ar:FechaVencimientoContenedor', $this->iaDate($expiry));
+        }
+        if ($acep) {
+            $w->writeElement('ar:Acep', $this->iaRequired($acep, 'ACEP', 20));
+        }
+
+        $customs = $bill->discharge_customs_code ?: $item?->discharge_customs_code;
+        $operative = $bill->operational_discharge_code ?: $item?->operational_discharge_code;
+        $w->writeElement('ar:CodigoAduana', $this->iaNumeric($customs, 'CodigoAduana contenedor', 3));
+        $operative = $this->iaRequired($operative, 'CodigoLugarOperativoDescarga contenedor', 5);
+        if (mb_strlen($operative) !== 5) {
+            throw new Exception("Contenedor {$number}: CodigoLugarOperativoDescarga debe tener 5 caracteres.");
+        }
+        $w->writeElement('ar:CodigoLugarOperativoDescarga', $operative);
+        $w->endElement();
     }
 
     /**
