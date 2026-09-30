@@ -394,13 +394,17 @@ class ArgentinaAnticipatedService
             $query->whereHas('dischargePort.country', function ($q) {
                 $q->where('alpha2_code', '!=', 'AR');
             });
+        } else {
+            $query->whereHas('dischargePort.country', function ($q) {
+                $q->where('alpha2_code', 'AR');
+            });
         }
 
         $bills = $query->get();
         if ($bills->isEmpty()) {
             $validation['errors'][] = $closing
                 ? 'No hay conocimientos con descarga fuera de Argentina para CerrarViaje'
-                : 'No hay conocimientos para RegistrarTitulosCbc';
+                : 'No hay conocimientos con descarga en Argentina para RegistrarTitulosCbc';
             return $validation;
         }
 
