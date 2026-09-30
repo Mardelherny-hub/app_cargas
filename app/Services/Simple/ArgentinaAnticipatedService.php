@@ -196,13 +196,13 @@ class ArgentinaAnticipatedService
                 if (!$location) {
                     $validation['errors'][] = 'CodigoLugarOperativo no existe en el catálogo LOT_ADUA';
                 } elseif (!preg_match('/^\\d{3}$/', (string) $location->customs_code)) {
-                    $validation['errors'][] = 'El lugar operativo no tiene CodigoAduana BUR_DESC válido';
+                    $validation['errors'][] = 'El lugar operativo seleccionado no tiene un código de Aduana válido';
                 }
             } elseif (!$this->resolveThreeDigitCustomsCode(
                 $explicitCustoms,
                 $argentinePort->primaryCustomsOffice
             )) {
-                $validation['errors'][] = 'CodigoAduana BUR_DESC no puede resolverse sin inventar datos';
+                $validation['errors'][] = "No se pudo determinar el código de Aduana requerido para RegistrarViaje. Verifique la Aduana asociada al puerto argentino {$argentinePort->code}.";
             }
         } else {
             $validation['errors'][] = 'El viaje no contiene un puerto argentino para informar CodigoAduana';
