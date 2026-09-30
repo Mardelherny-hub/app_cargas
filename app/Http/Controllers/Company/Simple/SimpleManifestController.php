@@ -565,8 +565,21 @@ class SimpleManifestController extends Controller
                 ], 400);
             }
 
-            // 3. CREAR SERVICIO Y VALIDAR VOYAGE
-            $service = new \App\Services\Simple\ArgentinaAnticipatedService($company, auth()->user());
+            $environment = $request->input('environment', 'testing');
+            if (!in_array($environment, ['testing', 'production'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Ambiente no válido',
+                    'error_code' => 'INVALID_ENVIRONMENT',
+                ], 422);
+            }
+
+            // 3. CREAR SERVICIO EN EL AMBIENTE SOLICITADO Y VALIDAR VOYAGE
+            $service = new \App\Services\Simple\ArgentinaAnticipatedService(
+                $company,
+                auth()->user(),
+                ['environment' => $environment]
+            );
             
             // ✅ VALIDACIÓN PREVIA
             $validation = $service->canProcessVoyage($voyage);
@@ -585,7 +598,7 @@ class SimpleManifestController extends Controller
             $options = [
                 'method' => $method,
                 'user_notes' => $request->input('notes', ''),
-                'environment' => $request->input('environment', 'testing'),
+                'environment' => $environment,
             ];
 
             // Si es rectificación, agregar datos adicionales
