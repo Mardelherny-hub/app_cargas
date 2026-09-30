@@ -266,14 +266,35 @@ class ManifestCustomsController extends Controller
                     'shipments_count' => $voyage->shipments()->count()
                 ]);
                 
-                // Crear transacción
+                if ($request->webservice_type === 'anticipada') {
+                    $service = $this->getWebserviceByType(
+                        'anticipada',
+                        $voyage,
+                        ['environment' => $request->environment]
+                    );
+                    $response = $service->registrarViaje($voyage, [
+                        'environment' => $request->environment,
+                        'batch_mode' => true,
+                    ]);
+
+                    if ($response['success'] ?? false) {
+                        $results['success']++;
+                    } else {
+                        $results['failed']++;
+                        $results['errors'][] = "Viaje {$voyageId}: "
+                            . ($response['error_message'] ?? 'Error en Información Anticipada');
+                    }
+
+                    continue;
+                }
+
+                // Los demás webservices conservan su flujo existente.
                 $transaction = $this->createWebserviceTransaction($voyage, $request->all());
 
                 Log::info('DEBUG - Transacción creada', [
                     'transaction_id' => $transaction->id
                 ]);
                 
-                // Enviar
                 Log::info('🔥 ANTES DE LLAMAR sendToWebservice');
                 $service = $this->getWebserviceByType($request->webservice_type, $voyage);
                 $response = $service->send($voyage, [
@@ -602,8 +623,8 @@ class ManifestCustomsController extends Controller
     {
         $urls = [
             'anticipada' => [
-                'testing' => 'https://wsaduhomoext.afip.gob.ar/DGA/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
-                'production' => 'https://wsadu.afip.gob.ar/DGA/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+                'testing' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+                'production' => 'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
             ],
             'micdta' => [
                 'testing' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
@@ -941,7 +962,38 @@ class ManifestCustomsController extends Controller
                 'can_send' => $canSend,
             ]);
 
-            // Crear transacción de webservice
+            // Información Anticipada administra su propia transacción e IdTransaccion
+            // oficial de hasta 20 caracteres. No crear una transacción duplicada aquí.
+            if ($request->webservice_type === 'anticipada') {
+                $service = $this->getWebserviceByType(
+                    'anticipada',
+                    $voyage,
+                    ['environment' => $request->environment]
+                );
+
+                $response = $service->registrarViaje($voyage, [
+                    'environment' => $request->environment,
+                    'priority' => $request->priority ?? 'normal',
+                ]);
+
+                if ($response['success'] ?? false) {
+                    return redirect()->route(
+                        'company.manifests.customs.status',
+                        $response['transaction_id']
+                    )->with(
+                        'success',
+                        'Información Anticipada enviada a AR correctamente.'
+                    );
+                }
+
+                return back()->with(
+                    'error',
+                    'Error en envío anticipada a AR: '
+                    . $this->buildErrorMessage($response)
+                );
+            }
+
+            // Crear transacción de webservice para los demás servicios.
             $transaction = $this->createWebserviceTransaction($voyage, $request->all());
 
             Log::info('Transacción creada para envío específico', [
