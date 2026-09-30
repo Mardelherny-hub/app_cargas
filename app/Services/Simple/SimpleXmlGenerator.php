@@ -3330,7 +3330,6 @@ class SimpleXmlGenerator
                 $voyage->originCustoms?->code,
                 $voyage->originPort?->primaryCustomsOffice?->webservice_code,
                 $voyage->originPort?->primaryCustomsOffice?->code,
-                $voyage->originPort?->afip_code,
             ];
         } elseif ($voyage->destinationPort?->country?->alpha2_code === 'AR') {
             $candidates = [
@@ -3338,7 +3337,6 @@ class SimpleXmlGenerator
                 $voyage->destinationCustoms?->code,
                 $voyage->destinationPort?->primaryCustomsOffice?->webservice_code,
                 $voyage->destinationPort?->primaryCustomsOffice?->code,
-                $voyage->destinationPort?->afip_code,
             ];
         }
 
@@ -3438,6 +3436,31 @@ class SimpleXmlGenerator
             $label,
             3
         );
+    }
+
+    private function iaResolveCustomsForOperative(
+        $candidate,
+        string $operativeCode,
+        string $label
+    ): string {
+        $expected = $this->iaCustomsFromOperativeCode(
+            $operativeCode,
+            $label
+        );
+
+        if ($candidate === null || trim((string) $candidate) === '') {
+            return $expected;
+        }
+
+        $provided = $this->iaNumeric($candidate, $label, 3);
+        if ($provided !== $expected) {
+            throw new Exception(
+                "Información Anticipada: {$label} {$provided} no corresponde "
+                . "al LOT_ADUA {$operativeCode} (aduana {$expected})."
+            );
+        }
+
+        return $provided;
     }
 
     private function iaImportExportIndicator(Voyage $voyage): ?string
@@ -3592,16 +3615,11 @@ class SimpleXmlGenerator
 
             $customs = $bill->discharge_customs_code
                 ?: $this->iaUniqueItemValue($items, 'discharge_customs_code');
-            $customs = $customs
-                ? $this->iaNumeric(
-                    $customs,
-                    "Conocimiento {$number}: CodigoAduanaDescarga",
-                    3
-                )
-                : $this->iaCustomsFromOperativeCode(
-                    $operative,
-                    "Conocimiento {$number}: CodigoAduanaDescarga"
-                );
+            $customs = $this->iaResolveCustomsForOperative(
+                $customs,
+                $operative,
+                "Conocimiento {$number}: CodigoAduanaDescarga"
+            );
         }
 
         $marks = $bill->cargo_marks
@@ -3706,8 +3724,8 @@ class SimpleXmlGenerator
             $usedLines[$line] = true;
 
             $packCode = $this->iaRequired(
-                $item->packaging_code ?: $item->packagingType?->code,
-                "Conocimiento {$number}, línea {$line}: CodigoEmbalaje",
+                $item->packaging_code,
+                "Conocimiento {$number}, línea {$line}: CodigoEmbalaje NEB_DESC",
                 2
             );
             if (mb_strlen($packCode) !== 2) {
@@ -3734,8 +3752,9 @@ class SimpleXmlGenerator
             $w->writeElement('ar:NumeroLinea', (string) $line);
             $w->writeElement('ar:CodigoEmbalaje', $packCode);
 
-            if ($packCode !== '05' && $item->package_type_description) {
-                $w->writeElement('ar:TipoEmbalaje', $this->iaRequired($item->package_type_description, 'TipoEmbalaje', 1));
+            $packageTypeCode = trim((string) $item->package_type_description);
+            if ($packCode !== '05' && mb_strlen($packageTypeCode) === 1) {
+                $w->writeElement('ar:TipoEmbalaje', strtoupper($packageTypeCode));
             }
 
             if ($packCode === '05') {
@@ -3876,16 +3895,11 @@ class SimpleXmlGenerator
             );
 
             $customs = $bill->discharge_customs_code ?: $item?->discharge_customs_code;
-            $customs = $customs
-                ? $this->iaNumeric(
-                    $customs,
-                    "Contenedor {$number}: CodigoAduana",
-                    3
-                )
-                : $this->iaCustomsFromOperativeCode(
-                    $operative,
-                    "Contenedor {$number}: CodigoAduana"
-                );
+            $customs = $this->iaResolveCustomsForOperative(
+                $customs,
+                $operative,
+                "Contenedor {$number}: CodigoAduana"
+            );
 
             $w->writeElement('ar:CodigoAduana', $customs);
             $w->writeElement('ar:CodigoLugarOperativoDescarga', $operative);
