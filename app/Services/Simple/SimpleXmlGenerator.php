@@ -3496,8 +3496,8 @@ class SimpleXmlGenerator
             $w->writeElement('FechaVencimientoContenedor', $this->formatIaDateTime($container->expiry_date, 'FechaVencimientoContenedor'));
         } elseif ($acep) {
             $w->writeElement('Acep', $this->requireIaText($acep, 'Acep', 20));
-        } elseif ($condition === 'V') {
-            throw new Exception("Información Anticipada: contenedor vacío {$container->container_number} requiere FechaVencimientoContenedor o ACEP.");
+        } else {
+            throw new Exception("Información Anticipada: contenedor {$container->container_number} requiere FechaVencimientoContenedor o ACEP.");
         }
 
         if ($condition === 'V') {
