@@ -2782,9 +2782,9 @@ class SimpleXmlGenerator
 
                 // Autenticación empresa (obligatorio)
                 $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('Token', $this->iaRequired($wsaa['token'] ?? null, 'Token WSAA'));
+                    $w->writeElement('Sign', $this->iaRequired($wsaa['sign'] ?? null, 'Sign WSAA'));
+                    $w->writeElement('CuitEmpresaConectada', $this->iaNumeric($this->company->tax_id, 'CuitEmpresaConectada', 11));
                     $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
@@ -3061,298 +3061,6 @@ class SimpleXmlGenerator
         $w->endDocument();
 
         return $w->outputMemory();
-    }
-
-    /**
-     * Genera XML para un TituloCierre individual
-     * 
-     * @param BillOfLading $bill
-     * @return string
-     */
-    private function generateTituloCierreXml(BillOfLading $bill): string
-    {
-        $xml = '';
-        $xml .= '            <ar:TituloCierre>' . "\n";
-        
-        // CAMPOS OBLIGATORIOS
-        
-        // FechaEmbarque (S)
-        $xml .= '              <ar:FechaEmbarque>' . $this->formatDateTime($bill->loading_date) . '</ar:FechaEmbarque>' . "\n";
-        
-        // CodigoPuertoEmbarque (S)
-        $codigoPuertoEmbarque = $bill->loadingPort ? $bill->loadingPort->code : '';
-        $xml .= '              <ar:CodigoPuertoEmbarque>' . $this->cleanString($codigoPuertoEmbarque) . '</ar:CodigoPuertoEmbarque>' . "\n";
-        
-        // CAMPOS OPCIONALES (solo si tienen valor)
-        
-        // FechaCargaLugarOrigen (N)
-        if (!empty($bill->origin_loading_date)) {
-            $xml .= '              <ar:FechaCargaLugarOrigen>' . $this->formatDateTime($bill->origin_loading_date) . '</ar:FechaCargaLugarOrigen>' . "\n";
-        }
-        
-        // LugarOrigen (N)
-        if (!empty($bill->origin_location)) {
-            $xml .= '              <ar:LugarOrigen>' . $this->cleanString($bill->origin_location, 50) . '</ar:LugarOrigen>' . "\n";
-        }
-        
-        // CodigoPaisLugarOrigen (N)
-        if (!empty($bill->origin_country_code)) {
-            $xml .= '              <ar:CodigoPaisLugarOrigen>' . $this->cleanString($bill->origin_country_code, 3) . '</ar:CodigoPaisLugarOrigen>' . "\n";
-        }
-        
-        // NumeroConocimiento (S)
-        $xml .= '              <ar:NumeroConocimiento>' . $this->cleanString($bill->bill_number, 18) . '</ar:NumeroConocimiento>' . "\n";
-        
-        // CodigoPuertoTrasbordo (N)
-        if ($bill->transshipmentPort) {
-            $xml .= '              <ar:CodigoPuertoTrasbordo>' . $this->cleanString($bill->transshipmentPort->code, 5) . '</ar:CodigoPuertoTrasbordo>' . "\n";
-        }
-        
-        // CodigoPuertoDescarga (S)
-        $codigoPuertoDescarga = $bill->dischargePort ? $bill->dischargePort->code : '';
-        $xml .= '              <ar:CodigoPuertoDescarga>' . $this->cleanString($codigoPuertoDescarga, 5) . '</ar:CodigoPuertoDescarga>' . "\n";
-        
-        // FechaDescarga (N)
-        if (!empty($bill->discharge_date)) {
-            $xml .= '              <ar:FechaDescarga>' . $this->formatDateTime($bill->discharge_date) . '</ar:FechaDescarga>' . "\n";
-        }
-        
-        // CodigoPaisDestino (S)
-        $codigoPaisDestino = $bill->destination_country_code ?: ($bill->dischargePort && $bill->dischargePort->country ? $bill->dischargePort->country->code : '');
-        $xml .= '              <ar:CodigoPaisDestino>' . $this->cleanString($codigoPaisDestino, 3) . '</ar:CodigoPaisDestino>' . "\n";
-        
-        // MarcaBultos (S)
-        $marcaBultos = !empty($bill->cargo_marks) ? $bill->cargo_marks : 'S/M';
-        $xml .= '              <ar:MarcaBultos>' . $this->cleanString($marcaBultos, 80) . '</ar:MarcaBultos>' . "\n";
-        
-        // IndicadorConsolidado (S) - N o S
-        $indicadorConsolidado = $bill->is_consolidated ? 'S' : 'N';
-        $xml .= '              <ar:IndicadorConsolidado>' . $indicadorConsolidado . '</ar:IndicadorConsolidado>' . "\n";
-        
-        // IndicadorTransitoTrasbordo (S) - N o S
-        $indicadorTransitoTrasbordo = $bill->is_transit_transshipment ? 'S' : 'N';
-        $xml .= '              <ar:IndicadorTransitoTrasbordo>' . $indicadorTransitoTrasbordo . '</ar:IndicadorTransitoTrasbordo>' . "\n";
-        
-        // Los siguientes campos vienen del PRIMER ShipmentItem (representativo del BOL)
-        $firstItem = $bill->shipmentItems->first();
-        
-        if ($firstItem) {
-            // PosicionArancelaria (S)
-            $posicionArancelaria = $firstItem->tariff_position ?: '0000.00.00.000P';
-            $xml .= '              <ar:PosicionArancelaria>' . $this->cleanString($posicionArancelaria, 16) . '</ar:PosicionArancelaria>' . "\n";
-            
-            // IndicadorOperadorLogisticoSeguro (S) - N o S
-            $indicadorOLS = ($firstItem->is_secure_logistics_operator === 'S') ? 'S' : 'N';
-            $xml .= '              <ar:IndicadorOperadorLogisticoSeguro>' . $indicadorOLS . '</ar:IndicadorOperadorLogisticoSeguro>' . "\n";
-            
-            // IndicadorTransitoMonitoreado (S) - N o S
-            $indicadorTM = ($firstItem->is_monitored_transit === 'S') ? 'S' : 'N';
-            $xml .= '              <ar:IndicadorTransitoMonitoreado>' . $indicadorTM . '</ar:IndicadorTransitoMonitoreado>' . "\n";
-            
-            // IndicadorRenar (S) - N o S
-            $indicadorRenar = ($firstItem->is_renar === 'S') ? 'S' : 'N';
-            $xml .= '              <ar:IndicadorRenar>' . $indicadorRenar . '</ar:IndicadorRenar>' . "\n";
-            
-            // RazonSocialFowarderExterior (S)
-            $forwarderName = !empty($firstItem->foreign_forwarder_name) ? $firstItem->foreign_forwarder_name : 'N/A';
-            $xml .= '              <ar:RazonSocialFowarderExterior>' . $this->cleanString($forwarderName, 70) . '</ar:RazonSocialFowarderExterior>' . "\n";
-            
-            // IndicadorTributarioForwarderExterior (N)
-            if (!empty($firstItem->foreign_forwarder_tax_id)) {
-                $xml .= '              <ar:IndicadorTributarioForwarderExterior>' . $this->cleanString($firstItem->foreign_forwarder_tax_id, 35) . '</ar:IndicadorTributarioForwarderExterior>' . "\n";
-            }
-            
-            // CodigoPaisEmisorIdentificadorForwarderExterior (N)
-            if (!empty($firstItem->foreign_forwarder_country)) {
-                $xml .= '              <ar:CodigoPaisEmisorIdentificadorForwarderExterior>' . $this->cleanString($firstItem->foreign_forwarder_country, 3) . '</ar:CodigoPaisEmisorIdentificadorForwarderExterior>' . "\n";
-            }
-            
-            // Comentario (N)
-            if (!empty($firstItem->comments)) {
-                $xml .= '              <ar:Comentario>' . $this->cleanString($firstItem->comments, 60) . '</ar:Comentario>' . "\n";
-            }
-        }
-        
-        // Mercaderias (líneas de mercadería)
-        $xml .= '              <ar:Mercaderias>' . "\n";
-        
-        foreach ($bill->shipmentItems as $item) {
-            $xml .= $this->generateLineaMercaderiaCierreXml($item);
-        }
-        
-        $xml .= '              </ar:Mercaderias>' . "\n";
-        
-        // Contenedores (obtenidos a través de shipmentItems)
-        $containers = $bill->shipmentItems->flatMap(function($item) {
-            return $item->containers ?? collect();
-        });
-
-        if ($containers->count() > 0) {
-            $xml .= '              <ar:Contenedores>' . "\n";
-            
-            foreach ($containers as $container) {
-                $xml .= $this->generateContenedorCierreXml($container, $bill);
-            }
-            
-            $xml .= '              </ar:Contenedores>' . "\n";
-        }
-        
-        $xml .= '            </ar:TituloCierre>' . "\n";
-        
-        return $xml;
-    }
-
-    /**
-     * Genera XML para una LineaMercaderia de cierre
-     * 
-     * @param ShipmentItem $item
-     * @return string
-     */
-    private function generateLineaMercaderiaCierreXml(ShipmentItem $item): string
-    {
-        $xml = '';
-        $xml .= '                <ar:LineaMercaderia>' . "\n";
-        
-        // NumeroLinea (S)
-        $xml .= '                  <ar:NumeroLinea>' . intval($item->line_number) . '</ar:NumeroLinea>' . "\n";
-        
-        // CodigoEmbalaje (S)
-        $codigoEmbalaje = $item->packaging_code ?: ($item->packagingType ? $item->packagingType->code : '33');
-        $xml .= '                  <ar:CodigoEmbalaje>' . $this->cleanString($codigoEmbalaje, 2) . '</ar:CodigoEmbalaje>' . "\n";
-        
-        // TipoEmbalaje (N) - Opcional
-        if ($item->packagingType && !empty($item->packagingType->name)) {
-            $tipoEmbalaje = substr($item->packagingType->name, 0, 1); // Primera letra
-            $xml .= '                  <ar:TipoEmbalaje>' . $tipoEmbalaje . '</ar:TipoEmbalaje>' . "\n";
-        }
-        
-        // CondicionContenedor (N) - Solo si aplica
-        // Por ahora lo dejamos vacío, se puede agregar lógica específica si se necesita
-        
-        // CantidadManifestada (S)
-        $xml .= '                  <ar:CantidadManifestada>' . intval($item->package_quantity) . '</ar:CantidadManifestada>' . "\n";
-        
-        // PesoVolumenManifestado (S)
-        $pesoVolumen = number_format($item->gross_weight_kg, 2, '.', '');
-        $xml .= '                  <ar:PesoVolumenManifestado>' . $pesoVolumen . '</ar:PesoVolumenManifestado>' . "\n";
-        
-        // DescripcionMercaderia (S)
-        $descripcion = !empty($item->item_description) ? $item->item_description : 'Mercadería general';
-        $xml .= '                  <ar:DescripcionMercaderia>' . $this->cleanString($descripcion, 80) . '</ar:DescripcionMercaderia>' . "\n";
-        
-        // NumeroBultos (S)
-        $numeroBultos = !empty($item->cargo_marks) ? $item->cargo_marks : 'S/M';
-        $xml .= '                  <ar:NumeroBultos>' . $this->cleanString($numeroBultos, 100) . '</ar:NumeroBultos>' . "\n";
-        
-        // TipoCarga (N) - Opcional, se puede mapear desde cargoType si existe
-        if ($item->cargoType && !empty($item->cargoType->code)) {
-            $xml .= '                  <ar:TipoCarga>' . $this->cleanString($item->cargoType->code, 3) . '</ar:TipoCarga>' . "\n";
-        }
-        
-        // Comentario (N)
-        if (!empty($item->comments)) {
-            $xml .= '                  <ar:Comentario>' . $this->cleanString($item->comments, 60) . '</ar:Comentario>' . "\n";
-        }
-        
-        $xml .= '                </ar:LineaMercaderia>' . "\n";
-        
-        return $xml;
-    }
-
-    /**
-     * Genera XML para un ContenedorCierre
-     * 
-     * @param Container $container
-     * @param BillOfLading $bill
-     * @return string
-     */
-    private function generateContenedorCierreXml(Container $container, BillOfLading $bill): string
-    {
-        $xml = '';
-        $xml .= '                <ar:ContenedorCierre>' . "\n";
-        
-        // CuitAtaOperadorContenedor (S)
-        $cuitOperador = $bill->shipment && $bill->shipment->voyage && $bill->shipment->voyage->company 
-            ? $this->cleanNumeric($bill->shipment->voyage->company->tax_id) 
-            : '';
-        $xml .= '                  <CuitAtaOperadorContenedor>' . $cuitOperador . '</CuitAtaOperadorContenedor>' . "\n";
-        
-        // CaracteristicasContenedor (S)
-        $caracteristicas = $container->containerType ? $container->containerType->code : '22G1';
-        $xml .= '                  <CaracteristicasContenedor>' . $this->cleanString($caracteristicas, 4) . '</CaracteristicasContenedor>' . "\n";
-        
-        // IdentificadorContenedor (S)
-        $xml .= '                  <IdentificadorContenedor>' . $this->cleanString($container->container_number, 20) . '</IdentificadorContenedor>' . "\n";
-        
-        // CondicionContenedor (S)
-        $condicion = !empty($container->container_condition) ? $container->container_condition : 'H';
-        $xml .= '                  <CondicionContenedor>' . $condicion . '</CondicionContenedor>' . "\n";
-        
-        // Tara (S) - en KG, sin decimales
-        $tara = intval($container->tare_weight ?: 0);
-        $xml .= '                  <Tara>' . $tara . '</Tara>' . "\n";
-        
-        // PesoBruto (S) - en KG, sin decimales
-        $pesoBruto = intval($container->gross_weight ?: 0);
-        $xml .= '                  <PesoBruto>' . $pesoBruto . '</PesoBruto>' . "\n";
-        
-        // NumeroPrecintoOrigen (N)
-        if (!empty($container->seals)) {
-            $seals = is_array($container->seals) ? $container->seals : json_decode($container->seals, true);
-            if (is_array($seals) && count($seals) > 0) {
-                $primerPrecinto = is_array($seals[0]) ? ($seals[0]['number'] ?? '') : $seals[0];
-                $xml .= '                  <NumeroPrecintoOrigen>' . $this->cleanString($primerPrecinto, 35) . '</NumeroPrecintoOrigen>' . "\n";
-            }
-        }
-        
-        // FechaVencimientoContenedor (N) - Solo año y mes
-        // Por ahora no lo incluimos si no tenemos el dato
-        
-        // Acep (N) - Campo opcional
-        
-        // CodigoPuertoEmbarque (N)
-        if ($bill->loadingPort) {
-            $xml .= '                  <CodigoPuertoEmbarque>' . $this->cleanString($bill->loadingPort->code, 5) . '</CodigoPuertoEmbarque>' . "\n";
-        }
-        
-        // FechaEmbarque (N)
-        if (!empty($bill->loading_date)) {
-            $xml .= '                  <FechaEmbarque>' . $this->formatDateTime($bill->loading_date) . '</FechaEmbarque>' . "\n";
-        }
-        
-        // FechaCargaLugarOrigen (N)
-        if (!empty($bill->origin_loading_date)) {
-            $xml .= '                  <FechaCargaLugarOrigen>' . $this->formatDateTime($bill->origin_loading_date) . '</FechaCargaLugarOrigen>' . "\n";
-        }
-        
-        // CodigoLugarOrigen (N)
-        if (!empty($bill->origin_location)) {
-            $xml .= '                  <CodigoLugarOrigen>' . $this->cleanString($bill->origin_location, 5) . '</CodigoLugarOrigen>' . "\n";
-        }
-        
-        // CodigoPaisLugarOrigen (N)
-        if (!empty($bill->origin_country_code)) {
-            $xml .= '                  <CodigoPaisLugarOrigen>' . $this->cleanString($bill->origin_country_code, 3) . '</CodigoPaisLugarOrigen>' . "\n";
-        }
-        
-        // CodigoPuertoDescarga (N)
-        if ($bill->dischargePort) {
-            $xml .= '                  <CodigoPuertoDescarga>' . $this->cleanString($bill->dischargePort->code, 5) . '</CodigoPuertoDescarga>' . "\n";
-        }
-        
-        // FechaDescarga (N)
-        if (!empty($bill->discharge_date)) {
-            $xml .= '                  <FechaDescarga>' . $this->formatDateTime($bill->discharge_date) . '</FechaDescarga>' . "\n";
-        }
-        
-        // Comentario (N)
-        if (!empty($container->notes)) {
-            $xml .= '                  <Comentario>' . $this->cleanString($container->notes, 60) . '</Comentario>' . "\n";
-        }
-        
-        $xml .= '                </ar:ContenedorCierre>' . "\n";
-        
-        return $xml;
     }
 
     /**
@@ -3859,8 +3567,8 @@ class SimpleXmlGenerator
         $transit = $this->iaYesNo($bill->is_transit_transshipment);
 
         $tariff = $bill->commodity_code
-            ?: $items->pluck('tariff_position')->filter()->first()
-            ?: $items->pluck('commodity_code')->filter()->first();
+            ?: $this->iaUniqueItemValue($items, 'tariff_position')
+            ?: $this->iaUniqueItemValue($items, 'commodity_code');
         $tariff = $this->iaRequired($tariff, "Conocimiento {$number}: PosicionArancelaria", 16);
         if ($consolidated === 'N' && (mb_strlen($tariff) < 7 || mb_strlen($tariff) > 15)) {
             throw new Exception("Conocimiento {$number}: PosicionArancelaria debe tener entre 7 y 15 caracteres cuando no es consolidado.");
@@ -3871,15 +3579,33 @@ class SimpleXmlGenerator
             "Conocimiento {$number}: RazonSocialFowarderExterior",
             70
         );
-        $customs = $bill->discharge_customs_code ?: $items->pluck('discharge_customs_code')->filter()->first();
-        $customs = $this->iaNumeric($customs, "Conocimiento {$number}: CodigoAduanaDescarga", 3);
-        $operative = $bill->operational_discharge_code ?: $items->pluck('operational_discharge_code')->filter()->first();
-        $operative = $this->iaRequired($operative, "Conocimiento {$number}: CodigoLugarOperativoDescarga", 5);
-        if (mb_strlen($operative) !== 5) {
-            throw new Exception("Conocimiento {$number}: CodigoLugarOperativoDescarga debe tener 5 caracteres.");
+        $customs = null;
+        $operative = null;
+
+        if (!$closing) {
+            $operative = $bill->operational_discharge_code
+                ?: $this->iaUniqueItemValue($items, 'operational_discharge_code');
+            $operative = $this->iaOperativeCode(
+                $operative,
+                "Conocimiento {$number}: CodigoLugarOperativoDescarga"
+            );
+
+            $customs = $bill->discharge_customs_code
+                ?: $this->iaUniqueItemValue($items, 'discharge_customs_code');
+            $customs = $customs
+                ? $this->iaNumeric(
+                    $customs,
+                    "Conocimiento {$number}: CodigoAduanaDescarga",
+                    3
+                )
+                : $this->iaCustomsFromOperativeCode(
+                    $operative,
+                    "Conocimiento {$number}: CodigoAduanaDescarga"
+                );
         }
 
-        $marks = $bill->cargo_marks ?: $items->pluck('cargo_marks')->filter()->first();
+        $marks = $bill->cargo_marks
+            ?: $this->iaUniqueItemValue($items, 'cargo_marks');
         $marks = $this->iaRequired($marks, "Conocimiento {$number}: MarcaBultos", 80);
         $countryDestination = $bill->destination_country_code
             ? $this->iaCountryValue($bill->destination_country_code, 'CodigoPaisDestino')
@@ -4021,7 +3747,14 @@ class SimpleXmlGenerator
             }
 
             $w->writeElement('ar:CantidadManifestada', (string) $quantity);
-            $w->writeElement('ar:PesoVolumenManifestado', rtrim(rtrim(number_format($weight, 3, '.', ''), '0'), '.'));
+            $w->writeElement(
+                'ar:PesoVolumenManifestado',
+                $this->iaIntegerWeight(
+                    $weight,
+                    "Conocimiento {$number}, línea {$line}: PesoVolumenManifestado",
+                    12
+                )
+            );
             $w->writeElement('ar:DescripcionMercaderia', $description);
             $w->writeElement('ar:NumeroBultos', $packageMarks);
 
