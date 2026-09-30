@@ -380,7 +380,7 @@ class ArgentinaAnticipatedService
                     'external_reference' => $voyageIdentifier,
                 ]);
 
-                Log::info('RegistrarTitulosCbc enviado exitosamente', [
+                Log::info('RectificarViaje enviado exitosamente', [
                     'voyage_id' => $voyage->id,
                     'transaction_id' => $transaction->id,
                     'external_reference' => $voyageIdentifier,
@@ -493,7 +493,7 @@ class ArgentinaAnticipatedService
                     'external_reference' => $voyageIdentifier,
                 ]);
 
-                Log::info('RectificarViaje enviado exitosamente', [
+                Log::info('RegistrarTitulosCbc enviado exitosamente', [
                     'voyage_id' => $voyage->id,
                     'transaction_id' => $transaction->id,
                     'external_reference' => $voyageIdentifier,
@@ -546,8 +546,6 @@ class ArgentinaAnticipatedService
      */
     public function cerrarViaje(Voyage $voyage, array $options = []): array
     {
-        DB::beginTransaction();
-        
         try {
             // 1. VALIDAR PREREQUISITOS
             if (empty($voyage->argentina_voyage_id)) {
@@ -579,12 +577,15 @@ class ArgentinaAnticipatedService
                 'voyage_id' => $voyage->id,
                 'argentina_voyage_id' => $voyage->argentina_voyage_id,
             ]);
+
+            DB::beginTransaction();
             
             // 3. CREAR TRANSACCIÓN
             $transaction = $this->createWebserviceTransaction($voyage, [
                 'method' => 'CerrarViaje',
                 'soap_action' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/CerrarViaje',
             ]);
+            $this->currentTransactionId = $transaction->id;
             
             // 4. Generar XML con el mismo IdTransaccion persistido
             $xmlGenerator = new SimpleXmlGenerator($this->company, $this->config);
