@@ -315,6 +315,48 @@
                                placeholder="2300">
                     </div>
 
+                    {{-- Operador del contenedor - requerido por cierre IA cuando corresponda --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            Operador del Contenedor (ATA)
+                        </label>
+                        <select name="containers[{{ $index }}][operator_client_id]"
+                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Sin informar</option>
+                            @foreach($clients as $client)
+                                <option value="{{ $client->id }}"
+                                    {{ (string) old('containers.'.$index.'.operator_client_id', $container['operator_client_id'] ?? '') === (string) $client->id ? 'selected' : '' }}>
+                                    {{ $client->legal_name }}{{ $client->tax_id ? ' - '.$client->tax_id : '' }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">Se usa para CuitAtaOperadorContenedor en Información Anticipada.</p>
+                    </div>
+
+                    {{-- Vencimiento CSC --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            Vencimiento CSC
+                        </label>
+                        <input type="date"
+                               name="containers[{{ $index }}][csc_expiry_date]"
+                               value="{{ old('containers.'.$index.'.csc_expiry_date', $container['csc_expiry_date'] ?? '') }}"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+
+                    {{-- ACEP --}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">
+                            ACEP
+                        </label>
+                        <input type="text"
+                               name="containers[{{ $index }}][acep]"
+                               value="{{ old('containers.'.$index.'.acep', $container['acep'] ?? '') }}"
+                               maxlength="20"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <p class="mt-1 text-xs text-gray-500">Informar sólo cuando corresponda en lugar del vencimiento CSC.</p>
+                    </div>
+
                     {{-- Estado del Contenedor --}}
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">
@@ -1446,6 +1488,21 @@ function populateExistingContainers() {
         if (tareWeightField) {
             tareWeightField.value = containerData.tare_weight ?? '';
         }
+
+        const operatorField = document.querySelector(`select[name="containers[${index}][operator_client_id]"]`);
+        if (operatorField) {
+            operatorField.value = containerData.operator_client_id ?? '';
+        }
+
+        const cscExpiryField = document.querySelector(`input[name="containers[${index}][csc_expiry_date]"]`);
+        if (cscExpiryField) {
+            cscExpiryField.value = containerData.csc_expiry_date ?? '';
+        }
+
+        const acepField = document.querySelector(`input[name="containers[${index}][acep]"]`);
+        if (acepField) {
+            acepField.value = containerData.acep ?? '';
+        }
         
         // Poblar campos de distribución de carga
         const packageQtyField = document.querySelector(`input[name="containers[${index}][package_quantity]"]`);
@@ -1564,6 +1621,38 @@ function addContainer() {
                     <input type="hidden"
                            name="containers[${containerIndex}][seal_source]"
                            value="shipper">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Operador del Contenedor (ATA)
+                    </label>
+                    <select name="containers[${containerIndex}][operator_client_id]"
+                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Sin informar</option>
+                        @foreach($clients as $client)
+                            <option value="{{ $client->id }}">{{ $client->legal_name }}{{ $client->tax_id ? ' - '.$client->tax_id : '' }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        Vencimiento CSC
+                    </label>
+                    <input type="date"
+                           name="containers[${containerIndex}][csc_expiry_date]"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">
+                        ACEP
+                    </label>
+                    <input type="text"
+                           name="containers[${containerIndex}][acep]"
+                           maxlength="20"
+                           class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                 </div>
 
                 <div>
