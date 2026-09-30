@@ -2974,7 +2974,7 @@ class SimpleXmlGenerator
      * @param Company $company
      * @return string XML generado
      */
-    public function generateCerrarViajeXml(Voyage $voyage, Company $company): string
+    public function generateCerrarViajeXml(Voyage $voyage, Company $company, string $transactionId): string
     {
         $identifier = $this->requireIaText(
             $voyage->argentina_voyage_id,
@@ -2983,7 +2983,7 @@ class SimpleXmlGenerator
         );
 
         $transactionId = $this->requireIaText(
-            'CV' . now()->format('ymdHis') . str_pad((string) ($voyage->id % 1000000), 6, '0', STR_PAD_LEFT),
+            $transactionId,
             'IdTransaccion',
             20
         );
