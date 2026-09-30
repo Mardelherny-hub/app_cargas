@@ -3293,7 +3293,7 @@ class SimpleXmlGenerator
             }
         }
 
-        throw new Exception("Información Anticipada: {$label} no tiene código PAY_PAIS de 3 caracteres.");
+        throw new Exception("Información Anticipada: {$label} no tiene un código de país válido para Aduana.");
     }
 
     private function iaCountryValue($value, string $label): string
@@ -3319,7 +3319,7 @@ class SimpleXmlGenerator
         }
         $code = strtoupper(trim((string) $port->code));
         if (strlen($code) !== 5) {
-            throw new Exception("Información Anticipada: {$label} debe tener 5 caracteres POR_PAIS.");
+            throw new Exception("Información Anticipada: {$label} debe tener un código de puerto válido de 5 caracteres.");
         }
         return $code;
     }
@@ -3341,6 +3341,7 @@ class SimpleXmlGenerator
                 $voyage->originCustoms?->code,
                 $voyage->originPort?->primaryCustomsOffice?->webservice_code,
                 $voyage->originPort?->primaryCustomsOffice?->code,
+                $voyage->originPort?->afip_code,
             ];
         } elseif ($voyage->destinationPort?->country?->alpha2_code === 'AR') {
             $candidates = [
@@ -3348,6 +3349,7 @@ class SimpleXmlGenerator
                 $voyage->destinationCustoms?->code,
                 $voyage->destinationPort?->primaryCustomsOffice?->webservice_code,
                 $voyage->destinationPort?->primaryCustomsOffice?->code,
+                $voyage->destinationPort?->afip_code,
             ];
         }
 
@@ -3359,7 +3361,7 @@ class SimpleXmlGenerator
         }
 
         throw new Exception(
-            'Información Anticipada: no se pudo resolver CodigoAduana BUR_DESC.'
+            'Información Anticipada: no se pudo determinar el código de Aduana requerido.'
         );
     }
 
@@ -3409,7 +3411,7 @@ class SimpleXmlGenerator
         $code = $this->iaRequired($value, $label, 5);
         if (mb_strlen($code) !== 5) {
             throw new Exception(
-                "Información Anticipada: {$label} debe tener 5 caracteres LOT_ADUA."
+                "Información Anticipada: {$label} debe tener un código de lugar operativo válido de 5 caracteres."
             );
         }
 
@@ -3420,7 +3422,7 @@ class SimpleXmlGenerator
 
         if (!$exists) {
             throw new Exception(
-                "Información Anticipada: {$label} {$code} no existe en LOT_ADUA."
+                "Información Anticipada: {$label} {$code} no existe en el catálogo de lugares operativos de Aduana."
             );
         }
 
@@ -3438,7 +3440,7 @@ class SimpleXmlGenerator
 
         if (!$location) {
             throw new Exception(
-                "Información Anticipada: no existe LOT_ADUA {$operativeCode}."
+                "Información Anticipada: no existe el lugar operativo {$operativeCode} en el catálogo de Aduana."
             );
         }
 
@@ -3467,7 +3469,7 @@ class SimpleXmlGenerator
         if ($provided !== $expected) {
             throw new Exception(
                 "Información Anticipada: {$label} {$provided} no corresponde "
-                . "al LOT_ADUA {$operativeCode} (aduana {$expected})."
+                . "al lugar operativo {$operativeCode} (Aduana {$expected})."
             );
         }
 
@@ -3736,7 +3738,7 @@ class SimpleXmlGenerator
 
             $packCode = $this->iaRequired(
                 $item->packaging_code,
-                "Conocimiento {$number}, línea {$line}: CodigoEmbalaje NEB_DESC",
+                "Conocimiento {$number}, línea {$line}: código de embalaje",
                 2
             );
             if (mb_strlen($packCode) !== 2) {
