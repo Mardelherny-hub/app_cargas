@@ -3124,7 +3124,7 @@ class SimpleXmlGenerator
         if ($operativeLocation) {
             $w->writeElement(
                 'CodigoLugarOperativo',
-                $this->requireIaText($operativeLocation, 'CodigoLugarOperativo', 5)
+                $this->requireIaFixedText($operativeLocation, 'CodigoLugarOperativo', 5)
             );
         }
 
@@ -3134,7 +3134,7 @@ class SimpleXmlGenerator
 
         $w->writeElement(
             'CodigoAduana',
-            $this->requireIaText($customsCode, 'CodigoAduana', 3)
+            $this->requireIaFixedText($customsCode, 'CodigoAduana', 3)
         );
 
         if ($voyage->captain) {
@@ -3248,7 +3248,7 @@ class SimpleXmlGenerator
         }
 
         if ($bill->origin_country_code) {
-            $w->writeElement('CodigoPaisLugarOrigen', $this->requireIaText($bill->origin_country_code, 'CodigoPaisLugarOrigen', 3));
+            $w->writeElement('CodigoPaisLugarOrigen', $this->resolveIaCountryCodeValue($bill->origin_country_code, 'CodigoPaisLugarOrigen'));
         }
 
         $w->writeElement('NumeroConocimiento', $this->requireIaText($bill->bill_number, 'NumeroConocimiento', 18));
@@ -3312,7 +3312,7 @@ class SimpleXmlGenerator
         }
 
         if ($firstItem->foreign_forwarder_country) {
-            $w->writeElement('CodigoPaisEmisorIdentificadorForwarderExterior', $this->requireIaText($firstItem->foreign_forwarder_country, 'CodigoPaisEmisorIdentificadorForwarderExterior', 3));
+            $w->writeElement('CodigoPaisEmisorIdentificadorForwarderExterior', $this->resolveIaCountryCodeValue($firstItem->foreign_forwarder_country, 'CodigoPaisEmisorIdentificadorForwarderExterior'));
         }
 
         if ($firstItem->comments) {
@@ -3329,8 +3329,8 @@ class SimpleXmlGenerator
         $operativeCode = $bill->operational_discharge_code
             ?: $firstItem->operational_discharge_code;
 
-        $w->writeElement('CodigoLugarOperativoDescarga', $this->requireIaText($operativeCode, "CodigoLugarOperativoDescarga {$bill->bill_number}", 5));
-        $w->writeElement('CodigoAduanaDescarga', $this->requireIaText($customsCode, "CodigoAduanaDescarga {$bill->bill_number}", 3));
+        $w->writeElement('CodigoLugarOperativoDescarga', $this->requireIaFixedText($operativeCode, "CodigoLugarOperativoDescarga {$bill->bill_number}", 5));
+        $w->writeElement('CodigoAduanaDescarga', $this->requireIaFixedText($customsCode, "CodigoAduanaDescarga {$bill->bill_number}", 3));
 
         $w->startElement('Mercaderias');
         $seenLines = [];
@@ -3342,7 +3342,7 @@ class SimpleXmlGenerator
             $seenLines[$line] = true;
 
             $packagingCode = $item->packaging_code ?: $item->packagingType?->code;
-            $packagingCode = $this->requireIaText($packagingCode, "CodigoEmbalaje línea {$line}", 2);
+            $packagingCode = $this->requireIaFixedText($packagingCode, "CodigoEmbalaje línea {$line}", 2);
 
             $quantity = (int) $item->package_quantity;
             if ($quantity < 0 || $quantity > 999999999) {
@@ -3480,7 +3480,7 @@ class SimpleXmlGenerator
 
         $w->startElement('Contenedor');
         $w->writeElement('CuitAtaOperadorContenedor', $operatorTaxId);
-        $w->writeElement('CaracteristicasContenedor', $this->requireIaText($typeCode, 'CaracteristicasContenedor', 4));
+        $w->writeElement('CaracteristicasContenedor', $this->requireIaFixedText($typeCode, 'CaracteristicasContenedor', 4));
         $w->writeElement('IdentificadorContenedor', $this->requireIaText($container->container_number, 'IdentificadorContenedor', 20));
         $w->writeElement('CondicionContenedor', $condition);
         $w->writeElement('Tara', (string) (int) round((float) $tare));
@@ -3526,8 +3526,8 @@ class SimpleXmlGenerator
             $operativeCode = $bill?->operational_discharge_code
                 ?: $pivot?->operational_discharge_code;
 
-            $w->writeElement('CodigoAduana', $this->requireIaText($customsCode, 'CodigoAduana contenedor', 3));
-            $w->writeElement('CodigoLugarOperativoDescarga', $this->requireIaText($operativeCode, 'CodigoLugarOperativoDescarga contenedor', 5));
+            $w->writeElement('CodigoAduana', $this->requireIaFixedText($customsCode, 'CodigoAduana contenedor', 3));
+            $w->writeElement('CodigoLugarOperativoDescarga', $this->requireIaFixedText($operativeCode, 'CodigoLugarOperativoDescarga contenedor', 5));
         }
 
         if ($container->condition_description) {
@@ -3609,13 +3609,46 @@ class SimpleXmlGenerator
         return $value;
     }
 
+    private function requireIaFixedText($value, string $field, int $length): string
+    {
+        $value = $this->requireIaText($value, $field, $length);
+
+        if (mb_strlen($value) !== $length) {
+            throw new Exception("Información Anticipada: {$field} debe tener {$length} caracteres.");
+        }
+
+        return $value;
+    }
+
     private function requireIaPortCode($port, string $field): string
     {
         if (!$port) {
             throw new Exception("Información Anticipada: {$field} no tiene puerto asociado.");
         }
 
-        return $this->requireIaText($port->code, $field, 5);
+        return $this->requireIaFixedText($port->code, $field, 5);
+    }
+
+    private function resolveIaCountryCodeValue($value, string $field): string
+    {
+        $value = strtoupper(trim((string) $value));
+
+        if ($value === '') {
+            throw new Exception("Información Anticipada: {$field} es obligatorio.");
+        }
+
+        $country = \App\Models\Country::query()
+            ->where('alpha2_code', $value)
+            ->orWhere('alpha3_code', $value)
+            ->orWhere('customs_code', $value)
+            ->orWhere('numeric_code', $value)
+            ->first();
+
+        if (!$country) {
+            throw new Exception("Información Anticipada: {$field} no existe en el catálogo de países.");
+        }
+
+        return $this->requireIaCountryCode($country);
     }
 
     private function requireIaCountryCode($country): string
