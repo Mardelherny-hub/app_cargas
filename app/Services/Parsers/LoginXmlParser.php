@@ -1891,6 +1891,8 @@ class LoginXmlParser implements ManifestParserInterface
             $explicitCountry = 'AR';
         } elseif (preg_match('/\bBRASIL\b|\bBRAZIL\b/iu', $name)) {
             $explicitCountry = 'BR';
+        } elseif (preg_match('/\bPARAGUAY\b/iu', $name)) {
+            $explicitCountry = 'PY';
         }
 
         if (
@@ -1905,6 +1907,14 @@ class LoginXmlParser implements ManifestParserInterface
             $explicitCountry === 'BR'
             && $structuredDigits !== null
             && strlen($structuredDigits) !== 14
+        ) {
+            $structuredTaxId = null;
+        }
+
+        if (
+            $explicitCountry === 'PY'
+            && $structuredDigits !== null
+            && !in_array(strlen($structuredDigits), [7, 8, 9], true)
         ) {
             $structuredTaxId = null;
         }
@@ -1929,6 +1939,8 @@ class LoginXmlParser implements ManifestParserInterface
             $countryCode = 'AR';
         } elseif (preg_match('/\bBRASIL\b|\bBRAZIL\b/iu', $name)) {
             $countryCode = 'BR';
+        } elseif (preg_match('/\bPARAGUAY\b/iu', $name)) {
+            $countryCode = 'PY';
         } elseif ($cleanTaxId && strlen($cleanTaxId) === 11) {
             $countryCode = 'AR';
         } elseif ($cleanTaxId && strlen($cleanTaxId) === 14) {
@@ -1962,6 +1974,16 @@ class LoginXmlParser implements ManifestParserInterface
                 }
 
                 $documentCode = 'CNPJ';
+            }
+
+            if ($countryCode === 'PY') {
+                if (!in_array(strlen($cleanTaxId), [7, 8, 9], true)) {
+                    throw new Exception(
+                        "Identificación fiscal incompatible con Paraguay para {$cleanName}"
+                    );
+                }
+
+                $documentCode = 'RUC';
             }
         }
 
