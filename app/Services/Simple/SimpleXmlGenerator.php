@@ -3639,7 +3639,7 @@ class SimpleXmlGenerator
 
         $country = \App\Models\Country::query()
             ->where('alpha2_code', $value)
-            ->orWhere('alpha3_code', $value)
+            ->orWhere('iso_code', $value)
             ->orWhere('customs_code', $value)
             ->orWhere('numeric_code', $value)
             ->first();
