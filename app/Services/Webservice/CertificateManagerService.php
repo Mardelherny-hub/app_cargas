@@ -95,20 +95,23 @@ class CertificateManagerService
         ];
 
         try {
+            $certificatePath = $this->company->getCertificatePath();
+            $certificatePassword = $this->company->getCertificatePassword();
+
             // 1. Verificar que existe configuración de certificado
-            if (!$this->company->certificate_path) {
+            if (!$certificatePath) {
                 $validation['errors'][] = 'No hay certificado configurado';
                 return $validation;
             }
 
             // 2. Verificar que existe el archivo físico
-            if (!Storage::exists($this->company->certificate_path)) {
+            if (!Storage::exists($certificatePath)) {
                 $validation['errors'][] = self::CERTIFICATE_ERRORS['FILE_NOT_FOUND'];
                 return $validation;
             }
 
             // 3. Validar password
-            if (!$this->company->certificate_password) {
+            if (!$certificatePassword) {
                 $validation['errors'][] = 'No hay contraseña configurada para el certificado';
                 return $validation;
             }
@@ -244,12 +247,26 @@ class CertificateManagerService
                 // Leer certificado PKCS#12 (.p12 o .pfx)
                 $certificates = [];
                 if (!openssl_pkcs12_read($certificateContent, $certificates, $password)) {
-                    $this->logOperation('error', 'Error leyendo certificado PKCS#12', [
-                        'openssl_error' => openssl_error_string(),
-                        'certificate_path' => $certificatePath,
-                        'password_length' => strlen($password),
-                    ]);
-                    return null;
+                    $opensslError = openssl_error_string();
+                    $certificates = $this->readLegacyPkcs12(
+                        $certificatePath,
+                        $password
+                    );
+
+                    if (!$certificates) {
+                        $this->logOperation('error', 'Error leyendo certificado PKCS#12', [
+                            'openssl_error' => $opensslError,
+                            'certificate_path' => $certificatePath,
+                            'password_length' => strlen($password),
+                        ]);
+                        return null;
+                    }
+
+                    $this->logOperation(
+                        'warning',
+                        'Certificado PKCS#12 leído con compatibilidad OpenSSL legacy',
+                        ['certificate_path' => $certificatePath]
+                    );
                 }
                 
                 $this->logOperation('info', 'Certificado leído exitosamente', [
@@ -273,6 +290,116 @@ class CertificateManagerService
         }
     }
     
+
+    /**
+     * Compatibilidad para PKCS#12 creados con algoritmos legacy que
+     * OpenSSL 3 no habilita en openssl_pkcs12_read().
+     *
+     * La contraseña se envía por stdin; nunca forma parte del comando
+     * ni se persiste en archivos temporales.
+     */
+    private function readLegacyPkcs12(
+        string $certificatePath,
+        string $password
+    ): ?array {
+        if (!function_exists('proc_open')) {
+            return null;
+        }
+
+        $absolutePath = Storage::path($certificatePath);
+
+        $certificateOutput = $this->runLegacyPkcs12Command(
+            $absolutePath,
+            $password,
+            ['-clcerts', '-nokeys']
+        );
+
+        $privateKeyOutput = $this->runLegacyPkcs12Command(
+            $absolutePath,
+            $password,
+            ['-nocerts', '-nodes']
+        );
+
+        if ($certificateOutput === null || $privateKeyOutput === null) {
+            return null;
+        }
+
+        if (
+            preg_match(
+                '/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/s',
+                $certificateOutput,
+                $certificateMatch
+            ) !== 1
+        ) {
+            return null;
+        }
+
+        if (
+            preg_match(
+                '/-----BEGIN ([A-Z ]*PRIVATE KEY)-----.*?-----END \\1-----/s',
+                $privateKeyOutput,
+                $privateKeyMatch
+            ) !== 1
+        ) {
+            return null;
+        }
+
+        return [
+            'cert' => $certificateMatch[0],
+            'pkey' => $privateKeyMatch[0],
+            'extracerts' => null,
+        ];
+    }
+
+    private function runLegacyPkcs12Command(
+        string $absolutePath,
+        string $password,
+        array $arguments
+    ): ?string {
+        $command = array_merge(
+            [
+                'openssl',
+                'pkcs12',
+                '-legacy',
+                '-in',
+                $absolutePath,
+                '-passin',
+                'stdin',
+            ],
+            $arguments
+        );
+
+        $process = @proc_open(
+            $command,
+            [
+                0 => ['pipe', 'r'],
+                1 => ['pipe', 'w'],
+                2 => ['pipe', 'w'],
+            ],
+            $pipes
+        );
+
+        if (!is_resource($process)) {
+            return null;
+        }
+
+        fwrite($pipes[0], $password . PHP_EOL);
+        fclose($pipes[0]);
+
+        $stdout = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+
+        stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+
+        $exitCode = proc_close($process);
+
+        if ($exitCode !== 0 || trim((string) $stdout) === '') {
+            return null;
+        }
+
+        return $stdout;
+    }
 
     /**
      * Extraer información detallada del certificado
