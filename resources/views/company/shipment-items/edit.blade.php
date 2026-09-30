@@ -1119,6 +1119,24 @@
                                 @enderror
                             </div>
 
+                            {{-- Código de embalaje AFIP (NEB_DESC) --}}
+                            <div>
+                                <label for="packaging_code" class="block text-sm font-medium text-gray-700">
+                                    Código Embalaje AFIP (NEB_DESC)
+                                </label>
+                                <input type="text"
+                                       name="packaging_code"
+                                       id="packaging_code"
+                                       value="{{ old('packaging_code', $shipmentItem->packaging_code) }}"
+                                       maxlength="2"
+                                       placeholder="2 caracteres"
+                                       class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm uppercase">
+                                <p class="mt-1 text-xs text-gray-500">Código oficial de naturaleza de embalaje requerido por Información Anticipada.</p>
+                                @error('packaging_code')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
                             {{-- Tipo de Embalaje Código --}}
                             <div>
                                 <label for="packaging_type_code" class="block text-sm font-medium text-gray-700">
