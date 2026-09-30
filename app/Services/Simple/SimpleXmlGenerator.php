@@ -1992,9 +1992,9 @@ class SimpleXmlGenerator
 
                 // Autenticación empresa
                 $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('Token', $this->iaRequired($wsaa['token'] ?? null, 'Token WSAA'));
+                    $w->writeElement('Sign', $this->iaRequired($wsaa['sign'] ?? null, 'Sign WSAA'));
+                    $w->writeElement('CuitEmpresaConectada', $this->iaNumeric($this->company->tax_id, 'CuitEmpresaConectada', 11));
                     $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
@@ -2836,7 +2836,7 @@ class SimpleXmlGenerator
             }
 
             // Obtener tokens WSAA
-            $wsaa = $this->getWSAATokens();
+            $wsaa = $this->getWSAATokens('wgesinformacionanticipada');
 
             // Crear XMLWriter
             $w = new \XMLWriter();
@@ -2855,9 +2855,9 @@ class SimpleXmlGenerator
 
                 // Autenticación empresa (obligatorio)
                 $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
+                    $w->writeElement('Token', $this->iaRequired($wsaa['token'] ?? null, 'Token WSAA'));
+                    $w->writeElement('Sign', $this->iaRequired($wsaa['sign'] ?? null, 'Sign WSAA'));
+                    $w->writeElement('CuitEmpresaConectada', $this->iaNumeric($this->company->tax_id, 'CuitEmpresaConectada', 11));
                     $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
@@ -2869,7 +2869,7 @@ class SimpleXmlGenerator
                     // Información Anticipada Marítima (estructura principal)
                     $w->startElement('InformacionAnticipadaMaritimaDoc');
                         // Identificador del viaje original (obligatorio para rectificación)
-                        $w->writeElement('IdentificadorViaje', $rectificationData['original_external_reference']);
+                        $w->writeElement('IdentificadorViaje', $this->iaRequired($rectificationData['original_external_reference'], 'IdentificadorViaje', 16));
                         
                         $this->addVoyageInformation($w, $voyage);
                         $this->addContainersInformation($w, $voyage);
@@ -3381,6 +3381,12 @@ class SimpleXmlGenerator
         if ($voyage->destinationPort?->country) {
             $w->writeElement('CodigoPaisFinViaje', $this->iaCountry($voyage->destinationPort->country, 'CodigoPaisFinViaje'));
         }
+
+        $direction = $this->iaImportExportIndicator($voyage);
+        if ($direction !== null) {
+            $w->writeElement('IndicadorImportacionExportacion', $direction);
+        }
+
         if ($voyage->departure_date) {
             $w->writeElement('FechaInicioViaje', $this->iaDate($voyage->departure_date));
         }
@@ -3488,8 +3494,8 @@ class SimpleXmlGenerator
         $w->writeElement('CaracteristicasContenedor', $type);
         $w->writeElement('IdentificadorContenedor', $number);
         $w->writeElement('CondicionContenedor', $condition);
-        $w->writeElement('Tara', (string) (int) round((float) $tare));
-        $w->writeElement('PesoBruto', rtrim(rtrim(number_format((float) $gross, 3, '.', ''), '0'), '.'));
+        $w->writeElement('Tara', $this->iaIntegerWeight($tare, "Contenedor {$number}: Tara", 10));
+        $w->writeElement('PesoBruto', $this->iaIntegerWeight($gross, "Contenedor {$number}: PesoBruto", 14));
 
         $seal = trim((string) ($container->customs_seal ?: $container->shipper_seal ?: $container->carrier_seal));
         if ($seal !== '') {
@@ -3498,9 +3504,6 @@ class SimpleXmlGenerator
 
         $expiry = $container->expiry_date ?: $container->csc_expiry_date;
         $acep = data_get($container->webservice_data, 'acep');
-        if (!$expiry && !$acep) {
-            throw new Exception("Contenedor {$number}: debe informar FechaVencimientoContenedor o ACEP.");
-        }
         if ($expiry) {
             $w->writeElement('FechaVencimientoContenedor', $this->iaDate($expiry));
         }
@@ -3518,6 +3521,20 @@ class SimpleXmlGenerator
                 $w->writeElement('FechaDescarga', $this->iaDate($bill->discharge_date));
             }
         }
+
+        $operativeCode = $bill->operational_discharge_code ?: $item?->operational_discharge_code;
+        $operativeCode = $this->iaOperativeCode(
+            $operativeCode,
+            "Contenedor {$number}: CodigoLugarOperativoDescarga"
+        );
+        $w->writeElement(
+            'CodigoAduana',
+            $this->iaCustomsFromOperativeCode(
+                $operativeCode,
+                "Contenedor {$number}: CodigoAduana"
+            )
+        );
+        $w->writeElement('CodigoLugarOperativoDescarga', $operativeCode);
 
         $w->endElement();
     }
@@ -3548,17 +3565,14 @@ class SimpleXmlGenerator
         if (!$country) {
             throw new Exception("Información Anticipada: {$label} no está configurado.");
         }
-        foreach ([$country->customs_code, $country->codigo_afip, $country->numeric_code] as $candidate) {
-            $value = trim((string) $candidate);
-            if ($value === '') {
-                continue;
-            }
-            if (ctype_digit($value)) {
-                $value = str_pad($value, 3, '0', STR_PAD_LEFT);
-            }
-            if (strlen($value) === 3) {
-                return $value;
-            }
+        $afipCode = trim((string) $country->codigo_afip);
+        if ($afipCode !== '' && strlen($afipCode) === 3) {
+            return $afipCode;
+        }
+
+        $customsCode = trim((string) $country->customs_code);
+        if ($customsCode !== '' && strlen($customsCode) === 3) {
+            return $customsCode;
         }
         throw new Exception("Información Anticipada: {$label} no tiene código PAY_PAIS de 3 caracteres.");
     }
@@ -3593,11 +3607,31 @@ class SimpleXmlGenerator
 
     private function iaVoyageCustomsCode(Voyage $voyage): string
     {
+        $operativeCode = $this->iaVoyageOperativeLocation($voyage);
+        if ($operativeCode !== null) {
+            return $this->iaCustomsFromOperativeCode(
+                $operativeCode,
+                'CodigoAduana'
+            );
+        }
+
         $candidates = [];
         if ($voyage->originPort?->country?->alpha2_code === 'AR') {
-            $candidates = [$voyage->originCustoms?->webservice_code, $voyage->originCustoms?->code, $voyage->originPort?->primaryCustomsOffice?->webservice_code, $voyage->originPort?->primaryCustomsOffice?->code, $voyage->originPort?->afip_code];
+            $candidates = [
+                $voyage->originCustoms?->webservice_code,
+                $voyage->originCustoms?->code,
+                $voyage->originPort?->primaryCustomsOffice?->webservice_code,
+                $voyage->originPort?->primaryCustomsOffice?->code,
+                $voyage->originPort?->afip_code,
+            ];
         } elseif ($voyage->destinationPort?->country?->alpha2_code === 'AR') {
-            $candidates = [$voyage->destinationCustoms?->webservice_code, $voyage->destinationCustoms?->code, $voyage->destinationPort?->primaryCustomsOffice?->webservice_code, $voyage->destinationPort?->primaryCustomsOffice?->code, $voyage->destinationPort?->afip_code];
+            $candidates = [
+                $voyage->destinationCustoms?->webservice_code,
+                $voyage->destinationCustoms?->code,
+                $voyage->destinationPort?->primaryCustomsOffice?->webservice_code,
+                $voyage->destinationPort?->primaryCustomsOffice?->code,
+                $voyage->destinationPort?->afip_code,
+            ];
         }
 
         foreach ($candidates as $candidate) {
@@ -3606,32 +3640,112 @@ class SimpleXmlGenerator
                 return $digits;
             }
         }
-        throw new Exception('Información Anticipada: no se pudo resolver CodigoAduana BUR_DESC.');
+
+        throw new Exception(
+            'Información Anticipada: no se pudo resolver CodigoAduana BUR_DESC.'
+        );
     }
 
     private function iaVoyageOperativeLocation(Voyage $voyage): ?string
     {
-        $port = $voyage->originPort?->country?->alpha2_code === 'AR'
-            ? $voyage->originPort
-            : ($voyage->destinationPort?->country?->alpha2_code === 'AR' ? $voyage->destinationPort : null);
+        $isArgentineOrigin = $voyage->originPort?->country?->alpha2_code === 'AR';
+        $isArgentineDestination = $voyage->destinationPort?->country?->alpha2_code === 'AR';
 
-        if (!$port) {
+        if (!$isArgentineOrigin && !$isArgentineDestination) {
             return null;
         }
 
-        $location = \App\Models\AfipOperativeLocation::where('port_id', $port->id)
-            ->where('is_active', true)
-            ->first();
+        $query = \App\Models\BillOfLading::whereHas(
+            'shipment',
+            fn ($q) => $q->where('voyage_id', $voyage->id)
+        );
+
+        $field = $isArgentineOrigin
+            ? 'origin_operative_code'
+            : 'operational_discharge_code';
+
+        $codes = $query->pluck($field)
+            ->filter(fn ($value) => trim((string) $value) !== '')
+            ->map(fn ($value) => trim((string) $value))
+            ->unique()
+            ->values();
+
+        if ($codes->count() > 1) {
+            throw new Exception(
+                "Información Anticipada: el viaje tiene más de un {$field}; "
+                . 'no se puede elegir un lugar operativo automáticamente.'
+            );
+        }
+
+        if ($codes->isEmpty()) {
+            return null;
+        }
+
+        return $this->iaOperativeCode(
+            $codes->first(),
+            'CodigoLugarOperativo'
+        );
+    }
+
+    private function iaOperativeCode($value, string $label): string
+    {
+        $code = $this->iaRequired($value, $label, 5);
+        if (mb_strlen($code) !== 5) {
+            throw new Exception(
+                "Información Anticipada: {$label} debe tener 5 caracteres LOT_ADUA."
+            );
+        }
+
+        $exists = \App\Models\AfipOperativeLocation::where(
+            'location_code',
+            $code
+        )->where('is_active', true)->exists();
+
+        if (!$exists) {
+            throw new Exception(
+                "Información Anticipada: {$label} {$code} no existe en LOT_ADUA."
+            );
+        }
+
+        return $code;
+    }
+
+    private function iaCustomsFromOperativeCode(
+        string $operativeCode,
+        string $label
+    ): string {
+        $location = \App\Models\AfipOperativeLocation::where(
+            'location_code',
+            $operativeCode
+        )->where('is_active', true)->first();
 
         if (!$location) {
-            return null;
+            throw new Exception(
+                "Información Anticipada: no existe LOT_ADUA {$operativeCode}."
+            );
         }
 
-        $code = $this->iaRequired($location->location_code, 'CodigoLugarOperativo', 5);
-        if (mb_strlen($code) !== 5) {
-            throw new Exception('Información Anticipada: CodigoLugarOperativo debe tener 5 caracteres.');
+        return $this->iaNumeric(
+            $location->customs_code,
+            $label,
+            3
+        );
+    }
+
+    private function iaImportExportIndicator(Voyage $voyage): ?string
+    {
+        $origin = $voyage->originPort?->country?->alpha2_code;
+        $destination = $voyage->destinationPort?->country?->alpha2_code;
+
+        if ($origin === 'AR' && $destination !== 'AR') {
+            return 'E';
         }
-        return $code;
+
+        if ($destination === 'AR' && $origin !== 'AR') {
+            return 'I';
+        }
+
+        return null;
     }
 
     private function iaContainerCondition($container, $item = null): string
@@ -3663,6 +3777,30 @@ class SimpleXmlGenerator
             throw new Exception("Información Anticipada: {$label} debe tener exactamente {$length} dígitos.");
         }
         return $digits;
+    }
+
+    private function iaIntegerWeight(
+        $value,
+        string $label,
+        int $maxDigits
+    ): string {
+        if (!is_numeric($value) || (float) $value < 0) {
+            throw new Exception("Información Anticipada: {$label} debe ser un entero no negativo.");
+        }
+
+        $numeric = (float) $value;
+        $rounded = round($numeric);
+
+        if (abs($numeric - $rounded) > 0.000001) {
+            throw new Exception("Información Anticipada: {$label} debe expresarse en kilogramos enteros.");
+        }
+
+        $text = (string) (int) $rounded;
+        if (strlen($text) > $maxDigits) {
+            throw new Exception("Información Anticipada: {$label} supera {$maxDigits} dígitos.");
+        }
+
+        return $text;
     }
 
     private function iaYesNo($value): string
@@ -3754,11 +3892,23 @@ class SimpleXmlGenerator
         if ($bill->origin_loading_date) {
             $w->writeElement('ar:FechaCargaLugarOrigen', $this->iaDate($bill->origin_loading_date));
         }
-        if ($bill->origin_location) {
-            $w->writeElement('ar:LugarOrigen', $this->iaRequired($bill->origin_location, 'LugarOrigen', 50));
-        }
-        if ($bill->origin_country_code) {
-            $w->writeElement('ar:CodigoPaisLugarOrigen', $this->iaCountryValue($bill->origin_country_code, 'CodigoPaisLugarOrigen'));
+
+        if ($closing) {
+            if ($bill->origin_location) {
+                $w->writeElement('ar:LugarOrigen', $this->iaRequired($bill->origin_location, 'LugarOrigen', 50));
+            }
+            if ($bill->origin_country_code) {
+                $w->writeElement('ar:CodigoPaisLugarOrigen', $this->iaCountryValue($bill->origin_country_code, 'CodigoPaisLugarOrigen'));
+            }
+        } else {
+            $w->writeElement(
+                'ar:LugarOrigen',
+                $this->iaRequired($bill->origin_location, "Conocimiento {$number}: LugarOrigen", 50)
+            );
+            $w->writeElement(
+                'ar:CodigoPaisLugarOrigen',
+                $this->iaCountryValue($bill->origin_country_code, "Conocimiento {$number}: CodigoPaisLugarOrigen")
+            );
         }
 
         $w->writeElement('ar:NumeroConocimiento', $number);
@@ -3815,8 +3965,10 @@ class SimpleXmlGenerator
             $w->writeElement('ar:Comentario', $this->iaRequired($firstItem->comments, 'Comentario', 60));
         }
 
-        $w->writeElement('ar:CodigoAduanaDescarga', $customs);
-        $w->writeElement('ar:CodigoLugarOperativoDescarga', $operative);
+        if (!$closing) {
+            $w->writeElement('ar:CodigoAduanaDescarga', $customs);
+            $w->writeElement('ar:CodigoLugarOperativoDescarga', $operative);
+        }
 
         $w->startElement('ar:Mercaderias');
         $usedLines = [];
@@ -3893,7 +4045,13 @@ class SimpleXmlGenerator
         if ($containers->isNotEmpty()) {
             $w->startElement('ar:Contenedores');
             foreach ($containers as $entry) {
-                $this->writeIaTitleContainer($w, $entry['container'], $bill, $entry['item']);
+                $this->writeIaTitleContainer(
+                    $w,
+                    $entry['container'],
+                    $bill,
+                    $entry['item'],
+                    $closing
+                );
             }
             $w->endElement();
         }
@@ -3901,8 +4059,13 @@ class SimpleXmlGenerator
         $w->endElement();
     }
 
-    private function writeIaTitleContainer(\XMLWriter $w, $container, BillOfLading $bill, $item): void
-    {
+    private function writeIaTitleContainer(
+        \XMLWriter $w,
+        $container,
+        BillOfLading $bill,
+        $item,
+        bool $closing
+    ): void {
         $number = $this->iaRequired($container->container_number, 'IdentificadorContenedor', 20);
         $type = $container->containerType?->iso_code ?: $container->containerType?->code;
         $type = $this->iaRequired($type, "Contenedor {$number}: CaracteristicasContenedor", 4);
@@ -3929,16 +4092,37 @@ class SimpleXmlGenerator
 
         $expiry = $container->expiry_date ?: $container->csc_expiry_date;
         $acep = data_get($container->webservice_data, 'acep');
-        if (!$expiry && !$acep) {
-            throw new Exception("Contenedor {$number}: debe informar FechaVencimientoContenedor o ACEP.");
+
+        $w->startElement('ar:' . ($closing ? 'ContenedorCierre' : 'Contenedor'));
+
+        $operatorTaxId = $container->operatorClient?->tax_id
+            ?: data_get($container->webservice_data, 'operator_tax_id');
+
+        if ($closing) {
+            $w->writeElement(
+                'ar:CuitAtaOperadorContenedor',
+                $this->iaNumeric(
+                    $operatorTaxId,
+                    "Contenedor {$number}: CuitAtaOperadorContenedor",
+                    11
+                )
+            );
+        } elseif ($operatorTaxId) {
+            $w->writeElement(
+                'ar:CuitAtaOperadorContenedor',
+                $this->iaNumeric(
+                    $operatorTaxId,
+                    "Contenedor {$number}: CuitAtaOperadorContenedor",
+                    11
+                )
+            );
         }
 
-        $w->startElement('ar:Contenedor');
         $w->writeElement('ar:CaracteristicasContenedor', $type);
         $w->writeElement('ar:IdentificadorContenedor', $number);
         $w->writeElement('ar:CondicionContenedor', $condition);
-        $w->writeElement('ar:Tara', (string) (int) round((float) $tare));
-        $w->writeElement('ar:PesoBruto', rtrim(rtrim(number_format((float) $gross, 3, '.', ''), '0'), '.'));
+        $w->writeElement('ar:Tara', $this->iaIntegerWeight($tare, "Contenedor {$number}: Tara", 10));
+        $w->writeElement('ar:PesoBruto', $this->iaIntegerWeight($gross, "Contenedor {$number}: PesoBruto", 14));
 
         $seal = trim((string) ($container->customs_seal ?: $container->shipper_seal ?: $container->carrier_seal));
         if ($seal !== '') {
@@ -3951,14 +4135,29 @@ class SimpleXmlGenerator
             $w->writeElement('ar:Acep', $this->iaRequired($acep, 'ACEP', 20));
         }
 
-        $customs = $bill->discharge_customs_code ?: $item?->discharge_customs_code;
-        $operative = $bill->operational_discharge_code ?: $item?->operational_discharge_code;
-        $w->writeElement('ar:CodigoAduana', $this->iaNumeric($customs, 'CodigoAduana contenedor', 3));
-        $operative = $this->iaRequired($operative, 'CodigoLugarOperativoDescarga contenedor', 5);
-        if (mb_strlen($operative) !== 5) {
-            throw new Exception("Contenedor {$number}: CodigoLugarOperativoDescarga debe tener 5 caracteres.");
+        if (!$closing) {
+            $operative = $bill->operational_discharge_code ?: $item?->operational_discharge_code;
+            $operative = $this->iaOperativeCode(
+                $operative,
+                "Contenedor {$number}: CodigoLugarOperativoDescarga"
+            );
+
+            $customs = $bill->discharge_customs_code ?: $item?->discharge_customs_code;
+            $customs = $customs
+                ? $this->iaNumeric(
+                    $customs,
+                    "Contenedor {$number}: CodigoAduana",
+                    3
+                )
+                : $this->iaCustomsFromOperativeCode(
+                    $operative,
+                    "Contenedor {$number}: CodigoAduana"
+                );
+
+            $w->writeElement('ar:CodigoAduana', $customs);
+            $w->writeElement('ar:CodigoLugarOperativoDescarga', $operative);
         }
-        $w->writeElement('ar:CodigoLugarOperativoDescarga', $operative);
+
         $w->endElement();
     }
 
