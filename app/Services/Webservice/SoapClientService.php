@@ -112,7 +112,7 @@ Log::debug('DEFAULT_WEBSERVICE_URLS structure', [
     }
 
     $soapOptions = [
-        'soap_version' => SOAP_1_2,
+        'soap_version' => $webserviceType === 'anticipada' ? SOAP_1_1 : SOAP_1_2,
         'encoding' => 'UTF-8',
         'connection_timeout' => $this->config['connection_timeout'] ?? 30,
         'timeout' => $this->config['timeout'] ?? 60,
