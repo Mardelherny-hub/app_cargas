@@ -336,7 +336,7 @@ class CertificateManagerService
 
         if (
             preg_match(
-                '/-----BEGIN ([A-Z ]*PRIVATE KEY)-----.*?-----END \\1-----/s',
+                '/-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----.*?-----END (?:RSA |EC |DSA )?PRIVATE KEY-----/s',
                 $privateKeyOutput,
                 $privateKeyMatch
             ) !== 1
