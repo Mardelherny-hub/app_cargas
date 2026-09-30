@@ -612,6 +612,9 @@ foreach ($existingContainers as $container) {
             ? 'carrier'
             : 'shipper',
         'tare_weight' => $container->tare_weight_kg,
+        'operator_client_id' => $container->operator_client_id,
+        'csc_expiry_date' => $container->csc_expiry_date?->format('Y-m-d'),
+        'acep' => data_get($container->webservice_data, 'acep'),
         'condition' => $container->condition ?? 'L',
         'package_quantity' => $pivot->package_quantity,
         'gross_weight_kg' => $pivot->gross_weight_kg,
@@ -772,6 +775,9 @@ return view('company.shipment-items.edit', compact(
             'containers.*.seal_number' => 'nullable|string|max:255',
             'containers.*.seal_source' => 'nullable|in:carrier,shipper',
             'containers.*.tare_weight' => 'nullable|numeric|min:0',
+            'containers.*.operator_client_id' => 'nullable|exists:clients,id,status,active',
+            'containers.*.csc_expiry_date' => 'nullable|date',
+            'containers.*.acep' => 'nullable|string|max:20',
             'containers.*.condition' => 'nullable|in:L,V',
             'containers.*.package_quantity' =>
                 'required_with:containers|integer|min:0',
@@ -1024,14 +1030,32 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                     )
                     : $container->{$sealField};
 
+                $webserviceData = is_array($container->webservice_data)
+                    ? $container->webservice_data
+                    : [];
+
+                if (array_key_exists('acep', $containerData)) {
+                    $acep = trim((string) ($containerData['acep'] ?? ''));
+                    if ($acep === '') {
+                        unset($webserviceData['acep']);
+                    } else {
+                        $webserviceData['acep'] = $acep;
+                    }
+                }
+
                 $container->update([
                     'container_type_id' => $containerData['container_type_id'],
                     'tare_weight_kg' => array_key_exists(
                         'tare_weight',
                         $containerData
                     )
-                        ? $containerData['tare_weight']
-                        : $container->tare_weight_kg,
+                        && $containerData['tare_weight'] !== null
+                        && $containerData['tare_weight'] !== ''
+                            ? $containerData['tare_weight']
+                            : $container->tare_weight_kg,
+                    'operator_client_id' => $containerData['operator_client_id'] ?? null,
+                    'csc_expiry_date' => $containerData['csc_expiry_date'] ?? null,
+                    'webservice_data' => $webserviceData ?: null,
                     'condition' => $condition,
                     $sealField => $sealValue,
                     'operational_status' =>
@@ -1048,16 +1072,54 @@ private function updateItemContainers(ShipmentItem $shipmentItem, array $contain
                 ]);
                 
             } else {
-                // 5. CONTENEDOR NO EXISTE: Crear nuevo
+                // 5. CONTENEDOR NO EXISTE: Crear sólo con valores reales
+                // del formulario o del tipo de contenedor configurado.
+                $containerType = \App\Models\ContainerType::findOrFail(
+                    $containerData['container_type_id']
+                );
+
+                $tareWeight =
+                    array_key_exists('tare_weight', $containerData)
+                    && $containerData['tare_weight'] !== null
+                    && $containerData['tare_weight'] !== ''
+                        ? $containerData['tare_weight']
+                        : $containerType->tare_weight_kg;
+
+                if ($tareWeight === null || $tareWeight === '') {
+                    throw new \Exception(
+                        "El contenedor {$containerData['container_number']} "
+                        . 'no tiene tara informada ni tara configurada en su tipo.'
+                    );
+                }
+
+                if (
+                    $containerType->max_gross_weight_kg === null
+                    || $containerType->max_gross_weight_kg === ''
+                ) {
+                    throw new \Exception(
+                        "El tipo del contenedor {$containerData['container_number']} "
+                        . 'no tiene peso bruto máximo configurado.'
+                    );
+                }
+
+                $webserviceData = [];
+                $acep = trim((string) ($containerData['acep'] ?? ''));
+                if ($acep !== '') {
+                    $webserviceData['acep'] = $acep;
+                }
+
                 $container = \App\Models\Container::create([
                     'container_number' => $containerData['container_number'],
                     'container_type_id' => $containerData['container_type_id'],
-                    'tare_weight_kg' => $containerData['tare_weight'] ?? 2200,
-                    'max_gross_weight_kg' => 30000,
+                    'tare_weight_kg' => $tareWeight,
+                    'max_gross_weight_kg' => $containerType->max_gross_weight_kg,
                     'current_gross_weight_kg' =>
                         $condition === 'V'
                             ? null
                             : $containerData['gross_weight_kg'],
+                    'operator_client_id' => $containerData['operator_client_id'] ?? null,
+                    'csc_expiry_date' => $containerData['csc_expiry_date'] ?? null,
+                    'webservice_data' => $webserviceData ?: null,
                     'condition' => $condition,
                     'shipper_seal' => $containerData['seal_number'] ?? null,
                     'operational_status' =>
