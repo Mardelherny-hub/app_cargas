@@ -3283,6 +3283,15 @@ class SimpleXmlGenerator
         if ($customsCode !== '' && strlen($customsCode) === 3) {
             return $customsCode;
         }
+
+        $numericCode = trim((string) $country->numeric_code);
+        if ($numericCode !== '' && ctype_digit($numericCode)) {
+            $numericCode = str_pad($numericCode, 3, '0', STR_PAD_LEFT);
+            if (strlen($numericCode) === 3) {
+                return $numericCode;
+            }
+        }
+
         throw new Exception("Información Anticipada: {$label} no tiene código PAY_PAIS de 3 caracteres.");
     }
 
