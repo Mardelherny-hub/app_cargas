@@ -143,6 +143,7 @@ class BillOfLadingEditForm extends Component
 
     // === CONSOLIDACIÓN ===
     public $is_consolidated = false;
+    public $is_transit_transshipment = false;
     public $is_fractional = false;
     public $partial_packages = null;
     public $partial_weight_kg = null;
@@ -293,6 +294,7 @@ class BillOfLadingEditForm extends Component
         'is_priority' => ['boolean'],
         'requires_inspection' => ['boolean'],
         'is_consolidated' => ['boolean'],
+        'is_transit_transshipment' => ['boolean'],
         'is_master_bill' => ['boolean'],
         'is_house_bill' => ['boolean'],
         'master_bill_number' => ['nullable','string','max:50','required_if:is_house_bill,true'],
@@ -484,6 +486,7 @@ class BillOfLadingEditForm extends Component
 
         // Consolidación
         $this->is_consolidated = $bl->is_consolidated ?? false;
+        $this->is_transit_transshipment = ($bl->is_transit_transshipment ?? 'N') === 'S';
         $this->is_fractional = $bl->is_fractional ?? false;
         $this->partial_packages = $bl->partial_packages ?? null;
         $this->partial_weight_kg = $bl->partial_weight_kg ?? null;
@@ -865,6 +868,7 @@ class BillOfLadingEditForm extends Component
                 'requires_refrigeration' => $this->requires_refrigeration,
                 'priority_level' => $this->is_priority ? 'high' : 'normal',
                 'is_consolidated' => $this->is_consolidated,
+                'is_transit_transshipment' => $this->is_transit_transshipment ? 'S' : 'N',
                 'is_fractional' => $this->is_fractional,
                 'partial_packages' => $this->is_fractional ? ($this->partial_packages ?: null) : null,
                 'partial_weight_kg' => $this->is_fractional ? ($this->partial_weight_kg ?: null) : null,
