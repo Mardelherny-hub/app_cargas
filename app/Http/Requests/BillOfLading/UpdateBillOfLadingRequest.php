@@ -226,6 +226,42 @@ class UpdateBillOfLadingRequest extends FormRequest
                 'date',
                 'after_or_equal:bill_date',
             ],
+
+            // === INFORMACIÓN ANTICIPADA ARCA/AFIP ===
+            'origin_loading_date' => [
+                'nullable',
+                'date',
+            ],
+            'origin_location' => [
+                'nullable',
+                'string',
+                'max:50',
+            ],
+            'origin_country_code' => [
+                'nullable',
+                'string',
+                'max:3',
+            ],
+            'destination_country_code' => [
+                'nullable',
+                'string',
+                'max:3',
+            ],
+            'discharge_customs_code' => [
+                'nullable',
+                'string',
+                'max:3',
+            ],
+            'operational_discharge_code' => [
+                'nullable',
+                'string',
+                'max:5',
+            ],
+            'is_transit_transshipment' => [
+                'nullable',
+                Rule::in(['S', 'N']),
+            ],
+
             'free_time_expires_at' => [
                 'nullable',
                 'date',
