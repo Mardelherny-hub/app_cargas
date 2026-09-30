@@ -2925,10 +2925,11 @@ class SimpleXmlGenerator
 
         $bills = $voyage->shipments
             ->flatMap(fn ($shipment) => $shipment->billsOfLading)
+            ->filter(fn ($bill) => strtoupper(trim((string) $bill->dischargePort?->country?->alpha2_code)) === 'AR')
             ->values();
 
         if ($bills->isEmpty()) {
-            throw new Exception('Información Anticipada: no hay conocimientos para RegistrarTitulosCbc.');
+            throw new Exception('Información Anticipada: no hay conocimientos con descarga en Argentina para RegistrarTitulosCbc.');
         }
 
         $wsaa = $this->getWSAATokens('wgesinformacionanticipada');
