@@ -29,7 +29,7 @@
                         <div class="mt-2 text-sm text-blue-700">
                             <p>
                                 Seleccione un viaje para exportar su manifiesto en diferentes formatos:
-                                <strong>PARANA.xlsx</strong>, <strong>Guaran.csv</strong>, <strong>Login.xml</strong>, <strong>TFP.txt</strong>, o <strong>EDI/CUSCAR</strong>.
+                                <strong>PARANA.xlsx</strong>, <strong>Guaran.xlsx</strong>, <strong>Login.xml</strong>, <strong>TFP.txt</strong>, o <strong>EDI/CUSCAR</strong>.
                             </p>
                         </div>
                     </div>
@@ -112,10 +112,10 @@
                                             📊 PARANA
                                         </a>
                                         
-                                        <!-- Guaran CSV -->
+                                        <!-- Guaran XLSX -->
                                         <a href="{{ route('company.manifests.export.guaran', $voyage->id) }}" 
                                            class="bg-blue-100 hover:bg-blue-200 text-blue-800 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
-                                           title="Exportar como Guaran.csv">
+                                           title="Exportar como Guaran.xlsx">
                                             📄 Guaran
                                         </a>
                                         
@@ -173,8 +173,8 @@
                 
                 <!-- Guaran -->
                 <div class="bg-white p-4 rounded-lg shadow">
-                    <h4 class="font-medium text-gray-900 mb-2">📄 Guaran.csv</h4>
-                    <p class="text-sm text-gray-600">Formato CSV para manifiestos consolidados multi-línea y multi-destino.</p>
+                    <h4 class="font-medium text-gray-900 mb-2">📄 Guaran.xlsx</h4>
+                    <p class="text-sm text-gray-600">Formato Excel para manifiestos consolidados multi-línea y multi-destino.</p>
                 </div>
                 
                 <!-- Login XML -->
@@ -238,7 +238,7 @@
                         <div class="mt-2 text-sm text-yellow-700">
                             <ul class="list-disc list-inside space-y-1">
                                 <li><strong>PARANA.xlsx</strong>: Mejor para MAERSK y líneas navieras grandes</li>
-                                <li><strong>Guaran.csv</strong>: Ideal para manifiestos consolidados multi-destino</li>
+                                <li><strong>Guaran.xlsx</strong>: Ideal para manifiestos consolidados multi-destino</li>
                                 <li><strong>Login.xml</strong>: Para integración con sistemas automáticos</li>
                                 <li><strong>TFP.txt</strong>: Compatible con sistemas legacy y equipos antiguos</li>
                                 <li><strong>EDI/CUSCAR</strong>: Estándar internacional para aduanas</li>
