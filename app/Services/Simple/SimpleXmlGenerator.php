@@ -3276,47 +3276,154 @@ class SimpleXmlGenerator
         $w->writeElement('IndicadorConsolidado', $this->normalizeIaYesNo($bill->is_consolidated, 'N', 'IndicadorConsolidado'));
         $w->writeElement('IndicadorTransitoTrasbordo', $this->normalizeIaYesNo($bill->is_transit_transshipment, 'N', 'IndicadorTransitoTrasbordo'));
 
-        if ($firstItem->consignee_document_type) {
-            $w->writeElement('TipoDocumentoDestinatarioMercaderia', $this->requireIaText($firstItem->consignee_document_type, 'TipoDocumentoDestinatarioMercaderia', 4));
+        $recipientDocumentType = $this->consistentIaItemValue(
+            $items,
+            'consignee_document_type',
+            "TipoDocumentoDestinatarioMercaderia {$bill->bill_number}"
+        );
+        if ($recipientDocumentType) {
+            $w->writeElement(
+                'TipoDocumentoDestinatarioMercaderia',
+                $this->requireIaText(
+                    $recipientDocumentType,
+                    'TipoDocumentoDestinatarioMercaderia',
+                    4
+                )
+            );
         }
 
-        if ($firstItem->consignee_tax_id) {
-            $recipientTaxId = preg_replace('/\D+/', '', (string) $firstItem->consignee_tax_id);
+        $recipientTaxValue = $this->consistentIaItemValue(
+            $items,
+            'consignee_tax_id',
+            "IdentificadorDestinatarioMercaderia {$bill->bill_number}"
+        );
+        if ($recipientTaxValue) {
+            $recipientTaxId = preg_replace('/\D+/', '', $recipientTaxValue);
             if ($recipientTaxId === '' || strlen($recipientTaxId) > 11) {
-                throw new Exception("Información Anticipada: IdentificadorDestinatarioMercaderia inválido en {$bill->bill_number}.");
+                throw new Exception(
+                    "Información Anticipada: IdentificadorDestinatarioMercaderia inválido en {$bill->bill_number}."
+                );
             }
-            $w->writeElement('IdentificadorDestinatarioMercaderia', $recipientTaxId);
+            $w->writeElement(
+                'IdentificadorDestinatarioMercaderia',
+                $recipientTaxId
+            );
         }
 
-        $tariff = $firstItem->tariff_position ?: $firstItem->commodity_code ?: $bill->commodity_code;
-        $tariff = $this->requireIaText($tariff, "PosicionArancelaria {$bill->bill_number}", 16);
-        if ($this->normalizeIaYesNo($bill->is_consolidated, 'N', 'IndicadorConsolidado') === 'N') {
-            $len = strlen($tariff);
-            if ($len < 7 || $len > 15) {
-                throw new Exception("Información Anticipada: PosicionArancelaria de {$bill->bill_number} debe tener entre 7 y 15 caracteres cuando no es consolidado.");
+        $tariffCandidates = $items
+            ->map(fn ($item) => trim((string) (
+                $item->tariff_position ?: $item->commodity_code
+            )))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $tariff = trim((string) $bill->commodity_code);
+        if ($tariff === '') {
+            if ($tariffCandidates->count() !== 1) {
+                throw new Exception(
+                    "Información Anticipada: {$bill->bill_number} debe tener "
+                    . 'una única PosicionArancelaria a nivel título; '
+                    . "se encontraron {$tariffCandidates->count()} valores."
+                );
             }
+            $tariff = (string) $tariffCandidates->first();
         }
-        $w->writeElement('PosicionArancelaria', $tariff);
 
-        $w->writeElement('IndicadorOperadorLogisticoSeguro', $this->normalizeIaYesNo($firstItem->is_secure_logistics_operator, 'N', 'IndicadorOperadorLogisticoSeguro'));
-        $w->writeElement('IndicadorTransitoMonitoreado', $this->normalizeIaYesNo($firstItem->is_monitored_transit, 'N', 'IndicadorTransitoMonitoreado'));
-        $w->writeElement('IndicadorRenar', $this->normalizeIaYesNo($firstItem->is_renar, 'N', 'IndicadorRenar'));
-
-        $w->writeElement(
-            'RazonSocialFowarderExterior',
-            $this->requireIaText($firstItem->foreign_forwarder_name, "RazonSocialFowarderExterior {$bill->bill_number}", 70)
+        $tariff = $this->requireIaText(
+            $tariff,
+            "PosicionArancelaria {$bill->bill_number}",
+            16
         );
 
-        if ($firstItem->foreign_forwarder_tax_id) {
-            $w->writeElement('IndicadorTributarioForwarderExterior', $this->requireIaText($firstItem->foreign_forwarder_tax_id, 'IndicadorTributarioForwarderExterior', 35));
+        if (
+            $this->normalizeIaYesNo(
+                $bill->is_consolidated,
+                'N',
+                'IndicadorConsolidado'
+            ) === 'N'
+        ) {
+            $length = strlen($tariff);
+            if ($length < 7 || $length > 15) {
+                throw new Exception(
+                    "Información Anticipada: PosicionArancelaria de "
+                    . "{$bill->bill_number} debe tener entre 7 y 15 "
+                    . 'caracteres cuando no es consolidado.'
+                );
+            }
         }
 
-        if ($firstItem->foreign_forwarder_country) {
-            $w->writeElement('CodigoPaisEmisorIdentificadorForwarderExterior', $this->resolveIaCountryCodeValue($firstItem->foreign_forwarder_country, 'CodigoPaisEmisorIdentificadorForwarderExterior'));
+        $w->writeElement('PosicionArancelaria', $tariff);
+
+        $w->writeElement(
+            'IndicadorOperadorLogisticoSeguro',
+            $this->consistentIaIndicator(
+                $items,
+                'is_secure_logistics_operator',
+                'IndicadorOperadorLogisticoSeguro'
+            )
+        );
+        $w->writeElement(
+            'IndicadorTransitoMonitoreado',
+            $this->consistentIaIndicator(
+                $items,
+                'is_monitored_transit',
+                'IndicadorTransitoMonitoreado'
+            )
+        );
+        $w->writeElement(
+            'IndicadorRenar',
+            $this->consistentIaIndicator(
+                $items,
+                'is_renar',
+                'IndicadorRenar'
+            )
+        );
+
+        $forwarderName = $this->consistentIaItemValue(
+            $items,
+            'foreign_forwarder_name',
+            "RazonSocialFowarderExterior {$bill->bill_number}",
+            true
+        );
+        $w->writeElement(
+            'RazonSocialFowarderExterior',
+            $this->requireIaText(
+                $forwarderName,
+                "RazonSocialFowarderExterior {$bill->bill_number}",
+                70
+            )
+        );
+
+        $forwarderTaxId = $this->consistentIaItemValue(
+            $items,
+            'foreign_forwarder_tax_id',
+            "IndicadorTributarioForwarderExterior {$bill->bill_number}"
+        );
+        if ($forwarderTaxId) {
+            $w->writeElement(
+                'IndicadorTributarioForwarderExterior',
+                $this->requireIaText(
+                    $forwarderTaxId,
+                    'IndicadorTributarioForwarderExterior',
+                    35
+                )
+            );
         }
 
-        if ($firstItem->comments) {
-            $w->writeElement('Comentario', $this->requireIaText($firstItem->comments, 'Comentario', 60));
+        $forwarderCountry = $this->consistentIaItemValue(
+            $items,
+            'foreign_forwarder_country',
+            "CodigoPaisEmisorIdentificadorForwarderExterior {$bill->bill_number}"
+        );
+        if ($forwarderCountry) {
+            $w->writeElement(
+                'CodigoPaisEmisorIdentificadorForwarderExterior',
+                $this->resolveIaCountryCodeValue(
+                    $forwarderCountry,
+                    'CodigoPaisEmisorIdentificadorForwarderExterior'
+                )
+            );
         }
 
         $customsCode = $bill->discharge_customs_code
@@ -3327,7 +3434,12 @@ class SimpleXmlGenerator
             ?: $bill->dischargePort?->afip_code;
 
         $operativeCode = $bill->operational_discharge_code
-            ?: $firstItem->operational_discharge_code;
+            ?: $this->consistentIaItemValue(
+                $items,
+                'operational_discharge_code',
+                "CodigoLugarOperativoDescarga {$bill->bill_number}",
+                true
+            );
 
         $w->writeElement('CodigoLugarOperativoDescarga', $this->requireIaFixedText($operativeCode, "CodigoLugarOperativoDescarga {$bill->bill_number}", 5));
         $w->writeElement('CodigoAduanaDescarga', $this->requireIaFixedText($customsCode, "CodigoAduanaDescarga {$bill->bill_number}", 3));
@@ -3595,6 +3707,62 @@ class SimpleXmlGenerator
         }
 
         return null;
+    }
+
+    private function consistentIaItemValue(
+        \Illuminate\Support\Collection $items,
+        string $field,
+        string $label,
+        bool $required = false
+    ): ?string {
+        $values = $items
+            ->map(fn ($item) => trim((string) $item->{$field}))
+            ->filter(fn ($value) => $value !== '')
+            ->unique()
+            ->values();
+
+        if ($values->count() > 1) {
+            throw new Exception(
+                "Información Anticipada: {$label} tiene valores distintos "
+                . 'dentro del mismo conocimiento.'
+            );
+        }
+
+        if ($required && $values->isEmpty()) {
+            throw new Exception(
+                "Información Anticipada: {$label} es obligatorio."
+            );
+        }
+
+        return $values->isEmpty()
+            ? null
+            : (string) $values->first();
+    }
+
+    private function consistentIaIndicator(
+        \Illuminate\Support\Collection $items,
+        string $field,
+        string $label
+    ): string {
+        $values = $items
+            ->map(
+                fn ($item) => $this->normalizeIaYesNo(
+                    $item->{$field},
+                    'N',
+                    $label
+                )
+            )
+            ->unique()
+            ->values();
+
+        if ($values->count() !== 1) {
+            throw new Exception(
+                "Información Anticipada: {$label} tiene valores distintos "
+                . 'dentro del mismo conocimiento.'
+            );
+        }
+
+        return (string) $values->first();
     }
 
     private function requireIaText($value, string $field, ?int $maxLength = null): string
