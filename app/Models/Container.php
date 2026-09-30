@@ -91,6 +91,8 @@ class Container extends Model
         'package_count' => 'integer',
         'hazmat_info' => 'array',
         'additional_seals' => 'array',
+        'webservice_data' => 'array',
+        'csc_expiry_date' => 'date',
         'container_condition' => 'string',
     ];
 
