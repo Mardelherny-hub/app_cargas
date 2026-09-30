@@ -242,6 +242,30 @@ XML;
         );
     }
 
+    public function test_manifest_customs_flow_delegates_anticipada_transaction_to_service(): void
+    {
+        $source = $this->source(
+            'app/Http/Controllers/Company/Manifests/ManifestCustomsController.php'
+        );
+
+        $this->assertStringContainsString(
+            "if (\$request->webservice_type === 'anticipada')",
+            $source
+        );
+        $this->assertStringContainsString(
+            "\$service->registrarViaje(\$voyage",
+            $source
+        );
+        $this->assertStringContainsString(
+            'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+            $source
+        );
+        $this->assertStringContainsString(
+            'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
+            $source
+        );
+    }
+
     public function test_no_dead_cerrar_viaje_route_remains(): void
     {
         $routes = $this->source('routes/company.php');
