@@ -1615,7 +1615,10 @@ class SimpleXmlGenerator
 
     private function callWSAA(string $signedTicket): array
     {
-        $wsdlUrl = 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl';
+        $environment = $this->config['environment'] ?? 'testing';
+        $wsdlUrl = $environment === 'production'
+            ? 'https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl'
+            : 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl';
         
         $client = new \SoapClient($wsdlUrl, [
             'trace' => true,
