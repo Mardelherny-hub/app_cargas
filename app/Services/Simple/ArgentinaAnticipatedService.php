@@ -109,7 +109,7 @@ class ArgentinaAnticipatedService
             }
 
             if (!$this->hasAfipCountryCode($vessel->flagCountry)) {
-                $validation['errors'][] = 'La nacionalidad de la embarcación no tiene código PAY_PAIS de Aduana';
+                $validation['errors'][] = 'La nacionalidad de la embarcación no tiene un código de país válido para Aduana';
             }
         }
 
@@ -117,10 +117,10 @@ class ArgentinaAnticipatedService
             $validation['errors'][] = 'CodigoPuertoOrigen es obligatorio';
         } else {
             if (mb_strlen(trim((string) $voyage->originPort->code)) !== 5) {
-                $validation['errors'][] = 'CodigoPuertoOrigen debe tener 5 caracteres POR_PAIS';
+                $validation['errors'][] = 'El código del puerto de origen debe tener 5 caracteres';
             }
             if (!$this->hasAfipCountryCode($voyage->originPort->country)) {
-                $validation['errors'][] = 'CodigoPaisProcedencia no tiene código PAY_PAIS de Aduana';
+                $validation['errors'][] = 'El país de procedencia no tiene un código válido para Aduana';
             }
         }
 
@@ -129,7 +129,7 @@ class ArgentinaAnticipatedService
             && $voyage->destinationPort->country
             && !$this->hasAfipCountryCode($voyage->destinationPort->country)
         ) {
-            $validation['errors'][] = 'CodigoPaisFinViaje no tiene código PAY_PAIS de Aduana';
+            $validation['errors'][] = 'El país de destino final no tiene un código válido para Aduana';
         }
 
         if (!$voyage->estimated_arrival_date) {
@@ -159,7 +159,7 @@ class ArgentinaAnticipatedService
             strtoupper(trim((string) $this->company->country))
         )->first();
         if (!$this->hasAfipCountryCode($companyCountry)) {
-            $validation['errors'][] = 'CodigoPaisTransportista no tiene código PAY_PAIS de Aduana';
+            $validation['errors'][] = 'El país del transportista no tiene un código válido para Aduana';
         }
 
         $argentinePort = null;
@@ -194,13 +194,14 @@ class ArgentinaAnticipatedService
                 )->where('is_active', true)->first();
 
                 if (!$location) {
-                    $validation['errors'][] = 'CodigoLugarOperativo no existe en el catálogo LOT_ADUA';
+                    $validation['errors'][] = 'El lugar operativo informado no existe en el catálogo de Aduana';
                 } elseif (!preg_match('/^\\d{3}$/', (string) $location->customs_code)) {
                     $validation['errors'][] = 'El lugar operativo seleccionado no tiene un código de Aduana válido';
                 }
             } elseif (!$this->resolveThreeDigitCustomsCode(
                 $explicitCustoms,
-                $argentinePort->primaryCustomsOffice
+                $argentinePort->primaryCustomsOffice,
+                $argentinePort
             )) {
                 $validation['errors'][] = "No se pudo determinar el código de Aduana requerido para RegistrarViaje. Verifique la Aduana asociada al puerto argentino {$argentinePort->code}.";
             }
@@ -343,6 +344,7 @@ class ArgentinaAnticipatedService
     {
         foreach ($customsSources as $source) {
             foreach ([
+                $source?->afip_code ?? null,
                 $source?->webservice_code ?? null,
                 $source?->code ?? null,
             ] as $candidate) {
@@ -454,10 +456,10 @@ class ArgentinaAnticipatedService
             $destinationCountry = trim((string) $bill->destination_country_code);
             if ($destinationCountry !== '') {
                 if (!$this->hasAfipCountryValue($destinationCountry)) {
-                    $validation['errors'][] = "Conocimiento {$billLabel}: CodigoPaisDestino no es PAY_PAIS válido";
+                    $validation['errors'][] = "Conocimiento {$billLabel}: el país de destino no tiene un código válido para Aduana";
                 }
             } elseif (!$this->hasAfipCountryCode($bill->dischargePort?->country)) {
-                $validation['errors'][] = "Conocimiento {$billLabel}: no puede resolverse CodigoPaisDestino";
+                $validation['errors'][] = "Conocimiento {$billLabel}: no se pudo determinar el país de destino requerido por Aduana";
             }
 
             $billMarks = trim((string) $bill->cargo_marks);
@@ -544,7 +546,7 @@ class ArgentinaAnticipatedService
                         ->where('is_active', true)
                         ->first();
                     if (!$location) {
-                        $validation['errors'][] = "Conocimiento {$billLabel}: CodigoLugarOperativoDescarga {$operative} no existe en LOT_ADUA";
+                        $validation['errors'][] = "Conocimiento {$billLabel}: el lugar operativo de descarga {$operative} no existe en el catálogo de Aduana";
                     } else {
                         $providedCustoms = trim((string) $bill->discharge_customs_code);
                         if ($providedCustoms === '') {
@@ -560,7 +562,7 @@ class ArgentinaAnticipatedService
                             }
                         }
                         if ($providedCustoms !== '' && str_pad(preg_replace('/\\D+/', '', $providedCustoms), 3, '0', STR_PAD_LEFT) !== (string) $location->customs_code) {
-                            $validation['errors'][] = "Conocimiento {$billLabel}: CodigoAduanaDescarga no corresponde a LOT_ADUA {$operative}";
+                            $validation['errors'][] = "Conocimiento {$billLabel}: la Aduana de descarga no corresponde al lugar operativo {$operative}";
                         }
                     }
                 }
@@ -649,13 +651,13 @@ class ArgentinaAnticipatedService
 
         $summary = [
             [$missingOrigin, 'conocimientos sin LugarOrigen'],
-            [$missingOriginCountry, 'conocimientos sin CodigoPaisLugarOrigen PAY_PAIS'],
+            [$missingOriginCountry, 'conocimientos sin código de país de origen válido para Aduana'],
             [$missingTitleMarks, 'conocimientos sin MarcaBultos'],
             [$missingForwarder, 'conocimientos sin RazonSocialFowarderExterior'],
-            [$missingPackaging, 'líneas sin CodigoEmbalaje NEB_DESC de 2 caracteres'],
+            [$missingPackaging, 'líneas sin código de embalaje válido de 2 caracteres'],
             [$missingLineMarks, 'líneas sin NumeroBultos'],
             [$invalidDescription, 'líneas con DescripcionMercaderia ausente o mayor a 80 caracteres'],
-            [$invalidWeight, 'líneas con PesoVolumenManifestado inválido para Int(12)'],
+            [$invalidWeight, 'líneas con peso o volumen manifestado inválido'],
             [$invalidContainer, 'contenedores con datos obligatorios inválidos'],
             [$missingClosingOperator, 'contenedores de cierre sin CuitAtaOperadorContenedor válido'],
         ];
