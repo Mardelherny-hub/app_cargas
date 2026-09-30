@@ -87,29 +87,7 @@ class SoapClientService
  */
 public function createClient(string $webserviceType, string $environment = 'testing'): SoapClient
 {
-    // Al inicio del método getWsdlUrl(), agrega:
-Log::debug('DEFAULT_WEBSERVICE_URLS structure', [
-    'full_array' => self::DEFAULT_WEBSERVICE_URLS
-]);
     $wsdlUrl = $this->getWsdlUrl($webserviceType, $environment);
-
-     // 🔍 DEBUG: Descargar el WSDL manualmente para ver qué recibimos
-    try {
-        $context = $this->createStreamContext();
-        $wsdlContent = file_get_contents($wsdlUrl, false, $context);
-        
-        Log::debug('WSDL Content Debug', [
-            'url' => $wsdlUrl,
-            'content_length' => strlen($wsdlContent),
-            'first_100_chars' => substr($wsdlContent, 0, 100),
-            'last_100_chars' => substr($wsdlContent, -100),
-            'contains_wsdl' => strpos($wsdlContent, '<wsdl:') !== false,
-            'contains_html' => strpos($wsdlContent, '<html') !== false,
-        ]);
-        
-    } catch (Exception $e) {
-        Log::error('Error descargando WSDL para debug', ['error' => $e->getMessage()]);
-    }
 
     $soapOptions = [
         'soap_version' => $webserviceType === 'anticipada' ? SOAP_1_1 : SOAP_1_2,
@@ -130,8 +108,11 @@ Log::debug('DEFAULT_WEBSERVICE_URLS structure', [
     try {
         $this->soapClient = new SoapClient($wsdlUrl, $soapOptions);
 
-        // Configurar headers de autenticación si es necesario
-        $this->addAuthenticationHeaders($webserviceType);
+        // Información Anticipada autentica dentro de argWSAutenticacionEmpresa.
+        // No debe agregarse un SoapHeader paralelo ni cambiarse el endpoint.
+        if ($webserviceType !== 'anticipada') {
+            $this->addAuthenticationHeaders($webserviceType);
+        }
 
         return $this->soapClient;
 
@@ -250,13 +231,6 @@ Log::debug('DEFAULT_WEBSERVICE_URLS structure', [
             ]);
         }
 
-         // 🐛 DEBUG TEMPORAL
-    Log::debug('getCountryFromWebserviceType result', [
-        'webserviceType' => $webserviceType,
-        'country_result' => $country,
-        'mapping_exists' => isset($webserviceCountryMapping[$webserviceType])
-    ]);
-
         return $country;
     }
 
@@ -273,9 +247,9 @@ private function createStreamContext()
             'header' => "Accept: text/xml\r\n",
         ],
         'ssl' => [
-            'verify_peer' => false,           // ⭐ PARA DESARROLLO
-            'verify_peer_name' => false,      // ⭐ PARA DESARROLLO  
-            'allow_self_signed' => true,      // ⭐ PARA DESARROLLO
+            'verify_peer' => true,
+            'verify_peer_name' => true,
+            'allow_self_signed' => false,
             'ciphers' => 'DEFAULT',
         ],
     ];
