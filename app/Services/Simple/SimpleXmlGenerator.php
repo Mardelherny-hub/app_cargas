@@ -3517,6 +3517,13 @@ class SimpleXmlGenerator
             $w->writeElement('CodigoPuertoDescarga', $this->requireIaPortCode($bill?->dischargePort ?: $voyage->destinationPort, 'CodigoPuertoDescarga contenedor'));
             $w->writeElement('FechaDescarga', $this->formatIaDateTime($bill?->discharge_date ?: $voyage->estimated_arrival_date, 'FechaDescarga contenedor'));
 
+        }
+
+        if ($container->condition_description) {
+            $w->writeElement('Comentario', $this->requireIaText($container->condition_description, 'Comentario contenedor', 60));
+        }
+
+        if ($condition === 'V') {
             $customsCode = $bill?->discharge_customs_code
                 ?: $bill?->dischargeCustoms?->webservice_code
                 ?: $voyage->destinationCustoms?->webservice_code
@@ -3528,10 +3535,6 @@ class SimpleXmlGenerator
 
             $w->writeElement('CodigoAduana', $this->requireIaFixedText($customsCode, 'CodigoAduana contenedor', 3));
             $w->writeElement('CodigoLugarOperativoDescarga', $this->requireIaFixedText($operativeCode, 'CodigoLugarOperativoDescarga contenedor', 5));
-        }
-
-        if ($container->condition_description) {
-            $w->writeElement('Comentario', $this->requireIaText($container->condition_description, 'Comentario contenedor', 60));
         }
 
         $w->endElement();
