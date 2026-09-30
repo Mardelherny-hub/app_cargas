@@ -150,6 +150,14 @@ class Container extends Model
     }
 
     /**
+     * Operador del contenedor, cuando fue informado.
+     */
+    public function operatorClient(): BelongsTo
+    {
+        return $this->belongsTo(Client::class, 'operator_client_id');
+    }
+
+    /**
      * Verificar si es casa a casa
      */
     public function isHouseToHouse(): bool
