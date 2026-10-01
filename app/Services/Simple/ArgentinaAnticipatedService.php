@@ -158,12 +158,14 @@ class ArgentinaAnticipatedService
         $isEmptyTransport = strtoupper(trim((string) $voyage->is_empty_transport));
         $hasCargoOnboard = strtoupper(trim((string) $voyage->has_cargo_onboard));
 
-        if ($isEmptyTransport === 'N' && $hasCargoOnboard === 'S' && empty($ataCbcTaxIds)) {
-            $validation['errors'][] = 'El viaje con mercadería a bordo requiere informar al menos un CUIT de ATA CBC';
-        }
+        if (array_key_exists('ata_cbc_cuits', $options)) {
+            if ($isEmptyTransport === 'N' && $hasCargoOnboard === 'S' && empty($ataCbcTaxIds)) {
+                $validation['errors'][] = 'El viaje con mercadería a bordo requiere informar al menos un CUIT de ATA CBC';
+            }
 
-        if ($isEmptyTransport === 'S' && !empty($ataCbcTaxIds)) {
-            $validation['errors'][] = 'No corresponde informar ATA CBC para un transporte en lastre';
+            if ($isEmptyTransport === 'S' && !empty($ataCbcTaxIds)) {
+                $validation['errors'][] = 'No corresponde informar ATA CBC para un transporte en lastre';
+            }
         }
 
         $carrier = $vessel?->owner;
