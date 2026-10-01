@@ -2757,7 +2757,7 @@ class SimpleXmlGenerator
      * @return string XML completo según especificación AFIP
      * @throws Exception Si faltan datos obligatorios o error en generación
      */
-    public function createRegistrarViajeXml(Voyage $voyage, string $transactionId): string
+    public function createRegistrarViajeXml(Voyage $voyage, string $transactionId, array $voyageData = []): string
     {
         try {
             // Validar datos obligatorios
@@ -2796,7 +2796,7 @@ class SimpleXmlGenerator
 
                     // Información Anticipada Marítima (estructura principal)
                     $w->startElement('InformacionAnticipadaMaritimaDoc');
-                        $this->addVoyageInformation($w, $voyage);
+                        $this->addVoyageInformation($w, $voyage, $voyageData);
                         $this->addContainersInformation($w, $voyage);
                     $w->endElement(); // InformacionAnticipadaMaritimaDoc
 
@@ -2872,7 +2872,7 @@ class SimpleXmlGenerator
                         // Identificador del viaje original (obligatorio para rectificación)
                         $w->writeElement('IdentificadorViaje', $this->iaRequired($rectificationData['original_external_reference'], 'IdentificadorViaje', 16));
                         
-                        $this->addVoyageInformation($w, $voyage);
+                        $this->addVoyageInformation($w, $voyage, $rectificationData);
                         $this->addContainersInformation($w, $voyage);
                     $w->endElement(); // InformacionAnticipadaMaritimaDoc
 
@@ -3068,7 +3068,7 @@ class SimpleXmlGenerator
     /**
      * Agregar información del viaje al XML
      */
-    private function addVoyageInformation(\XMLWriter $w, Voyage $voyage): void
+    private function addVoyageInformation(\XMLWriter $w, Voyage $voyage, array $voyageData = []): void
     {
         $voyage->loadMissing([
             'leadVessel.flagCountry',
@@ -3144,13 +3144,38 @@ class SimpleXmlGenerator
             $w->writeElement('Comentario', $this->iaRequired($voyage->special_instructions, 'Comentario', 60));
         }
 
-        if (
-            $this->iaYesNoRequired($voyage->is_empty_transport, 'IndicadorTransporteVacio') === 'N'
-            && $this->iaYesNoRequired($voyage->has_cargo_onboard, 'IndicadorMercaderiaAbordo') === 'S'
-        ) {
+        $isEmptyTransport = $this->iaYesNoRequired(
+            $voyage->is_empty_transport,
+            'IndicadorTransporteVacio'
+        );
+        $hasCargoOnboard = $this->iaYesNoRequired(
+            $voyage->has_cargo_onboard,
+            'IndicadorMercaderiaAbordo'
+        );
+        $ataCbcTaxIds = $this->iaAtaCbcTaxIds(
+            $voyageData['ata_cbc_cuits'] ?? []
+        );
+
+        if ($isEmptyTransport === 'N' && $hasCargoOnboard === 'S' && empty($ataCbcTaxIds)) {
             throw new Exception(
-                'Información Anticipada: el viaje con mercadería a bordo requiere informar al menos un ATA CBC asociado antes de RegistrarViaje.'
+                'Información Anticipada: el viaje con mercadería a bordo requiere informar al menos un CUIT de ATA CBC.'
             );
+        }
+
+        if ($isEmptyTransport === 'S' && !empty($ataCbcTaxIds)) {
+            throw new Exception(
+                'Información Anticipada: no corresponde informar ATA CBC para un transporte en lastre.'
+            );
+        }
+
+        if (!empty($ataCbcTaxIds)) {
+            $w->startElement('AtaCbcViaje');
+            foreach ($ataCbcTaxIds as $taxId) {
+                $w->startElement('AtaCbc');
+                $w->writeElement('CuitAtaCbc', $taxId);
+                $w->endElement();
+            }
+            $w->endElement();
         }
     }
 
@@ -3288,6 +3313,29 @@ class SimpleXmlGenerator
             throw new Exception("Información Anticipada: {$label} debe ser S o N.");
         }
         return $value;
+    }
+
+    private function iaAtaCbcTaxIds($value): array
+    {
+        $values = is_array($value)
+            ? $value
+            : preg_split('/[,;\\n]+/', (string) $value);
+
+        $taxIds = [];
+        foreach ($values as $item) {
+            $digits = preg_replace('/\\D+/', '', (string) $item);
+            if ($digits === '') {
+                continue;
+            }
+            if (strlen($digits) !== 11) {
+                throw new Exception(
+                    'Información Anticipada: cada CUIT de ATA CBC debe contener 11 dígitos.'
+                );
+            }
+            $taxIds[$digits] = $digits;
+        }
+
+        return array_values($taxIds);
     }
 
     private function iaCountry($country, string $label): string
