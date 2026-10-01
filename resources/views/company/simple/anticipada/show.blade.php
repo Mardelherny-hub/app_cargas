@@ -507,6 +507,20 @@
                         ¿Está seguro de enviar este método a AFIP?
                     </p>
                     
+                    <div id="ataCbcFields" class="mt-4 hidden">
+                        <label for="ata_cbc_cuits" class="block text-sm font-medium text-gray-700">
+                            CUIT ATA CBC que intervienen en el viaje
+                        </label>
+                        <input id="ata_cbc_cuits"
+                               type="text"
+                               inputmode="numeric"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm"
+                               placeholder="Ej.: 20123456789, 30987654321">
+                        <p class="mt-1 text-xs text-gray-500">
+                            Si interviene más de un ATA CBC, separar los CUIT por coma.
+                        </p>
+                    </div>
+
                     <div class="mt-4">
                         <label for="notes" class="block text-sm font-medium text-gray-700">Notas (opcional):</label>
                         <textarea id="notes" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" placeholder="Ingrese observaciones..."></textarea>
@@ -567,7 +581,15 @@
         function sendMethod(method) {
             currentMethod = method;
             document.getElementById('modalTitle').textContent = `Enviar ${method}`;
-            document.getElementById('modalMessage').textContent = `¿Está seguro de enviar ${method} para el Viaje{{ $voyage->voyage_number }}?`;
+            document.getElementById('modalMessage').textContent = `¿Está seguro de enviar ${method} para el Viaje {{ $voyage->voyage_number }}?`;
+
+            const ataCbcFields = document.getElementById('ataCbcFields');
+            if (['RegistrarViaje', 'RectificarViaje'].includes(method)) {
+                ataCbcFields.classList.remove('hidden');
+            } else {
+                ataCbcFields.classList.add('hidden');
+            }
+
             document.getElementById('sendModal').classList.remove('hidden');
         }
         
@@ -578,6 +600,7 @@
         
         document.getElementById('confirmSend').addEventListener('click', function() {
             const notes = document.getElementById('notes').value;
+            const ataCbcCuits = document.getElementById('ata_cbc_cuits').value;
             const button = this;
             const originalText = button.textContent;
             
@@ -598,6 +621,9 @@
                     method: currentMethod,
                     environment: @json($voyage->company->ws_environment ?? 'testing'),
                     notes: notes,
+                    ata_cbc_cuits: ['RegistrarViaje', 'RectificarViaje'].includes(currentMethod)
+                        ? ataCbcCuits
+                        : [],
                     rectification_reason: currentMethod === 'RectificarViaje' ? notes : null
                 })
             })
