@@ -3229,6 +3229,11 @@ class SimpleXmlGenerator
 
         $expiry = $container->expiry_date ?: $container->csc_expiry_date;
         $acep = data_get($container->webservice_data, 'acep');
+        if ($expiry && $acep) {
+            throw new Exception(
+                "Contenedor {$number}: no se pueden informar simultáneamente FechaVencimientoContenedor y ACEP."
+            );
+        }
         if ($expiry) {
             $w->writeElement('FechaVencimientoContenedor', $this->iaDate($expiry));
         }
@@ -3303,18 +3308,18 @@ class SimpleXmlGenerator
 
     private function iaCountryValue($value, string $label): string
     {
-        $value = trim((string) $value);
+        $value = strtoupper(trim((string) $value));
         if (strlen($value) === 2) {
-            $country = \App\Models\Country::where('alpha2_code', strtoupper($value))->first();
+            $country = \App\Models\Country::where('alpha2_code', $value)->first();
             return $this->iaCountry($country, $label);
         }
-        if (ctype_digit($value)) {
-            $value = str_pad($value, 3, '0', STR_PAD_LEFT);
+
+        if (!preg_match('/^\\d{3}$/', $value)) {
+            throw new Exception("Información Anticipada: {$label} debe ser un código PAY_PAIS válido de ARCA.");
         }
-        if (strlen($value) !== 3) {
-            throw new Exception("Información Anticipada: {$label} debe tener 3 caracteres.");
-        }
-        return $value;
+
+        $country = \App\Models\Country::where('codigo_afip', $value)->first();
+        return $this->iaCountry($country, $label);
     }
 
     private function iaPort($port, string $label): string
@@ -3884,6 +3889,11 @@ class SimpleXmlGenerator
 
         $expiry = $container->expiry_date ?: $container->csc_expiry_date;
         $acep = data_get($container->webservice_data, 'acep');
+        if ($expiry && $acep) {
+            throw new Exception(
+                "Contenedor {$number}: no se pueden informar simultáneamente FechaVencimientoContenedor y ACEP."
+            );
+        }
 
         $w->startElement('ar:' . ($closing ? 'ContenedorCierre' : 'Contenedor'));
 
@@ -3969,9 +3979,6 @@ class SimpleXmlGenerator
             throw new Exception('Viaje debe tener puerto de destino definido');
         }
 
-        if (!$voyage->departure_date) {
-            throw new Exception('Viaje debe tener fecha de salida definida');
-        }
     }
 
    private function getCountryCode(string $alpha2Code): string
