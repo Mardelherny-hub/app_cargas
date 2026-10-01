@@ -374,6 +374,31 @@ class ArgentinaAnticipatedService
         return array_values($taxIds);
     }
 
+    private function withDefaultAtaCbcTaxId(Voyage $voyage, array $options): array
+    {
+        $isEmptyTransport = strtoupper(trim((string) $voyage->is_empty_transport));
+        $hasCargoOnboard = strtoupper(trim((string) $voyage->has_cargo_onboard));
+
+        if ($isEmptyTransport !== 'N' || $hasCargoOnboard !== 'S') {
+            return $options;
+        }
+
+        $companyTaxId = preg_replace('/\\D+/', '', (string) $this->company->tax_id);
+        if (strlen($companyTaxId) !== 11) {
+            return $options;
+        }
+
+        $ataCbcTaxIds = $options['ata_cbc_cuits'] ?? [];
+        $ataCbcTaxIds = is_array($ataCbcTaxIds)
+            ? $ataCbcTaxIds
+            : preg_split('/[,;\\n]+/', (string) $ataCbcTaxIds);
+
+        $ataCbcTaxIds[] = $companyTaxId;
+        $options['ata_cbc_cuits'] = $ataCbcTaxIds;
+
+        return $options;
+    }
+
     private function hasAfipCountryCode($country): bool
     {
         if (!$country) {
@@ -427,6 +452,7 @@ class ArgentinaAnticipatedService
      */
     public function canProcessVoyage(Voyage $voyage, array $options = []): array
     {
+        $options = $this->withDefaultAtaCbcTaxId($voyage, $options);
         $validation = $this->validateSpecificData($voyage, $options);
         $validation['can_process'] = empty($validation['errors']);
 
@@ -787,6 +813,7 @@ class ArgentinaAnticipatedService
      */
     public function registrarViaje(Voyage $voyage, array $options = []): array
     {
+        $options = $this->withDefaultAtaCbcTaxId($voyage, $options);
         $validation = $this->validateSpecificData($voyage, $options);
         if (!empty($validation['errors'])) {
             return [
@@ -949,6 +976,7 @@ class ArgentinaAnticipatedService
             }
         }
 
+        $options = $this->withDefaultAtaCbcTaxId($voyage, $options);
         $validation = $this->validateSpecificData($voyage, $options);
         if (!empty($validation['errors'])) {
             return [
