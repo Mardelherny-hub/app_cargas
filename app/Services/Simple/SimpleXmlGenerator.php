@@ -3336,6 +3336,25 @@ class SimpleXmlGenerator
 
     private function iaVoyageCustomsCode(Voyage $voyage): string
     {
+        $operativeCodes = $this->iaVoyageOperativeCodes($voyage);
+        if ($operativeCodes->isNotEmpty()) {
+            $customsCodes = $operativeCodes
+                ->map(fn ($code) => $this->iaCustomsFromOperativeCode(
+                    $code,
+                    'CodigoAduana'
+                ))
+                ->unique()
+                ->values();
+
+            if ($customsCodes->count() === 1) {
+                return (string) $customsCodes->first();
+            }
+
+            throw new Exception(
+                'Información Anticipada: los lugares operativos del viaje pertenecen a distintas Aduanas.'
+            );
+        }
+
         $operativeCode = $this->iaVoyageOperativeLocation($voyage);
         if ($operativeCode !== null) {
             return $this->iaCustomsFromOperativeCode(
@@ -3375,6 +3394,35 @@ class SimpleXmlGenerator
         );
     }
 
+    private function iaVoyageOperativeCodes(Voyage $voyage)
+    {
+        $isArgentineOrigin = $voyage->originPort?->country?->alpha2_code === 'AR';
+        $isArgentineDestination = $voyage->destinationPort?->country?->alpha2_code === 'AR';
+
+        if (!$isArgentineOrigin && !$isArgentineDestination) {
+            return collect();
+        }
+
+        $field = $isArgentineOrigin
+            ? 'origin_operative_code'
+            : 'operational_discharge_code';
+
+        $bills = \App\Models\BillOfLading::whereHas(
+            'shipment',
+            fn ($q) => $q->where('voyage_id', $voyage->id)
+        )->with('shipmentItems')->get();
+
+        return $bills
+            ->flatMap(function ($bill) use ($field) {
+                return collect([$bill->{$field}])
+                    ->merge($bill->shipmentItems->pluck($field));
+            })
+            ->filter(fn ($value) => trim((string) $value) !== '')
+            ->map(fn ($value) => trim((string) $value))
+            ->unique()
+            ->values();
+    }
+
     private function iaVoyageOperativeLocation(Voyage $voyage): ?string
     {
         $isArgentineOrigin = $voyage->originPort?->country?->alpha2_code === 'AR';
@@ -3384,26 +3432,17 @@ class SimpleXmlGenerator
             return null;
         }
 
-        $query = \App\Models\BillOfLading::whereHas(
-            'shipment',
-            fn ($q) => $q->where('voyage_id', $voyage->id)
-        );
+        $codes = $this->iaVoyageOperativeCodes($voyage);
 
-        $field = $isArgentineOrigin
-            ? 'origin_operative_code'
-            : 'operational_discharge_code';
-
-        $codes = $query->pluck($field)
-            ->filter(fn ($value) => trim((string) $value) !== '')
-            ->map(fn ($value) => trim((string) $value))
-            ->unique()
-            ->values();
+        foreach ($codes as $code) {
+            $this->iaOperativeCode($code, 'CodigoLugarOperativo');
+        }
 
         if ($codes->count() > 1) {
-            throw new Exception(
-                "Información Anticipada: el viaje tiene más de un {$field}; "
-                . 'no se puede elegir un lugar operativo automáticamente.'
-            );
+            // CodigoLugarOperativo es opcional en RegistrarViaje. Cuando la
+            // carga descarga en más de una terminal de la misma Aduana no se
+            // elige una arbitrariamente; CodigoAduana se resuelve por separado.
+            return null;
         }
 
         if ($codes->isEmpty()) {
