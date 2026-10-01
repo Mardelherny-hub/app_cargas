@@ -2926,6 +2926,7 @@ class SimpleXmlGenerator
         $bills = $voyage->shipments
             ->flatMap(fn ($shipment) => $shipment->billsOfLading)
             ->filter(fn ($bill) => strtoupper(trim((string) $bill->dischargePort?->country?->alpha2_code)) === 'AR')
+            ->filter(fn ($bill) => $this->iaBillHasManifestedCargo($bill))
             ->values();
 
         if ($bills->isEmpty()) {
@@ -2960,12 +2961,13 @@ class SimpleXmlGenerator
             $this->writeIaTitle($w, $bill, false);
         }
 
-        $w->endElement();
-        $w->endElement();
-        $w->endElement();
-        $w->endElement();
-        $w->endElement();
-        $w->endElement();
+        $w->endElement(); // Titulos
+        $this->addContainersInformation($w, $voyage, 'ar:');
+        $w->endElement(); // InformacionTitulosDoc
+        $w->endElement(); // argRegistrarTitulosCBC
+        $w->endElement(); // RegistrarTitulosCbc
+        $w->endElement(); // Body
+        $w->endElement(); // Envelope
         $w->endDocument();
 
         return $w->outputMemory();
@@ -3179,7 +3181,7 @@ class SimpleXmlGenerator
         }
     }
 
-    private function addContainersInformation(\XMLWriter $w, Voyage $voyage): void
+    private function addContainersInformation(\XMLWriter $w, Voyage $voyage, string $prefix = ''): void
     {
         $voyage->loadMissing([
             'shipments.billsOfLading.loadingPort',
@@ -3207,16 +3209,16 @@ class SimpleXmlGenerator
             return;
         }
 
-        $w->startElement('ContenedoresVaciosCorreo');
+        $w->startElement($prefix . 'ContenedoresVaciosCorreo');
         foreach ($entries as $entry) {
-            $this->writeIaContainer($w, $entry['container'], $entry['bill'], $entry['item']);
+            $this->writeIaContainer($w, $entry['container'], $entry['bill'], $entry['item'], $prefix);
         }
         $w->endElement();
     }
 
-    private function writeIaContainer(\XMLWriter $w, $container, BillOfLading $bill, $item): void
+    private function writeIaContainer(\XMLWriter $w, $container, BillOfLading $bill, $item, string $prefix = ''): void
     {
-        $number = $this->iaRequired($container->container_number, 'IdentificadorContenedor', 20);
+        $number = $this->iaRequired($container->container_number, $prefix . 'IdentificadorContenedor', 20);
         $type = $container->containerType?->iso_code ?: $container->containerType?->code;
         $type = $this->iaRequired($type, "Contenedor {$number}: CaracteristicasContenedor", 4);
         if (mb_strlen($type) !== 4) {
@@ -3240,16 +3242,16 @@ class SimpleXmlGenerator
             throw new Exception("Contenedor {$number}: Tara no puede superar PesoBruto.");
         }
 
-        $w->startElement('Contenedor');
-        $w->writeElement('CaracteristicasContenedor', $type);
-        $w->writeElement('IdentificadorContenedor', $number);
-        $w->writeElement('CondicionContenedor', $condition);
-        $w->writeElement('Tara', $this->iaIntegerWeight($tare, "Contenedor {$number}: Tara", 10));
-        $w->writeElement('PesoBruto', $this->iaIntegerWeight($gross, "Contenedor {$number}: PesoBruto", 14));
+        $w->startElement($prefix . 'Contenedor');
+        $w->writeElement($prefix . 'CaracteristicasContenedor', $type);
+        $w->writeElement($prefix . 'IdentificadorContenedor', $number);
+        $w->writeElement($prefix . 'CondicionContenedor', $condition);
+        $w->writeElement($prefix . 'Tara', $this->iaIntegerWeight($tare, "Contenedor {$number}: Tara", 10));
+        $w->writeElement($prefix . 'PesoBruto', $this->iaIntegerWeight($gross, "Contenedor {$number}: PesoBruto", 14));
 
         $seal = trim((string) ($container->customs_seal ?: $container->shipper_seal ?: $container->carrier_seal));
         if ($seal !== '') {
-            $w->writeElement('NumeroPrecintoOrigen', $this->iaRequired($seal, 'NumeroPrecintoOrigen', 35));
+            $w->writeElement($prefix . 'NumeroPrecintoOrigen', $this->iaRequired($seal, $prefix . 'NumeroPrecintoOrigen', 35));
         }
 
         $expiry = $container->expiry_date ?: $container->csc_expiry_date;
@@ -3259,26 +3261,21 @@ class SimpleXmlGenerator
                 "Contenedor {$number}: no se pueden informar simultáneamente FechaVencimientoContenedor y ACEP."
             );
         }
-        if (!$expiry && !$acep) {
-            throw new Exception(
-                "Contenedor {$number}: debe informarse FechaVencimientoContenedor o ACEP."
-            );
-        }
         if ($expiry) {
-            $w->writeElement('FechaVencimientoContenedor', $this->iaDate($expiry));
+            $w->writeElement($prefix . 'FechaVencimientoContenedor', $this->iaDate($expiry));
         }
         if ($acep) {
-            $w->writeElement('Acep', $this->iaRequired($acep, 'ACEP', 20));
+            $w->writeElement($prefix . 'Acep', $this->iaRequired($acep, 'ACEP', 20));
         }
 
         if ($condition === 'V') {
-            $w->writeElement('CodigoPuertoEmbarque', $this->iaPort($bill->loadingPort, 'CodigoPuertoEmbarque'));
+            $w->writeElement($prefix . 'CodigoPuertoEmbarque', $this->iaPort($bill->loadingPort, $prefix . 'CodigoPuertoEmbarque'));
             if ($bill->loading_date) {
-                $w->writeElement('FechaEmbarque', $this->iaDate($bill->loading_date));
+                $w->writeElement($prefix . 'FechaEmbarque', $this->iaDate($bill->loading_date));
             }
-            $w->writeElement('CodigoPuertoDescarga', $this->iaPort($bill->dischargePort, 'CodigoPuertoDescarga'));
+            $w->writeElement($prefix . 'CodigoPuertoDescarga', $this->iaPort($bill->dischargePort, $prefix . 'CodigoPuertoDescarga'));
             if ($bill->discharge_date) {
-                $w->writeElement('FechaDescarga', $this->iaDate($bill->discharge_date));
+                $w->writeElement($prefix . 'FechaDescarga', $this->iaDate($bill->discharge_date));
             }
         }
 
@@ -3288,13 +3285,13 @@ class SimpleXmlGenerator
             "Contenedor {$number}: CodigoLugarOperativoDescarga"
         );
         $w->writeElement(
-            'CodigoAduana',
+            $prefix . 'CodigoAduana',
             $this->iaCustomsFromOperativeCode(
                 $operativeCode,
                 "Contenedor {$number}: CodigoAduana"
             )
         );
-        $w->writeElement('CodigoLugarOperativoDescarga', $operativeCode);
+        $w->writeElement($prefix . 'CodigoLugarOperativoDescarga', $operativeCode);
 
         $w->endElement();
     }
@@ -3618,14 +3615,33 @@ class SimpleXmlGenerator
 
     private function iaContainerCondition($container, $item = null): string
     {
+        if (strtoupper(trim((string) $container->condition)) === 'V') {
+            return 'V';
+        }
+
         $value = strtoupper(trim((string) ($item?->pivot?->container_condition ?: $item?->container_condition ?: $container->container_condition)));
         if (in_array($value, ['H', 'P', 'V', 'C'], true)) {
             return $value;
         }
-        if (strtoupper(trim((string) $container->condition)) === 'V') {
-            return 'V';
-        }
+
         return $value;
+    }
+
+    private function iaBillHasManifestedCargo(BillOfLading $bill): bool
+    {
+        foreach ($bill->shipmentItems as $item) {
+            if ($item->containers->isEmpty()) {
+                return true;
+            }
+
+            foreach ($item->containers as $container) {
+                if (!in_array($this->iaContainerCondition($container, $item), ['V', 'C'], true)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function iaDate($date): string
@@ -4002,11 +4018,6 @@ class SimpleXmlGenerator
         if ($expiry && $acep) {
             throw new Exception(
                 "Contenedor {$number}: no se pueden informar simultáneamente FechaVencimientoContenedor y ACEP."
-            );
-        }
-        if (!$expiry && !$acep) {
-            throw new Exception(
-                "Contenedor {$number}: debe informarse FechaVencimientoContenedor o ACEP."
             );
         }
 
