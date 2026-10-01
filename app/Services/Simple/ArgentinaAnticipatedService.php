@@ -677,7 +677,10 @@ class ArgentinaAnticipatedService
                 }
 
                 $weight = $item->gross_weight_kg;
-                if ($weight === null || !is_numeric($weight) || (float) $weight < 0 || abs((float) $weight - round((float) $weight)) > 0.000001 || strlen((string) (int) round((float) $weight)) > 12) {
+                // En RegistrarTitulosCbc el WSDL define PesoVolumenManifestado
+                // como decimal. Guaran declara pesos con decimales reales, por
+                // lo que no corresponde rechazarlos por no ser enteros.
+                if ($weight === null || !is_numeric($weight) || (float) $weight < 0) {
                     $invalidWeight++;
                 }
 
