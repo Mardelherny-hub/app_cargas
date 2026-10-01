@@ -3647,6 +3647,24 @@ class SimpleXmlGenerator
         return $digits;
     }
 
+    private function iaDecimalWeight(
+        $value,
+        string $label,
+        int $maxIntegerDigits
+    ): string {
+        if (!is_numeric($value) || (float) $value < 0) {
+            throw new Exception("Información Anticipada: {$label} debe ser un decimal no negativo.");
+        }
+
+        $text = trim((string) $value);
+        [$integer] = explode('.', $text, 2);
+        if (strlen(ltrim($integer, '-')) > $maxIntegerDigits) {
+            throw new Exception("Información Anticipada: {$label} supera {$maxIntegerDigits} dígitos enteros.");
+        }
+
+        return $text;
+    }
+
     private function iaIntegerWeight(
         $value,
         string $label,
@@ -3905,8 +3923,8 @@ class SimpleXmlGenerator
             $w->writeElement('ar:CantidadManifestada', (string) $quantity);
             $w->writeElement(
                 'ar:PesoVolumenManifestado',
-                $this->iaIntegerWeight(
-                    $weight,
+                $this->iaDecimalWeight(
+                    $item->gross_weight_kg,
                     "Conocimiento {$number}, línea {$line}: PesoVolumenManifestado",
                     12
                 )
@@ -4021,7 +4039,7 @@ class SimpleXmlGenerator
         $w->writeElement('ar:IdentificadorContenedor', $number);
         $w->writeElement('ar:CondicionContenedor', $condition);
         $w->writeElement('ar:Tara', $this->iaIntegerWeight($tare, "Contenedor {$number}: Tara", 10));
-        $w->writeElement('ar:PesoBruto', $this->iaIntegerWeight($gross, "Contenedor {$number}: PesoBruto", 14));
+        $w->writeElement('ar:PesoBruto', $this->iaDecimalWeight($gross, "Contenedor {$number}: PesoBruto", 14));
 
         $seal = trim((string) ($container->customs_seal ?: $container->shipper_seal ?: $container->carrier_seal));
         if ($seal !== '') {
