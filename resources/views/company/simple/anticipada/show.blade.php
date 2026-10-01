@@ -484,7 +484,7 @@
                         <div class="space-y-2 text-xs text-gray-600">
                             <div><strong>Webservice:</strong> wgesinformacionanticipada</div>
                             <div><strong>Namespace:</strong> Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada</div>
-                            <div><strong>Ambiente:</strong> {{ $webservice_config['environment'] ?? 'testing' }}</div>
+                            <div><strong>Ambiente:</strong> {{ $voyage->company->ws_environment ?? 'testing' }}</div>
                             <div><strong>Requiere certificado:</strong> Sí</div>
                         </div>
                     </div>
@@ -596,7 +596,7 @@
                 },
                 body: JSON.stringify({
                     method: currentMethod,
-                    environment: 'testing',
+                    environment: @json($voyage->company->ws_environment ?? 'testing'),
                     notes: notes,
                     rectification_reason: currentMethod === 'RectificarViaje' ? notes : null
                 })
