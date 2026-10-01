@@ -3113,7 +3113,7 @@ class SimpleXmlGenerator
         $w->writeElement('FechaArribo', $this->iaDate($voyage->estimated_arrival_date));
         $w->writeElement('IndicadorTransporteVacio', $this->iaYesNoRequired($voyage->is_empty_transport, 'IndicadorTransporteVacio'));
         $w->writeElement('IndicadorMercaderiaAbordo', $this->iaYesNoRequired($voyage->has_cargo_onboard, 'IndicadorMercaderiaAbordo'));
-        $w->writeElement('DesignacionTransportista', $this->iaRequired($vesselOwner->legal_name ?: $vesselOwner->commercial_name, 'DesignacionTransportista', 35));
+        $w->writeElement('DesignacionTransportista', $this->iaRequired($vesselOwner->commercial_name ?: $vesselOwner->legal_name, 'DesignacionTransportista', 35));
         $w->writeElement('CodigoPaisTransportista', $this->iaCountry($vesselOwner->country, 'CodigoPaisTransportista'));
         $w->writeElement('CodigoNacionalidadMediodeTransporte', $this->iaCountry($vessel?->flagCountry, 'CodigoNacionalidadMediodeTransporte'));
 
