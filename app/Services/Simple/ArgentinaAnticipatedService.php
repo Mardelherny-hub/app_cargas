@@ -56,7 +56,7 @@ class ArgentinaAnticipatedService
         $this->config = array_merge([
             'webservice_type' => 'anticipada',
             'country' => 'AR',
-            'environment' => 'testing',
+            'environment' => $company->ws_environment ?? 'testing',
             'soap_action_registrar_viaje' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarViaje',
             'soap_action_rectificar_viaje' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RectificarViaje',
             'soap_action_registrar_titulos_cbc' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarTitulosCbc',
@@ -81,6 +81,7 @@ class ArgentinaAnticipatedService
 
         $voyage->loadMissing([
             'leadVessel.flagCountry',
+            'leadVessel.owner.country',
             'captain.documentCountry',
             'originPort.country',
             'destinationPort.country',
@@ -100,7 +101,7 @@ class ArgentinaAnticipatedService
             $validation['errors'][] = 'IdentificadorMedioTransporte: falta embarcación líder';
         } else {
             $vesselIdentifier = trim((string) (
-                $vessel->registration_number ?: $vessel->name
+                $vessel->name ?: $vessel->registration_number
             ));
             if ($vesselIdentifier === '') {
                 $validation['errors'][] = 'IdentificadorMedioTransporte es obligatorio';
@@ -145,21 +146,22 @@ class ArgentinaAnticipatedService
             }
         }
 
-        $carrierName = trim((string) (
-            $this->company->legal_name ?: $this->company->commercial_name
-        ));
-        if ($carrierName === '') {
-            $validation['errors'][] = 'DesignacionTransportista es obligatoria';
-        } elseif (mb_strlen($carrierName) > 35) {
-            $validation['errors'][] = 'DesignacionTransportista supera 35 caracteres';
-        }
+        $carrier = $vessel?->owner;
+        if (!$carrier) {
+            $validation['errors'][] = 'La embarcación no tiene propietario/transportista asociado';
+        } else {
+            $carrierName = trim((string) (
+                $carrier->legal_name ?: $carrier->commercial_name
+            ));
+            if ($carrierName === '') {
+                $validation['errors'][] = 'DesignacionTransportista es obligatoria';
+            } elseif (mb_strlen($carrierName) > 35) {
+                $validation['errors'][] = 'DesignacionTransportista supera 35 caracteres';
+            }
 
-        $companyCountry = \App\Models\Country::where(
-            'alpha2_code',
-            strtoupper(trim((string) $this->company->country))
-        )->first();
-        if (!$this->hasAfipCountryCode($companyCountry)) {
-            $validation['errors'][] = 'El país del transportista no tiene un código válido para Aduana';
+            if (!$this->hasAfipCountryCode($carrier->country)) {
+                $validation['errors'][] = 'El país del transportista no tiene un código válido para Aduana';
+            }
         }
 
         $argentinePort = null;
@@ -322,22 +324,10 @@ class ArgentinaAnticipatedService
             return false;
         }
 
-        $afipCode = trim((string) ($country->codigo_afip ?? ''));
-        if (preg_match('/^\\d{3}$/', $afipCode)) {
-            return true;
-        }
-
-        $customsCode = trim((string) ($country->customs_code ?? ''));
-        if (preg_match('/^\\d{3}$/', $customsCode)) {
-            return true;
-        }
-
-        $numericCode = trim((string) ($country->numeric_code ?? ''));
-        if ($numericCode !== '' && ctype_digit($numericCode)) {
-            $numericCode = str_pad($numericCode, 3, '0', STR_PAD_LEFT);
-        }
-
-        return preg_match('/^\\d{3}$/', $numericCode) === 1;
+        return preg_match(
+            '/^\\d{3}$/',
+            trim((string) ($country->codigo_afip ?? ''))
+        ) === 1;
     }
 
     private function resolveThreeDigitCustomsCode(...$customsSources): ?string
@@ -688,17 +678,7 @@ class ArgentinaAnticipatedService
             return false;
         }
 
-        return \App\Models\Country::query()
-            ->get()
-            ->contains(function ($country) use ($value) {
-                $codes = [
-                    trim((string) ($country->codigo_afip ?? '')),
-                    trim((string) ($country->customs_code ?? '')),
-                    str_pad(trim((string) ($country->numeric_code ?? '')), 3, '0', STR_PAD_LEFT),
-                ];
-
-                return in_array($value, $codes, true);
-            });
+        return \App\Models\Country::where('codigo_afip', $value)->exists();
     }
 
     /**
