@@ -658,7 +658,20 @@
                 icon.className = 'mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100';
                 title.textContent = 'Error en el Envío';
                 title.className = 'text-lg leading-6 font-medium text-red-900 mt-4';
-                message.textContent = data.message || 'Ocurrió un error al procesar la solicitud';
+                const validationErrors = Array.isArray(data.validation_errors)
+                    ? data.validation_errors.filter(Boolean)
+                    : [];
+
+                message.textContent = validationErrors.length
+                    ? validationErrors.join(' · ')
+                    : (
+                        data.error
+                        || data.error_message
+                        || data.details
+                        || data.message
+                        || 'Ocurrió un error al procesar la solicitud'
+                    );
+
                 details.classList.add('hidden');
             }
             
