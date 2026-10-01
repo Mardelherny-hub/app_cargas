@@ -801,6 +801,18 @@ class GuaranExcelParser implements ManifestParserInterface
             ))
             : $this->parseVolume($row['VOLUME'] ?? null);
 
+        $sourceCargoMarks = collect($blRows)
+            ->map(fn ($r) => $this->normalizeGuaranCargoMarks(
+                $r['MARKS_DESCRIPTION'] ?? null
+            ))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $sourceOriginCountry = $this->countryAlpha2FromPortCode(
+            $row['POL'] ?? null
+        );
+
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'shipper_id' => $shipper->id,
@@ -819,6 +831,16 @@ class GuaranExcelParser implements ManifestParserInterface
             'primary_cargo_type_id' => $primaryCargoTypeId,
             'primary_packaging_type_id' => $primaryPackagingTypeId,
             'origin_operative_code' => '10073', // Guaran: lugar operativo origen siempre 10073 (Roberto 22/05). Confirmado contra carga manual (BL 32/31). Serializer lee origin_operative_code para codLugOper origen.
+            // Información Anticipada: conservar únicamente datos que el XLS
+            // declara. POL_TERMINAL identifica el lugar de origen dentro del
+            // puerto de carga y POL aporta el país del mismo lugar.
+            'origin_location' => trim((string) ($row['POL_TERMINAL'] ?? '')) ?: null,
+            'origin_country_code' => $sourceOriginCountry,
+            // MarcaBultos es única a nivel título. Sólo promoverla cuando todas
+            // las filas del BL que la informan coinciden; no elegir una al azar.
+            'cargo_marks' => $sourceCargoMarks->count() === 1
+                ? (string) $sourceCargoMarks->first()
+                : null,
             'bill_number' => $row['BL_NUMBER'],
             'bill_date' => $billDates['bill_date'],
             'loading_date' => $billDates['loading_date'],
@@ -900,6 +922,9 @@ class GuaranExcelParser implements ManifestParserInterface
             'item_description' => $this->buildCargoDescription($row),
             'cargo_type_id' => $cargoTypeId,
             'packaging_type_id' => $packagingTypeId,
+            // PACK TYPE viene explícitamente en Guaran. Se conserva como
+            // descripción fuente sin transformarlo en un código NEB_DESC.
+            'package_type_description' => trim((string) ($row['PACK_TYPE'] ?? '')) ?: null,
             'package_quantity' => $this->parsePackageQuantity(
                 $row['NUMBER_OF_PACKAGES'] ?? null
             ),
