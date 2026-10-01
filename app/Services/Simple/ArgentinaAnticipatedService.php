@@ -70,7 +70,7 @@ class ArgentinaAnticipatedService
      * Validación local del contrato RegistrarViaje.
      * No autentica contra WSAA ni transmite a Aduana.
      */
-    private function validateSpecificData(Voyage $voyage): array
+    private function validateSpecificData(Voyage $voyage, array $options = []): array
     {
         $validation = ['errors' => [], 'warnings' => []];
 
@@ -144,6 +144,26 @@ class ArgentinaAnticipatedService
             if (!in_array(strtoupper(trim((string) $value)), ['S', 'N'], true)) {
                 $validation['errors'][] = "{$label} debe ser S o N";
             }
+        }
+
+        try {
+            $ataCbcTaxIds = $this->normalizeAtaCbcTaxIds(
+                $options['ata_cbc_cuits'] ?? []
+            );
+        } catch (Exception $e) {
+            $ataCbcTaxIds = [];
+            $validation['errors'][] = $e->getMessage();
+        }
+
+        $isEmptyTransport = strtoupper(trim((string) $voyage->is_empty_transport));
+        $hasCargoOnboard = strtoupper(trim((string) $voyage->has_cargo_onboard));
+
+        if ($isEmptyTransport === 'N' && $hasCargoOnboard === 'S' && empty($ataCbcTaxIds)) {
+            $validation['errors'][] = 'El viaje con mercadería a bordo requiere informar al menos un CUIT de ATA CBC';
+        }
+
+        if ($isEmptyTransport === 'S' && !empty($ataCbcTaxIds)) {
+            $validation['errors'][] = 'No corresponde informar ATA CBC para un transporte en lastre';
         }
 
         $carrier = $vessel?->owner;
@@ -331,6 +351,27 @@ class ArgentinaAnticipatedService
         return $validation;
     }
 
+    private function normalizeAtaCbcTaxIds($value): array
+    {
+        $values = is_array($value)
+            ? $value
+            : preg_split('/[,;\\n]+/', (string) $value);
+
+        $taxIds = [];
+        foreach ($values as $item) {
+            $digits = preg_replace('/\\D+/', '', (string) $item);
+            if ($digits === '') {
+                continue;
+            }
+            if (strlen($digits) !== 11) {
+                throw new Exception('Cada CUIT de ATA CBC debe contener 11 dígitos');
+            }
+            $taxIds[$digits] = $digits;
+        }
+
+        return array_values($taxIds);
+    }
+
     private function hasAfipCountryCode($country): bool
     {
         if (!$country) {
@@ -382,9 +423,9 @@ class ArgentinaAnticipatedService
     /**
      * Validar si el voyage puede ser procesado para Información Anticipada.
      */
-    public function canProcessVoyage(Voyage $voyage): array
+    public function canProcessVoyage(Voyage $voyage, array $options = []): array
     {
-        $validation = $this->validateSpecificData($voyage);
+        $validation = $this->validateSpecificData($voyage, $options);
         $validation['can_process'] = empty($validation['errors']);
 
         return $validation;
@@ -744,7 +785,7 @@ class ArgentinaAnticipatedService
      */
     public function registrarViaje(Voyage $voyage, array $options = []): array
     {
-        $validation = $this->validateSpecificData($voyage);
+        $validation = $this->validateSpecificData($voyage, $options);
         if (!empty($validation['errors'])) {
             return [
                 'success' => false,
@@ -782,7 +823,7 @@ class ArgentinaAnticipatedService
             // Generar XML para RegistrarViaje
             $transactionId = $transaction->transaction_id;
             $xmlGenerator = new SimpleXmlGenerator($this->company, $this->config);
-            $xmlContent = $xmlGenerator->createRegistrarViajeXml($voyage, $transactionId);
+            $xmlContent = $xmlGenerator->createRegistrarViajeXml($voyage, $transactionId, $options);
 
             if (!$xmlContent) {
                 throw new Exception('Error generando XML para RegistrarViaje');
@@ -887,7 +928,26 @@ class ArgentinaAnticipatedService
      */
     public function rectificarViaje(Voyage $voyage, array $options = []): array
     {
-        $validation = $this->validateSpecificData($voyage);
+        if (empty($options['ata_cbc_cuits'])) {
+            $previousRegistrar = $voyage->webserviceTransactions()
+                ->where('webservice_type', 'anticipada')
+                ->where('status', 'success')
+                ->where('additional_metadata->method', 'RegistrarViaje')
+                ->latest()
+                ->first();
+
+            $previousAtaCbc = data_get(
+                $previousRegistrar?->additional_metadata,
+                'ata_cbc_cuits',
+                []
+            );
+
+            if (!empty($previousAtaCbc)) {
+                $options['ata_cbc_cuits'] = $previousAtaCbc;
+            }
+        }
+
+        $validation = $this->validateSpecificData($voyage, $options);
         if (!empty($validation['errors'])) {
             return [
                 'success' => false,
@@ -1533,6 +1593,9 @@ class ArgentinaAnticipatedService
         array $options = []
     ): \App\Models\WebserviceTransaction {
         $method = $options['method'] ?? 'RegistrarViaje';
+        $ataCbcTaxIds = $this->normalizeAtaCbcTaxIds(
+            $options['ata_cbc_cuits'] ?? []
+        );
 
         $transactionId = $options['transaction_id'] ?? (
             'IA'
@@ -1555,7 +1618,10 @@ class ArgentinaAnticipatedService
             'webservice_url' => $this->getServiceEndpoint(),
             'soap_action' => $options['soap_action']
                 ?? 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarViaje',
-            'additional_metadata' => ['method' => $method],
+            'additional_metadata' => [
+                'method' => $method,
+                'ata_cbc_cuits' => $ataCbcTaxIds,
+            ],
             'status' => 'pending',
             'retry_count' => 0,
             'max_retries' => 3,
