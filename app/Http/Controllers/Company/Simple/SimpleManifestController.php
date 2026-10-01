@@ -565,11 +565,14 @@ class SimpleManifestController extends Controller
                 ], 400);
             }
 
-            $environment = $request->input('environment', 'testing');
+            // El ambiente de Aduana pertenece a la configuración de la empresa.
+            // No se toma del navegador para evitar usar un certificado de producción
+            // contra WSAA de homologación (o viceversa).
+            $environment = $company->ws_environment ?? 'testing';
             if (!in_array($environment, ['testing', 'production'], true)) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Ambiente no válido',
+                    'error' => 'La empresa no tiene un ambiente de Aduana válido configurado',
                     'error_code' => 'INVALID_ENVIRONMENT',
                 ], 422);
             }
