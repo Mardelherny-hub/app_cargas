@@ -3355,7 +3355,7 @@ class SimpleXmlGenerator
         }
 
         throw new Exception(
-            "Información Anticipada: {$label} no tiene configurado un código PAY_PAIS válido de ARCA."
+            "Información Anticipada: {$label} no tiene configurado un código de país válido para ARCA."
         );
     }
 
@@ -3368,7 +3368,7 @@ class SimpleXmlGenerator
         }
 
         if (!preg_match('/^\\d{3}$/', $value)) {
-            throw new Exception("Información Anticipada: {$label} debe ser un código PAY_PAIS válido de ARCA.");
+            throw new Exception("Información Anticipada: {$label} debe ser un código de país válido para ARCA.");
         }
 
         $country = \App\Models\Country::where('codigo_afip', $value)->first();
