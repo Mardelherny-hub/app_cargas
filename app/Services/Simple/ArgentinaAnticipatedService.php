@@ -179,26 +179,35 @@ class ArgentinaAnticipatedService
         }
 
         if ($argentinePort) {
-            $operativeCodes = $voyage->shipments
-                ->flatMap(fn ($shipment) => $shipment->billsOfLading)
-                ->pluck($operativeField)
-                ->filter(fn ($value) => trim((string) $value) !== '')
-                ->map(fn ($value) => trim((string) $value))
-                ->unique()
-                ->values();
+            $operativeCodes = $this->voyageOperativeCodes(
+                $voyage,
+                $operativeField
+            );
 
-            if ($operativeCodes->count() > 1) {
-                $validation['errors'][] = 'El viaje contiene más de un lugar operativo argentino; no puede elegirse uno automáticamente';
-            } elseif ($operativeCodes->count() === 1) {
-                $location = \App\Models\AfipOperativeLocation::where(
-                    'location_code',
-                    $operativeCodes->first()
-                )->where('is_active', true)->first();
+            if ($operativeCodes->isNotEmpty()) {
+                $customsCodes = collect();
 
-                if (!$location) {
-                    $validation['errors'][] = 'El lugar operativo informado no existe en el catálogo de Aduana';
-                } elseif (!preg_match('/^\\d{3}$/', (string) $location->customs_code)) {
-                    $validation['errors'][] = 'El lugar operativo seleccionado no tiene un código de Aduana válido';
+                foreach ($operativeCodes as $operativeCode) {
+                    $location = \App\Models\AfipOperativeLocation::where(
+                        'location_code',
+                        $operativeCode
+                    )->where('is_active', true)->first();
+
+                    if (!$location) {
+                        $validation['errors'][] = "El lugar operativo {$operativeCode} no existe en el catálogo de Aduana";
+                        continue;
+                    }
+
+                    if (!preg_match('/^\\d{3}$/', (string) $location->customs_code)) {
+                        $validation['errors'][] = "El lugar operativo {$operativeCode} no tiene un código de Aduana válido";
+                        continue;
+                    }
+
+                    $customsCodes->push((string) $location->customs_code);
+                }
+
+                if ($customsCodes->unique()->count() > 1) {
+                    $validation['errors'][] = 'Los lugares operativos del viaje pertenecen a distintas Aduanas';
                 }
             } elseif (!$this->resolveThreeDigitCustomsCode(
                 $explicitCustoms,
@@ -248,6 +257,9 @@ class ArgentinaAnticipatedService
                         $tare = $container->tare_weight_kg;
                         $gross = $container->current_gross_weight_kg
                             ?? $item->pivot?->gross_weight_kg;
+                        $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+                        $acep = trim((string) data_get($container->webservice_data, 'acep'));
+                        $hasConflictingCscData = $expiry && $acep !== '';
                         $operative = trim((string) (
                             $bill->operational_discharge_code
                             ?: $item->operational_discharge_code
@@ -280,6 +292,7 @@ class ArgentinaAnticipatedService
                             || !$location
                             || !preg_match('/^\d{3}$/', (string) $location?->customs_code)
                             || !$validPorts
+                            || $hasConflictingCscData
                         ) {
                             $invalidEmptyContainers++;
                         }
@@ -328,6 +341,24 @@ class ArgentinaAnticipatedService
             '/^\\d{3}$/',
             trim((string) ($country->codigo_afip ?? ''))
         ) === 1;
+    }
+
+    private function voyageOperativeCodes(Voyage $voyage, string $field)
+    {
+        $bills = \App\Models\BillOfLading::whereHas(
+            'shipment',
+            fn ($q) => $q->where('voyage_id', $voyage->id)
+        )->with('shipmentItems')->get();
+
+        return $bills
+            ->flatMap(function ($bill) use ($field) {
+                return collect([$bill->{$field}])
+                    ->merge($bill->shipmentItems->pluck($field));
+            })
+            ->filter(fn ($value) => trim((string) $value) !== '')
+            ->map(fn ($value) => trim((string) $value))
+            ->unique()
+            ->values();
     }
 
     private function resolveThreeDigitCustomsCode(...$customsSources): ?string
@@ -607,6 +638,9 @@ class ArgentinaAnticipatedService
                     }
                     $tare = $container->tare_weight_kg;
                     $gross = $container->current_gross_weight_kg ?? $item->pivot?->gross_weight_kg;
+                    $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+                    $acep = trim((string) data_get($container->webservice_data, 'acep'));
+                    $hasConflictingCscData = $expiry && $acep !== '';
                     $tareDigits = is_numeric($tare) ? strlen((string) (int) round((float) $tare)) : 99;
                     $grossDigits = is_numeric($gross) ? strlen((string) (int) round((float) $gross)) : 99;
 
@@ -621,6 +655,7 @@ class ArgentinaAnticipatedService
                         || $tareDigits > 10
                         || $grossDigits > 14
                         || (float) $tare > (float) $gross
+                        || $hasConflictingCscData
                     ) {
                         $invalidContainer++;
                     }
