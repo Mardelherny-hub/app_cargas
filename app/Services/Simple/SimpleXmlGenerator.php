@@ -3072,6 +3072,7 @@ class SimpleXmlGenerator
     {
         $voyage->loadMissing([
             'leadVessel.flagCountry',
+            'leadVessel.owner.country',
             'captain.documentCountry',
             'originPort.country',
             'destinationPort.country',
@@ -3082,7 +3083,12 @@ class SimpleXmlGenerator
         ]);
 
         $vessel = $voyage->leadVessel;
-        $vesselId = $vessel?->registration_number ?: $vessel?->name;
+        $vesselId = $vessel?->name ?: $vessel?->registration_number;
+        $vesselOwner = $vessel?->owner;
+
+        if (!$vesselOwner) {
+            throw new Exception('Información Anticipada: la embarcación no tiene propietario asociado.');
+        }
 
         $w->writeElement('IdentificadorMedioTransporte', $this->iaRequired($vesselId, 'IdentificadorMedioTransporte', 40));
         $w->writeElement('CodigoPaisProcedencia', $this->iaCountry($voyage->originPort?->country, 'CodigoPaisProcedencia'));
@@ -3107,8 +3113,8 @@ class SimpleXmlGenerator
         $w->writeElement('FechaArribo', $this->iaDate($voyage->estimated_arrival_date));
         $w->writeElement('IndicadorTransporteVacio', $this->iaYesNoRequired($voyage->is_empty_transport, 'IndicadorTransporteVacio'));
         $w->writeElement('IndicadorMercaderiaAbordo', $this->iaYesNoRequired($voyage->has_cargo_onboard, 'IndicadorMercaderiaAbordo'));
-        $w->writeElement('DesignacionTransportista', $this->iaRequired($this->company->legal_name ?: $this->company->commercial_name, 'DesignacionTransportista', 35));
-        $w->writeElement('CodigoPaisTransportista', $this->iaCountryValue($this->company->country, 'CodigoPaisTransportista'));
+        $w->writeElement('DesignacionTransportista', $this->iaRequired($vesselOwner->legal_name ?: $vesselOwner->commercial_name, 'DesignacionTransportista', 35));
+        $w->writeElement('CodigoPaisTransportista', $this->iaCountry($vesselOwner->country, 'CodigoPaisTransportista'));
         $w->writeElement('CodigoNacionalidadMediodeTransporte', $this->iaCountry($vessel?->flagCountry, 'CodigoNacionalidadMediodeTransporte'));
 
         $operative = $this->iaVoyageOperativeLocation($voyage);
@@ -3136,6 +3142,15 @@ class SimpleXmlGenerator
 
         if ($voyage->special_instructions) {
             $w->writeElement('Comentario', $this->iaRequired($voyage->special_instructions, 'Comentario', 60));
+        }
+
+        if (
+            $this->iaYesNoRequired($voyage->is_empty_transport, 'IndicadorTransporteVacio') === 'N'
+            && $this->iaYesNoRequired($voyage->has_cargo_onboard, 'IndicadorMercaderiaAbordo') === 'S'
+        ) {
+            throw new Exception(
+                'Información Anticipada: el viaje con mercadería a bordo requiere informar al menos un ATA CBC asociado antes de RegistrarViaje.'
+            );
         }
     }
 
@@ -3275,25 +3290,15 @@ class SimpleXmlGenerator
         if (!$country) {
             throw new Exception("Información Anticipada: {$label} no está configurado.");
         }
+
         $afipCode = trim((string) $country->codigo_afip);
-        if ($afipCode !== '' && strlen($afipCode) === 3) {
+        if ($afipCode !== '' && strlen($afipCode) === 3 && ctype_digit($afipCode)) {
             return $afipCode;
         }
 
-        $customsCode = trim((string) $country->customs_code);
-        if ($customsCode !== '' && strlen($customsCode) === 3) {
-            return $customsCode;
-        }
-
-        $numericCode = trim((string) $country->numeric_code);
-        if ($numericCode !== '' && ctype_digit($numericCode)) {
-            $numericCode = str_pad($numericCode, 3, '0', STR_PAD_LEFT);
-            if (strlen($numericCode) === 3) {
-                return $numericCode;
-            }
-        }
-
-        throw new Exception("Información Anticipada: {$label} no tiene un código de país válido para Aduana.");
+        throw new Exception(
+            "Información Anticipada: {$label} no tiene configurado un código PAY_PAIS válido de ARCA."
+        );
     }
 
     private function iaCountryValue($value, string $label): string
