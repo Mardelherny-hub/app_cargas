@@ -1466,16 +1466,33 @@ class ArgentinaAnticipatedService
 
         if (!empty($errors)) {
             $first = $errors[0];
-            $message = trim(
-                ($first['description'] ?: 'AFIP rechazó la operación.')
-                . ($first['additional'] ? ' - ' . $first['additional'] : '')
+            $validationErrors = array_map(
+                static function (array $error): string {
+                    $code = trim((string) ($error['code'] ?? ''));
+                    $description = trim((string) ($error['description'] ?? ''));
+                    $additional = trim((string) ($error['additional'] ?? ''));
+
+                    $message = $description !== ''
+                        ? $description
+                        : 'ARCA rechazó la operación.';
+
+                    if ($additional !== '') {
+                        $message .= ' - ' . $additional;
+                    }
+
+                    return $code !== ''
+                        ? "Código {$code}: {$message}"
+                        : $message;
+                },
+                $errors
             );
 
             return [
                 'success' => false,
                 'external_reference' => $identifier ?: null,
                 'error_code' => $first['code'],
-                'error_message' => $message,
+                'error_message' => implode(' · ', $validationErrors),
+                'validation_errors' => $validationErrors,
                 'errors' => $errors,
                 'warnings' => $warnings,
             ];
