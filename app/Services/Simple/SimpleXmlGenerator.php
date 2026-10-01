@@ -3397,6 +3397,28 @@ class SimpleXmlGenerator
         }
 
         if ($codes->isEmpty()) {
+            $argentinePort = $isArgentineOrigin
+                ? $voyage->originPort
+                : $voyage->destinationPort;
+
+            $portLocations = \App\Models\AfipOperativeLocation::where(
+                'port_id',
+                $argentinePort?->id
+            )->where('is_active', true)->get();
+
+            if ($portLocations->count() === 1) {
+                return $this->iaOperativeCode(
+                    $portLocations->first()->location_code,
+                    'CodigoLugarOperativo'
+                );
+            }
+
+            if ($portLocations->count() > 1) {
+                throw new Exception(
+                    "Información Anticipada: el puerto argentino {$argentinePort?->code} tiene más de un lugar operativo activo; debe informarse el lugar operativo del viaje."
+                );
+            }
+
             return null;
         }
 
