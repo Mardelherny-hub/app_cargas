@@ -514,6 +514,7 @@ class ArgentinaAnticipatedService
         $invalidDescription = 0;
         $invalidWeight = 0;
         $invalidContainer = 0;
+        $missingContainerValidity = 0;
         $missingClosingOperator = 0;
 
         foreach ($bills as $bill) {
@@ -729,6 +730,10 @@ class ArgentinaAnticipatedService
                     $expiry = $container->expiry_date ?: $container->csc_expiry_date;
                     $acep = trim((string) data_get($container->webservice_data, 'acep'));
                     $hasConflictingCscData = $expiry && $acep !== '';
+                    $missingCscData = !$expiry && $acep === '';
+                    if ($missingCscData) {
+                        $missingContainerValidity++;
+                    }
                     $tareDigits = is_numeric($tare) ? strlen((string) (int) round((float) $tare)) : 99;
                     $grossDigits = is_numeric($gross) ? strlen((string) (int) round((float) $gross)) : 99;
 
@@ -761,6 +766,59 @@ class ArgentinaAnticipatedService
             }
         }
 
+        if (!$closing) {
+            $emptyBills = $voyage->billsOfLading()->with([
+                'shipmentItems.containers.containerType',
+            ])->whereHas('dischargePort.country', function ($q) {
+                $q->where('alpha2_code', 'AR');
+            })->get();
+
+            $seenEmptyContainers = [];
+            foreach ($emptyBills as $emptyBill) {
+                foreach ($emptyBill->shipmentItems as $emptyItem) {
+                    foreach ($emptyItem->containers as $container) {
+                        $condition = $this->anticipatedContainerCondition($container, $emptyItem);
+                        if (!in_array($condition, ['V', 'C'], true)) {
+                            continue;
+                        }
+
+                        $key = trim((string) $container->container_number);
+                        if ($key !== '' && isset($seenEmptyContainers[$key])) {
+                            continue;
+                        }
+                        $seenEmptyContainers[$key] = true;
+
+                        $type = trim((string) (
+                            $container->containerType?->iso_code
+                            ?: $container->containerType?->code
+                        ));
+                        $tare = $container->tare_weight_kg;
+                        $gross = $container->current_gross_weight_kg
+                            ?? $emptyItem->pivot?->gross_weight_kg;
+                        $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+                        $acep = trim((string) data_get($container->webservice_data, 'acep'));
+                        $hasConflictingCscData = $expiry && $acep !== '';
+
+                        if (!$expiry && $acep === '') {
+                            $missingContainerValidity++;
+                        }
+
+                        if (
+                            $key === '' || mb_strlen($key) > 20
+                            || mb_strlen($type) !== 4
+                            || $tare === null || !is_numeric($tare)
+                            || $gross === null || !is_numeric($gross)
+                            || abs((float) $tare - round((float) $tare)) > 0.000001
+                            || (float) $tare > (float) $gross
+                            || $hasConflictingCscData
+                        ) {
+                            $invalidContainer++;
+                        }
+                    }
+                }
+            }
+        }
+
         $summary = [
             [$missingOrigin, 'conocimientos sin LugarOrigen'],
             [$missingOriginCountry, 'conocimientos sin código de país de origen válido para Aduana'],
@@ -771,6 +829,7 @@ class ArgentinaAnticipatedService
             [$invalidDescription, 'líneas con DescripcionMercaderia ausente o mayor a 80 caracteres'],
             [$invalidWeight, 'líneas con peso o volumen manifestado inválido'],
             [$invalidContainer, 'contenedores con datos obligatorios inválidos'],
+            [$missingContainerValidity, 'contenedores sin FechaVencimientoContenedor ni ACEP'],
             [$missingClosingOperator, 'contenedores de cierre sin CuitAtaOperadorContenedor válido'],
         ];
 
