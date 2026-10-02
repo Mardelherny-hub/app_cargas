@@ -3795,6 +3795,11 @@ class SimpleXmlGenerator
 
         $marks = $bill->cargo_marks
             ?: $this->iaUniqueItemValue($items, 'cargo_marks');
+        if (trim((string) $marks) === '' && $items->every(fn ($item) => $item->containers->isNotEmpty())) {
+            // Precedente operativo ya aceptado por ARCA en RegistrarTitulosCbc:
+            // para títulos contenedorizados sin marca declarada se informa S/M.
+            $marks = 'S/M';
+        }
         $marks = $this->iaRequired($marks, "Conocimiento {$number}: MarcaBultos", 80);
         $countryDestination = $bill->destination_country_code
             ? $this->iaCountryValue($bill->destination_country_code, 'CodigoPaisDestino')
@@ -3894,8 +3899,16 @@ class SimpleXmlGenerator
             }
             $usedLines[$line] = true;
 
+            $packCode = trim((string) $item->packaging_code);
+            if ($packCode === '' && $item->containers->isNotEmpty()) {
+                // En el contrato ARCA, 05 representa mercadería contenedorizada.
+                // Los envíos CBC exitosos existentes de la aplicación usan este
+                // código y ARCA exige que CantidadManifestada coincida con la
+                // cantidad de contenedores (error 11372).
+                $packCode = '05';
+            }
             $packCode = $this->iaRequired(
-                $item->packaging_code,
+                $packCode,
                 "Conocimiento {$number}, línea {$line}: código de embalaje",
                 2
             );
@@ -3903,8 +3916,10 @@ class SimpleXmlGenerator
                 throw new Exception("Conocimiento {$number}, línea {$line}: CodigoEmbalaje debe tener 2 caracteres.");
             }
 
-            $quantity = (int) $item->package_quantity;
-            if ($quantity < 0 || $quantity > 999999999) {
+            $quantity = $packCode === '05'
+                ? $item->containers->count()
+                : (int) $item->package_quantity;
+            if ($quantity < 1 || $quantity > 999999999) {
                 throw new Exception("Conocimiento {$number}, línea {$line}: CantidadManifestada fuera de rango.");
             }
 
@@ -3917,7 +3932,13 @@ class SimpleXmlGenerator
             }
 
             $description = $this->iaRequired($item->item_description, "Conocimiento {$number}, línea {$line}: DescripcionMercaderia", 80);
-            $packageMarks = $this->iaRequired($item->cargo_marks, "Conocimiento {$number}, línea {$line}: NumeroBultos", 100);
+            $packageMarks = trim((string) $item->cargo_marks);
+            if ($packageMarks === '' && $packCode === '05') {
+                // Precedente operativo ya aceptado por ARCA para líneas
+                // contenedorizadas sin numeración de bultos declarada.
+                $packageMarks = 'S/N';
+            }
+            $packageMarks = $this->iaRequired($packageMarks, "Conocimiento {$number}, línea {$line}: NumeroBultos", 100);
 
             $w->startElement('ar:LineaMercaderia');
             $w->writeElement('ar:NumeroLinea', (string) $line);
@@ -3929,11 +3950,15 @@ class SimpleXmlGenerator
             }
 
             if ($packCode === '05') {
-                $condition = strtoupper(trim((string) $item->container_condition));
-                if (!in_array($condition, ['H', 'P', 'V', 'C'], true)) {
+                $conditions = $item->containers
+                    ->map(fn ($container) => $this->iaContainerCondition($container, $item))
+                    ->filter()
+                    ->unique()
+                    ->values();
+                if ($conditions->count() !== 1 || !in_array($conditions->first(), ['H', 'P'], true)) {
                     throw new Exception("Conocimiento {$number}, línea {$line}: CondicionContenedor inválida.");
                 }
-                $w->writeElement('ar:CondicionContenedor', $condition);
+                $w->writeElement('ar:CondicionContenedor', (string) $conditions->first());
             }
 
             $w->writeElement('ar:CantidadManifestada', (string) $quantity);
