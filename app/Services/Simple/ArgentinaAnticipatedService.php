@@ -514,7 +514,6 @@ class ArgentinaAnticipatedService
         $invalidDescription = 0;
         $invalidWeight = 0;
         $invalidContainer = 0;
-        $missingContainerValidity = 0;
         $missingClosingOperator = 0;
 
         foreach ($bills as $bill) {
@@ -730,10 +729,6 @@ class ArgentinaAnticipatedService
                     $expiry = $container->expiry_date ?: $container->csc_expiry_date;
                     $acep = trim((string) data_get($container->webservice_data, 'acep'));
                     $hasConflictingCscData = $expiry && $acep !== '';
-                    $missingCscData = !$expiry && $acep === '';
-                    if ($missingCscData) {
-                        $missingContainerValidity++;
-                    }
                     $tareDigits = is_numeric($tare) ? strlen((string) (int) round((float) $tare)) : 99;
                     $grossDigits = is_numeric($gross) ? strlen((string) (int) round((float) $gross)) : 99;
 
@@ -799,10 +794,6 @@ class ArgentinaAnticipatedService
                         $acep = trim((string) data_get($container->webservice_data, 'acep'));
                         $hasConflictingCscData = $expiry && $acep !== '';
 
-                        if (!$expiry && $acep === '') {
-                            $missingContainerValidity++;
-                        }
-
                         if (
                             $key === '' || mb_strlen($key) > 20
                             || mb_strlen($type) !== 4
@@ -829,7 +820,6 @@ class ArgentinaAnticipatedService
             [$invalidDescription, 'líneas con DescripcionMercaderia ausente o mayor a 80 caracteres'],
             [$invalidWeight, 'líneas con peso o volumen manifestado inválido'],
             [$invalidContainer, 'contenedores con datos obligatorios inválidos'],
-            [$missingContainerValidity, 'contenedores sin FechaVencimientoContenedor ni ACEP'],
             [$missingClosingOperator, 'contenedores de cierre sin CuitAtaOperadorContenedor válido'],
         ];
 

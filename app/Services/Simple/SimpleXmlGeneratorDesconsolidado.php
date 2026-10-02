@@ -410,10 +410,34 @@ class SimpleXmlGeneratorDesconsolidado
             $xml .= '<ar:NumeroPrecintoOrigen>' . $this->sanitize($container->shipper_seal) . '</ar:NumeroPrecintoOrigen>';
         }
         
-        // FECHA VENCIMIENTO CONTENEDOR (opcional)
-        if ($container->csc_expiry_date) {
-            $fechaVencimiento = Carbon::parse($container->csc_expiry_date)->format('Y-m-d\TH:i:s');
+        // VIGENCIA CONTENEDOR: fecha o ACEP. Si faltan ambos,
+        // se calcula desde la fecha de arribo del viaje + 480 días.
+        $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+        $acep = trim((string) data_get($container->webservice_data, 'acep'));
+
+        if ($expiry && $acep !== '') {
+            throw new \Exception(
+                "Contenedor {$container->container_number}: no se pueden informar simultáneamente FechaVencimientoContenedor y ACEP."
+            );
+        }
+
+        if (!$expiry && $acep === '') {
+            if (!$this->voyage->estimated_arrival_date) {
+                throw new \Exception(
+                    "Contenedor {$container->container_number}: no se puede calcular FechaVencimientoContenedor sin FechaArribo."
+                );
+            }
+
+            $expiry = $this->voyage->estimated_arrival_date->copy()->addDays(480);
+        }
+
+        if ($expiry) {
+            $fechaVencimiento = Carbon::parse($expiry)->format('Y-m-d\TH:i:s');
             $xml .= '<ar:FechaVencimientoContenedor>' . $fechaVencimiento . '</ar:FechaVencimientoContenedor>';
+        }
+
+        if ($acep !== '') {
+            $xml .= '<ar:Acep>' . $this->sanitize($acep) . '</ar:Acep>';
         }
         
         // PUERTO EMBARQUE (opcional)
