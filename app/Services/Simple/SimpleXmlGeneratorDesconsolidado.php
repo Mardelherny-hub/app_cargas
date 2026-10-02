@@ -6,6 +6,7 @@ use App\Models\Voyage;
 use App\Models\BillOfLading;
 use App\Models\Container;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 /**
@@ -406,14 +407,48 @@ class SimpleXmlGeneratorDesconsolidado
         $xml .= '<ar:PesoBruto>' . ($container->current_gross_weight_kg ?? 0) . '</ar:PesoBruto>';
         
         // NÚMERO PRECINTO ORIGEN (opcional)
-        if ($container->shipper_seal) {
-            $xml .= '<ar:NumeroPrecintoOrigen>' . $this->sanitize($container->shipper_seal) . '</ar:NumeroPrecintoOrigen>';
+        $seal = trim((string) (
+            $container->customs_seal
+            ?: $container->shipper_seal
+            ?: $container->carrier_seal
+        ));
+        if ($seal !== '' && mb_strlen($seal) <= 35) {
+            $xml .= '<ar:NumeroPrecintoOrigen>' . $this->sanitize($seal) . '</ar:NumeroPrecintoOrigen>';
+        } elseif ($seal !== '') {
+            Log::warning('Información Anticipada: se omite NumeroPrecintoOrigen porque el valor fuente supera 35 caracteres', [
+                'container_number' => $container->container_number,
+                'seal_length' => mb_strlen($seal),
+            ]);
         }
         
-        // FECHA VENCIMIENTO CONTENEDOR (opcional)
-        if ($container->csc_expiry_date) {
-            $fechaVencimiento = Carbon::parse($container->csc_expiry_date)->format('Y-m-d\TH:i:s');
+        // VIGENCIA CONTENEDOR: fecha o ACEP. Si faltan ambos,
+        // se calcula desde la fecha de arribo del viaje + 480 días.
+        $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+        $acep = trim((string) data_get($container->webservice_data, 'acep'));
+
+        if ($expiry && $acep !== '') {
+            throw new \Exception(
+                "Contenedor {$container->container_number}: no se pueden informar simultáneamente FechaVencimientoContenedor y ACEP."
+            );
+        }
+
+        if (!$expiry && $acep === '') {
+            if (!$this->voyage->estimated_arrival_date) {
+                throw new \Exception(
+                    "Contenedor {$container->container_number}: no se puede calcular FechaVencimientoContenedor sin FechaArribo."
+                );
+            }
+
+            $expiry = $this->voyage->estimated_arrival_date->copy()->addDays(480);
+        }
+
+        if ($expiry) {
+            $fechaVencimiento = Carbon::parse($expiry)->format('Y-m-d\TH:i:s');
             $xml .= '<ar:FechaVencimientoContenedor>' . $fechaVencimiento . '</ar:FechaVencimientoContenedor>';
+        }
+
+        if ($acep !== '') {
+            $xml .= '<ar:Acep>' . $this->sanitize($acep) . '</ar:Acep>';
         }
         
         // PUERTO EMBARQUE (opcional)

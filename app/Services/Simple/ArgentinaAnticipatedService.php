@@ -56,7 +56,7 @@ class ArgentinaAnticipatedService
         $this->config = array_merge([
             'webservice_type' => 'anticipada',
             'country' => 'AR',
-            'environment' => 'testing',
+            'environment' => $company->ws_environment ?? 'testing',
             'soap_action_registrar_viaje' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarViaje',
             'soap_action_rectificar_viaje' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RectificarViaje',
             'soap_action_registrar_titulos_cbc' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarTitulosCbc',
@@ -70,7 +70,7 @@ class ArgentinaAnticipatedService
      * Validación local del contrato RegistrarViaje.
      * No autentica contra WSAA ni transmite a Aduana.
      */
-    private function validateSpecificData(Voyage $voyage): array
+    private function validateSpecificData(Voyage $voyage, array $options = []): array
     {
         $validation = ['errors' => [], 'warnings' => []];
 
@@ -81,6 +81,7 @@ class ArgentinaAnticipatedService
 
         $voyage->loadMissing([
             'leadVessel.flagCountry',
+            'leadVessel.owner.country',
             'captain.documentCountry',
             'originPort.country',
             'destinationPort.country',
@@ -100,7 +101,7 @@ class ArgentinaAnticipatedService
             $validation['errors'][] = 'IdentificadorMedioTransporte: falta embarcación líder';
         } else {
             $vesselIdentifier = trim((string) (
-                $vessel->registration_number ?: $vessel->name
+                $vessel->name ?: $vessel->registration_number
             ));
             if ($vesselIdentifier === '') {
                 $validation['errors'][] = 'IdentificadorMedioTransporte es obligatorio';
@@ -109,7 +110,7 @@ class ArgentinaAnticipatedService
             }
 
             if (!$this->hasAfipCountryCode($vessel->flagCountry)) {
-                $validation['errors'][] = 'La nacionalidad de la embarcación no tiene código PAY_PAIS de Aduana';
+                $validation['errors'][] = 'La nacionalidad de la embarcación no tiene un código de país válido para Aduana';
             }
         }
 
@@ -117,10 +118,10 @@ class ArgentinaAnticipatedService
             $validation['errors'][] = 'CodigoPuertoOrigen es obligatorio';
         } else {
             if (mb_strlen(trim((string) $voyage->originPort->code)) !== 5) {
-                $validation['errors'][] = 'CodigoPuertoOrigen debe tener 5 caracteres POR_PAIS';
+                $validation['errors'][] = 'El código del puerto de origen debe tener 5 caracteres';
             }
             if (!$this->hasAfipCountryCode($voyage->originPort->country)) {
-                $validation['errors'][] = 'CodigoPaisProcedencia no tiene código PAY_PAIS de Aduana';
+                $validation['errors'][] = 'El país de procedencia no tiene un código válido para Aduana';
             }
         }
 
@@ -129,7 +130,7 @@ class ArgentinaAnticipatedService
             && $voyage->destinationPort->country
             && !$this->hasAfipCountryCode($voyage->destinationPort->country)
         ) {
-            $validation['errors'][] = 'CodigoPaisFinViaje no tiene código PAY_PAIS de Aduana';
+            $validation['errors'][] = 'El país de destino final no tiene un código válido para Aduana';
         }
 
         if (!$voyage->estimated_arrival_date) {
@@ -145,21 +146,44 @@ class ArgentinaAnticipatedService
             }
         }
 
-        $carrierName = trim((string) (
-            $this->company->legal_name ?: $this->company->commercial_name
-        ));
-        if ($carrierName === '') {
-            $validation['errors'][] = 'DesignacionTransportista es obligatoria';
-        } elseif (mb_strlen($carrierName) > 35) {
-            $validation['errors'][] = 'DesignacionTransportista supera 35 caracteres';
+        try {
+            $ataCbcTaxIds = $this->normalizeAtaCbcTaxIds(
+                $options['ata_cbc_cuits'] ?? []
+            );
+        } catch (Exception $e) {
+            $ataCbcTaxIds = [];
+            $validation['errors'][] = $e->getMessage();
         }
 
-        $companyCountry = \App\Models\Country::where(
-            'alpha2_code',
-            strtoupper(trim((string) $this->company->country))
-        )->first();
-        if (!$this->hasAfipCountryCode($companyCountry)) {
-            $validation['errors'][] = 'CodigoPaisTransportista no tiene código PAY_PAIS de Aduana';
+        $isEmptyTransport = strtoupper(trim((string) $voyage->is_empty_transport));
+        $hasCargoOnboard = strtoupper(trim((string) $voyage->has_cargo_onboard));
+
+        if (array_key_exists('ata_cbc_cuits', $options)) {
+            if ($isEmptyTransport === 'N' && $hasCargoOnboard === 'S' && empty($ataCbcTaxIds)) {
+                $validation['errors'][] = 'El viaje con mercadería a bordo requiere informar al menos un CUIT de ATA CBC';
+            }
+
+            if ($isEmptyTransport === 'S' && !empty($ataCbcTaxIds)) {
+                $validation['errors'][] = 'No corresponde informar ATA CBC para un transporte en lastre';
+            }
+        }
+
+        $carrier = $vessel?->owner;
+        if (!$carrier) {
+            $validation['errors'][] = 'La embarcación no tiene propietario/transportista asociado';
+        } else {
+            $carrierName = trim((string) (
+                $carrier->legal_name ?: $carrier->commercial_name
+            ));
+            if ($carrierName === '') {
+                $validation['errors'][] = 'DesignacionTransportista es obligatoria';
+            } elseif (mb_strlen($carrierName) > 35) {
+                $validation['errors'][] = 'DesignacionTransportista supera 35 caracteres';
+            }
+
+            if (!$this->hasAfipCountryCode($carrier->country)) {
+                $validation['errors'][] = 'El país del transportista no tiene un código válido para Aduana';
+            }
         }
 
         $argentinePort = null;
@@ -177,32 +201,42 @@ class ArgentinaAnticipatedService
         }
 
         if ($argentinePort) {
-            $operativeCodes = $voyage->shipments
-                ->flatMap(fn ($shipment) => $shipment->billsOfLading)
-                ->pluck($operativeField)
-                ->filter(fn ($value) => trim((string) $value) !== '')
-                ->map(fn ($value) => trim((string) $value))
-                ->unique()
-                ->values();
+            $operativeCodes = $this->voyageOperativeCodes(
+                $voyage,
+                $operativeField
+            );
 
-            if ($operativeCodes->count() > 1) {
-                $validation['errors'][] = 'El viaje contiene más de un lugar operativo argentino; no puede elegirse uno automáticamente';
-            } elseif ($operativeCodes->count() === 1) {
-                $location = \App\Models\AfipOperativeLocation::where(
-                    'location_code',
-                    $operativeCodes->first()
-                )->where('is_active', true)->first();
+            if ($operativeCodes->isNotEmpty()) {
+                $customsCodes = collect();
 
-                if (!$location) {
-                    $validation['errors'][] = 'CodigoLugarOperativo no existe en el catálogo LOT_ADUA';
-                } elseif (!preg_match('/^\\d{3}$/', (string) $location->customs_code)) {
-                    $validation['errors'][] = 'El lugar operativo no tiene CodigoAduana BUR_DESC válido';
+                foreach ($operativeCodes as $operativeCode) {
+                    $location = \App\Models\AfipOperativeLocation::where(
+                        'location_code',
+                        $operativeCode
+                    )->where('is_active', true)->first();
+
+                    if (!$location) {
+                        $validation['errors'][] = "El lugar operativo {$operativeCode} no existe en el catálogo de Aduana";
+                        continue;
+                    }
+
+                    if (!preg_match('/^\\d{3}$/', (string) $location->customs_code)) {
+                        $validation['errors'][] = "El lugar operativo {$operativeCode} no tiene un código de Aduana válido";
+                        continue;
+                    }
+
+                    $customsCodes->push((string) $location->customs_code);
+                }
+
+                if ($customsCodes->unique()->count() > 1) {
+                    $validation['errors'][] = 'Los lugares operativos del viaje pertenecen a distintas Aduanas';
                 }
             } elseif (!$this->resolveThreeDigitCustomsCode(
                 $explicitCustoms,
-                $argentinePort->primaryCustomsOffice
+                $argentinePort->primaryCustomsOffice,
+                $argentinePort
             )) {
-                $validation['errors'][] = 'CodigoAduana BUR_DESC no puede resolverse sin inventar datos';
+                $validation['errors'][] = "No se pudo determinar el código de Aduana requerido para RegistrarViaje. Verifique la Aduana asociada al puerto argentino {$argentinePort->code}.";
             }
         } else {
             $validation['errors'][] = 'El viaje no contiene un puerto argentino para informar CodigoAduana';
@@ -245,6 +279,9 @@ class ArgentinaAnticipatedService
                         $tare = $container->tare_weight_kg;
                         $gross = $container->current_gross_weight_kg
                             ?? $item->pivot?->gross_weight_kg;
+                        $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+                        $acep = trim((string) data_get($container->webservice_data, 'acep'));
+                        $hasConflictingCscData = $expiry && $acep !== '';
                         $operative = trim((string) (
                             $bill->operational_discharge_code
                             ?: $item->operational_discharge_code
@@ -277,6 +314,7 @@ class ArgentinaAnticipatedService
                             || !$location
                             || !preg_match('/^\d{3}$/', (string) $location?->customs_code)
                             || !$validPorts
+                            || $hasConflictingCscData
                         ) {
                             $invalidEmptyContainers++;
                         }
@@ -315,34 +353,87 @@ class ArgentinaAnticipatedService
         return $validation;
     }
 
+    private function normalizeAtaCbcTaxIds($value): array
+    {
+        $values = is_array($value)
+            ? $value
+            : preg_split('/[,;\\n]+/', (string) $value);
+
+        $taxIds = [];
+        foreach ($values as $item) {
+            $digits = preg_replace('/\\D+/', '', (string) $item);
+            if ($digits === '') {
+                continue;
+            }
+            if (strlen($digits) !== 11) {
+                throw new Exception('Cada CUIT de ATA CBC debe contener 11 dígitos');
+            }
+            $taxIds[$digits] = $digits;
+        }
+
+        return array_values($taxIds);
+    }
+
+    private function withDefaultAtaCbcTaxId(Voyage $voyage, array $options): array
+    {
+        $isEmptyTransport = strtoupper(trim((string) $voyage->is_empty_transport));
+        $hasCargoOnboard = strtoupper(trim((string) $voyage->has_cargo_onboard));
+
+        if ($isEmptyTransport !== 'N' || $hasCargoOnboard !== 'S') {
+            return $options;
+        }
+
+        $companyTaxId = preg_replace('/\\D+/', '', (string) $this->company->tax_id);
+        if (strlen($companyTaxId) !== 11) {
+            return $options;
+        }
+
+        $ataCbcTaxIds = $options['ata_cbc_cuits'] ?? [];
+        $ataCbcTaxIds = is_array($ataCbcTaxIds)
+            ? $ataCbcTaxIds
+            : preg_split('/[,;\\n]+/', (string) $ataCbcTaxIds);
+
+        $ataCbcTaxIds[] = $companyTaxId;
+        $options['ata_cbc_cuits'] = $ataCbcTaxIds;
+
+        return $options;
+    }
+
     private function hasAfipCountryCode($country): bool
     {
         if (!$country) {
             return false;
         }
 
-        $afipCode = trim((string) ($country->codigo_afip ?? ''));
-        if (preg_match('/^\\d{3}$/', $afipCode)) {
-            return true;
-        }
+        return preg_match(
+            '/^\\d{3}$/',
+            trim((string) ($country->codigo_afip ?? ''))
+        ) === 1;
+    }
 
-        $customsCode = trim((string) ($country->customs_code ?? ''));
-        if (preg_match('/^\\d{3}$/', $customsCode)) {
-            return true;
-        }
+    private function voyageOperativeCodes(Voyage $voyage, string $field)
+    {
+        $bills = \App\Models\BillOfLading::whereHas(
+            'shipment',
+            fn ($q) => $q->where('voyage_id', $voyage->id)
+        )->with('shipmentItems')->get();
 
-        $numericCode = trim((string) ($country->numeric_code ?? ''));
-        if ($numericCode !== '' && ctype_digit($numericCode)) {
-            $numericCode = str_pad($numericCode, 3, '0', STR_PAD_LEFT);
-        }
-
-        return preg_match('/^\\d{3}$/', $numericCode) === 1;
+        return $bills
+            ->flatMap(function ($bill) use ($field) {
+                return collect([$bill->{$field}])
+                    ->merge($bill->shipmentItems->pluck($field));
+            })
+            ->filter(fn ($value) => trim((string) $value) !== '')
+            ->map(fn ($value) => trim((string) $value))
+            ->unique()
+            ->values();
     }
 
     private function resolveThreeDigitCustomsCode(...$customsSources): ?string
     {
         foreach ($customsSources as $source) {
             foreach ([
+                $source?->afip_code ?? null,
                 $source?->webservice_code ?? null,
                 $source?->code ?? null,
             ] as $candidate) {
@@ -359,9 +450,10 @@ class ArgentinaAnticipatedService
     /**
      * Validar si el voyage puede ser procesado para Información Anticipada.
      */
-    public function canProcessVoyage(Voyage $voyage): array
+    public function canProcessVoyage(Voyage $voyage, array $options = []): array
     {
-        $validation = $this->validateSpecificData($voyage);
+        $options = $this->withDefaultAtaCbcTaxId($voyage, $options);
+        $validation = $this->validateSpecificData($voyage, $options);
         $validation['can_process'] = empty($validation['errors']);
 
         return $validation;
@@ -394,13 +486,22 @@ class ArgentinaAnticipatedService
             $query->whereHas('dischargePort.country', function ($q) {
                 $q->where('alpha2_code', '!=', 'AR');
             });
+        } else {
+            $query->whereHas('dischargePort.country', function ($q) {
+                $q->where('alpha2_code', 'AR');
+            });
         }
 
         $bills = $query->get();
+        if (!$closing) {
+            $bills = $bills
+                ->filter(fn ($bill) => $this->billHasManifestedCargo($bill))
+                ->values();
+        }
         if ($bills->isEmpty()) {
             $validation['errors'][] = $closing
                 ? 'No hay conocimientos con descarga fuera de Argentina para CerrarViaje'
-                : 'No hay conocimientos para RegistrarTitulosCbc';
+                : 'No hay conocimientos con descarga en Argentina para RegistrarTitulosCbc';
             return $validation;
         }
 
@@ -435,7 +536,7 @@ class ArgentinaAnticipatedService
             if (!$bill->dischargePort || mb_strlen(trim((string) $bill->dischargePort?->code)) !== 5) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: CodigoPuertoDescarga inválido";
             }
-            if (!$closing) {
+            if ($bill->origin_loading_date) {
                 if (trim((string) $bill->origin_location) === '') {
                     $missingOrigin++;
                 } elseif (mb_strlen((string) $bill->origin_location) > 50) {
@@ -450,10 +551,10 @@ class ArgentinaAnticipatedService
             $destinationCountry = trim((string) $bill->destination_country_code);
             if ($destinationCountry !== '') {
                 if (!$this->hasAfipCountryValue($destinationCountry)) {
-                    $validation['errors'][] = "Conocimiento {$billLabel}: CodigoPaisDestino no es PAY_PAIS válido";
+                    $validation['errors'][] = "Conocimiento {$billLabel}: el país de destino no tiene un código válido para Aduana";
                 }
             } elseif (!$this->hasAfipCountryCode($bill->dischargePort?->country)) {
-                $validation['errors'][] = "Conocimiento {$billLabel}: no puede resolverse CodigoPaisDestino";
+                $validation['errors'][] = "Conocimiento {$billLabel}: no se pudo determinar el país de destino requerido por Aduana";
             }
 
             $billMarks = trim((string) $bill->cargo_marks);
@@ -462,7 +563,10 @@ class ArgentinaAnticipatedService
                 ->map(fn ($value) => trim((string) $value))
                 ->unique()
                 ->values();
-            if ($billMarks === '' && $itemMarks->isEmpty()) {
+            $allItemsContainerized = $items->isNotEmpty()
+                && $items->every(fn ($item) => $item->containers->isNotEmpty());
+
+            if ($billMarks === '' && $itemMarks->isEmpty() && !$allItemsContainerized) {
                 $missingTitleMarks++;
             } elseif ($billMarks === '' && $itemMarks->count() > 1) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: hay varias MarcaBultos y no existe una a nivel conocimiento";
@@ -496,11 +600,11 @@ class ArgentinaAnticipatedService
                 ->map(fn ($value) => trim((string) $value))
                 ->unique()
                 ->values();
-            if ($forwarders->isEmpty()) {
+            if ($bill->is_consolidated && $forwarders->isEmpty()) {
                 $missingForwarder++;
             } elseif ($forwarders->count() > 1) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: RazonSocialFowarderExterior difiere entre ítems";
-            } elseif (mb_strlen((string) $forwarders->first()) > 70) {
+            } elseif ($forwarders->isNotEmpty() && mb_strlen((string) $forwarders->first()) > 70) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: RazonSocialFowarderExterior supera 70 caracteres";
             }
 
@@ -540,7 +644,7 @@ class ArgentinaAnticipatedService
                         ->where('is_active', true)
                         ->first();
                     if (!$location) {
-                        $validation['errors'][] = "Conocimiento {$billLabel}: CodigoLugarOperativoDescarga {$operative} no existe en LOT_ADUA";
+                        $validation['errors'][] = "Conocimiento {$billLabel}: el lugar operativo de descarga {$operative} no existe en el catálogo de Aduana";
                     } else {
                         $providedCustoms = trim((string) $bill->discharge_customs_code);
                         if ($providedCustoms === '') {
@@ -556,7 +660,7 @@ class ArgentinaAnticipatedService
                             }
                         }
                         if ($providedCustoms !== '' && str_pad(preg_replace('/\\D+/', '', $providedCustoms), 3, '0', STR_PAD_LEFT) !== (string) $location->customs_code) {
-                            $validation['errors'][] = "Conocimiento {$billLabel}: CodigoAduanaDescarga no corresponde a LOT_ADUA {$operative}";
+                            $validation['errors'][] = "Conocimiento {$billLabel}: la Aduana de descarga no corresponde al lugar operativo {$operative}";
                         }
                     }
                 }
@@ -572,16 +676,30 @@ class ArgentinaAnticipatedService
                 $seenLines[$line] = true;
 
                 $packagingCode = trim((string) $item->packaging_code);
+                if ($packagingCode === '' && $item->containers->isNotEmpty()) {
+                    $packagingCode = '05';
+                }
                 if (mb_strlen($packagingCode) !== 2) {
                     $missingPackaging++;
                 }
 
-                if ($item->package_quantity === null || !is_numeric($item->package_quantity) || (int) $item->package_quantity < 0 || (int) $item->package_quantity > 999999999) {
+                $manifestedQuantity = $packagingCode === '05'
+                    ? $item->containers->count()
+                    : $item->package_quantity;
+                if (
+                    $manifestedQuantity === null
+                    || !is_numeric($manifestedQuantity)
+                    || (int) $manifestedQuantity < 1
+                    || (int) $manifestedQuantity > 999999999
+                ) {
                     $validation['errors'][] = "Conocimiento {$billLabel}: CantidadManifestada inválida";
                 }
 
                 $weight = $item->gross_weight_kg;
-                if ($weight === null || !is_numeric($weight) || (float) $weight < 0 || abs((float) $weight - round((float) $weight)) > 0.000001 || strlen((string) (int) round((float) $weight)) > 12) {
+                // En RegistrarTitulosCbc el WSDL define PesoVolumenManifestado
+                // como decimal. Guaran declara pesos con decimales reales, por
+                // lo que no corresponde rechazarlos por no ser enteros.
+                if ($weight === null || !is_numeric($weight) || (float) $weight < 0) {
                     $invalidWeight++;
                 }
 
@@ -591,7 +709,7 @@ class ArgentinaAnticipatedService
                 }
 
                 $lineMarks = trim((string) $item->cargo_marks);
-                if ($lineMarks === '') {
+                if ($lineMarks === '' && $packagingCode !== '05') {
                     $missingLineMarks++;
                 } elseif (mb_strlen($lineMarks) > 100) {
                     $validation['errors'][] = "Conocimiento {$billLabel}: NumeroBultos supera 100 caracteres";
@@ -605,12 +723,12 @@ class ArgentinaAnticipatedService
                     $seenContainers[$key] = true;
 
                     $type = trim((string) ($container->containerType?->iso_code ?: $container->containerType?->code));
-                    $condition = strtoupper(trim((string) ($item->pivot?->container_condition ?: $item->container_condition ?: $container->container_condition)));
-                    if ($condition === '' && strtoupper(trim((string) $container->condition)) === 'V') {
-                        $condition = 'V';
-                    }
+                    $condition = $this->anticipatedContainerCondition($container, $item);
                     $tare = $container->tare_weight_kg;
                     $gross = $container->current_gross_weight_kg ?? $item->pivot?->gross_weight_kg;
+                    $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+                    $acep = trim((string) data_get($container->webservice_data, 'acep'));
+                    $hasConflictingCscData = $expiry && $acep !== '';
                     $tareDigits = is_numeric($tare) ? strlen((string) (int) round((float) $tare)) : 99;
                     $grossDigits = is_numeric($gross) ? strlen((string) (int) round((float) $gross)) : 99;
 
@@ -621,10 +739,10 @@ class ArgentinaAnticipatedService
                         || $tare === null || !is_numeric($tare)
                         || $gross === null || !is_numeric($gross)
                         || abs((float) $tare - round((float) $tare)) > 0.000001
-                        || abs((float) $gross - round((float) $gross)) > 0.000001
                         || $tareDigits > 10
                         || $grossDigits > 14
                         || (float) $tare > (float) $gross
+                        || $hasConflictingCscData
                     ) {
                         $invalidContainer++;
                     }
@@ -643,15 +761,64 @@ class ArgentinaAnticipatedService
             }
         }
 
+        if (!$closing) {
+            $emptyBills = $voyage->billsOfLading()->with([
+                'shipmentItems.containers.containerType',
+            ])->whereHas('dischargePort.country', function ($q) {
+                $q->where('alpha2_code', 'AR');
+            })->get();
+
+            $seenEmptyContainers = [];
+            foreach ($emptyBills as $emptyBill) {
+                foreach ($emptyBill->shipmentItems as $emptyItem) {
+                    foreach ($emptyItem->containers as $container) {
+                        $condition = $this->anticipatedContainerCondition($container, $emptyItem);
+                        if (!in_array($condition, ['V', 'C'], true)) {
+                            continue;
+                        }
+
+                        $key = trim((string) $container->container_number);
+                        if ($key !== '' && isset($seenEmptyContainers[$key])) {
+                            continue;
+                        }
+                        $seenEmptyContainers[$key] = true;
+
+                        $type = trim((string) (
+                            $container->containerType?->iso_code
+                            ?: $container->containerType?->code
+                        ));
+                        $tare = $container->tare_weight_kg;
+                        $gross = $container->current_gross_weight_kg
+                            ?? $emptyItem->pivot?->gross_weight_kg;
+                        $expiry = $container->expiry_date ?: $container->csc_expiry_date;
+                        $acep = trim((string) data_get($container->webservice_data, 'acep'));
+                        $hasConflictingCscData = $expiry && $acep !== '';
+
+                        if (
+                            $key === '' || mb_strlen($key) > 20
+                            || mb_strlen($type) !== 4
+                            || $tare === null || !is_numeric($tare)
+                            || $gross === null || !is_numeric($gross)
+                            || abs((float) $tare - round((float) $tare)) > 0.000001
+                            || (float) $tare > (float) $gross
+                            || $hasConflictingCscData
+                        ) {
+                            $invalidContainer++;
+                        }
+                    }
+                }
+            }
+        }
+
         $summary = [
             [$missingOrigin, 'conocimientos sin LugarOrigen'],
-            [$missingOriginCountry, 'conocimientos sin CodigoPaisLugarOrigen PAY_PAIS'],
+            [$missingOriginCountry, 'conocimientos sin código de país de origen válido para Aduana'],
             [$missingTitleMarks, 'conocimientos sin MarcaBultos'],
             [$missingForwarder, 'conocimientos sin RazonSocialFowarderExterior'],
-            [$missingPackaging, 'líneas sin CodigoEmbalaje NEB_DESC de 2 caracteres'],
+            [$missingPackaging, 'líneas sin código de embalaje válido de 2 caracteres'],
             [$missingLineMarks, 'líneas sin NumeroBultos'],
             [$invalidDescription, 'líneas con DescripcionMercaderia ausente o mayor a 80 caracteres'],
-            [$invalidWeight, 'líneas con PesoVolumenManifestado inválido para Int(12)'],
+            [$invalidWeight, 'líneas con peso o volumen manifestado inválido'],
             [$invalidContainer, 'contenedores con datos obligatorios inválidos'],
             [$missingClosingOperator, 'contenedores de cierre sin CuitAtaOperadorContenedor válido'],
         ];
@@ -664,6 +831,40 @@ class ArgentinaAnticipatedService
 
         $validation['errors'] = array_values(array_unique($validation['errors']));
         return $validation;
+    }
+
+    private function anticipatedContainerCondition($container, $item = null): string
+    {
+        if (strtoupper(trim((string) $container->condition)) === 'V') {
+            return 'V';
+        }
+
+        return strtoupper(trim((string) (
+            $item?->pivot?->container_condition
+            ?: $item?->container_condition
+            ?: $container->container_condition
+        )));
+    }
+
+    private function billHasManifestedCargo($bill): bool
+    {
+        foreach ($bill->shipmentItems as $item) {
+            if ($item->containers->isEmpty()) {
+                return true;
+            }
+
+            foreach ($item->containers as $container) {
+                if (!in_array(
+                    $this->anticipatedContainerCondition($container, $item),
+                    ['V', 'C'],
+                    true
+                )) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function hasAfipCountryValue($value): bool
@@ -682,17 +883,7 @@ class ArgentinaAnticipatedService
             return false;
         }
 
-        return \App\Models\Country::query()
-            ->get()
-            ->contains(function ($country) use ($value) {
-                $codes = [
-                    trim((string) ($country->codigo_afip ?? '')),
-                    trim((string) ($country->customs_code ?? '')),
-                    str_pad(trim((string) ($country->numeric_code ?? '')), 3, '0', STR_PAD_LEFT),
-                ];
-
-                return in_array($value, $codes, true);
-            });
+        return \App\Models\Country::where('codigo_afip', $value)->exists();
     }
 
     /**
@@ -723,7 +914,8 @@ class ArgentinaAnticipatedService
      */
     public function registrarViaje(Voyage $voyage, array $options = []): array
     {
-        $validation = $this->validateSpecificData($voyage);
+        $options = $this->withDefaultAtaCbcTaxId($voyage, $options);
+        $validation = $this->validateSpecificData($voyage, $options);
         if (!empty($validation['errors'])) {
             return [
                 'success' => false,
@@ -761,7 +953,7 @@ class ArgentinaAnticipatedService
             // Generar XML para RegistrarViaje
             $transactionId = $transaction->transaction_id;
             $xmlGenerator = new SimpleXmlGenerator($this->company, $this->config);
-            $xmlContent = $xmlGenerator->createRegistrarViajeXml($voyage, $transactionId);
+            $xmlContent = $xmlGenerator->createRegistrarViajeXml($voyage, $transactionId, $options);
 
             if (!$xmlContent) {
                 throw new Exception('Error generando XML para RegistrarViaje');
@@ -866,7 +1058,27 @@ class ArgentinaAnticipatedService
      */
     public function rectificarViaje(Voyage $voyage, array $options = []): array
     {
-        $validation = $this->validateSpecificData($voyage);
+        if (empty($options['ata_cbc_cuits'])) {
+            $previousRegistrar = $voyage->webserviceTransactions()
+                ->where('webservice_type', 'anticipada')
+                ->where('status', 'success')
+                ->where('additional_metadata->method', 'RegistrarViaje')
+                ->latest()
+                ->first();
+
+            $previousAtaCbc = data_get(
+                $previousRegistrar?->additional_metadata,
+                'ata_cbc_cuits',
+                []
+            );
+
+            if (!empty($previousAtaCbc)) {
+                $options['ata_cbc_cuits'] = $previousAtaCbc;
+            }
+        }
+
+        $options = $this->withDefaultAtaCbcTaxId($voyage, $options);
+        $validation = $this->validateSpecificData($voyage, $options);
         if (!empty($validation['errors'])) {
             return [
                 'success' => false,
@@ -1460,16 +1672,33 @@ class ArgentinaAnticipatedService
 
         if (!empty($errors)) {
             $first = $errors[0];
-            $message = trim(
-                ($first['description'] ?: 'AFIP rechazó la operación.')
-                . ($first['additional'] ? ' - ' . $first['additional'] : '')
+            $validationErrors = array_map(
+                static function (array $error): string {
+                    $code = trim((string) ($error['code'] ?? ''));
+                    $description = trim((string) ($error['description'] ?? ''));
+                    $additional = trim((string) ($error['additional'] ?? ''));
+
+                    $message = $description !== ''
+                        ? $description
+                        : 'ARCA rechazó la operación.';
+
+                    if ($additional !== '') {
+                        $message .= ' - ' . $additional;
+                    }
+
+                    return $code !== ''
+                        ? "Código {$code}: {$message}"
+                        : $message;
+                },
+                $errors
             );
 
             return [
                 'success' => false,
                 'external_reference' => $identifier ?: null,
                 'error_code' => $first['code'],
-                'error_message' => $message,
+                'error_message' => implode(' · ', $validationErrors),
+                'validation_errors' => $validationErrors,
                 'errors' => $errors,
                 'warnings' => $warnings,
             ];
@@ -1495,6 +1724,9 @@ class ArgentinaAnticipatedService
         array $options = []
     ): \App\Models\WebserviceTransaction {
         $method = $options['method'] ?? 'RegistrarViaje';
+        $ataCbcTaxIds = $this->normalizeAtaCbcTaxIds(
+            $options['ata_cbc_cuits'] ?? []
+        );
 
         $transactionId = $options['transaction_id'] ?? (
             'IA'
@@ -1517,7 +1749,10 @@ class ArgentinaAnticipatedService
             'webservice_url' => $this->getServiceEndpoint(),
             'soap_action' => $options['soap_action']
                 ?? 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarViaje',
-            'additional_metadata' => ['method' => $method],
+            'additional_metadata' => [
+                'method' => $method,
+                'ata_cbc_cuits' => $ataCbcTaxIds,
+            ],
             'status' => 'pending',
             'retry_count' => 0,
             'max_retries' => 3,

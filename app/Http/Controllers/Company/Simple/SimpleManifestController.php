@@ -565,11 +565,14 @@ class SimpleManifestController extends Controller
                 ], 400);
             }
 
-            $environment = $request->input('environment', 'testing');
+            // El ambiente de Aduana pertenece a la configuración de la empresa.
+            // No se toma del navegador para evitar usar un certificado de producción
+            // contra WSAA de homologación (o viceversa).
+            $environment = $company->ws_environment ?? 'testing';
             if (!in_array($environment, ['testing', 'production'], true)) {
                 return response()->json([
                     'success' => false,
-                    'error' => 'Ambiente no válido',
+                    'error' => 'La empresa no tiene un ambiente de Aduana válido configurado',
                     'error_code' => 'INVALID_ENVIRONMENT',
                 ], 422);
             }
@@ -581,29 +584,34 @@ class SimpleManifestController extends Controller
                 ['environment' => $environment]
             );
             
-            // ✅ VALIDACIÓN PREVIA
-            $validation = $service->canProcessVoyage($voyage);
-            
-            if (!$validation['can_process']) {
-                return response()->json([
-                    'success' => false,
-                    'error' => "Viaje no válido para {$method}",
-                    'validation_errors' => $validation['errors'],
-                    'warnings' => $validation['warnings'],
-                    'error_code' => 'VALIDATION_FAILED'
-                ]);
-            }
-
             // 4. PREPARAR OPCIONES
             $options = [
                 'method' => $method,
                 'user_notes' => $request->input('notes', ''),
                 'environment' => $environment,
+                'ata_cbc_cuits' => $request->input('ata_cbc_cuits', []),
             ];
 
             // Si es rectificación, agregar datos adicionales
             if ($method === 'RectificarViaje') {
                 $options['rectification_reason'] = $request->input('rectification_reason', '');
+            }
+
+            // RegistrarViaje se valida aquí para devolver un detalle inmediato.
+            // Los demás métodos ejecutan su propia validación en el servicio; en
+            // particular RectificarViaje puede reutilizar los ATA CBC del registro previo.
+            if ($method === 'RegistrarViaje') {
+                $validation = $service->canProcessVoyage($voyage, $options);
+
+                if (!$validation['can_process']) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => "Viaje no válido para {$method}",
+                        'validation_errors' => $validation['errors'],
+                        'warnings' => $validation['warnings'],
+                        'error_code' => 'VALIDATION_FAILED'
+                    ]);
+                }
             }
 
             // 5. ENVIAR A AFIP
