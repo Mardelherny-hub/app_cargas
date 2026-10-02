@@ -3261,6 +3261,11 @@ class SimpleXmlGenerator
                 "Contenedor {$number}: no se pueden informar simultáneamente FechaVencimientoContenedor y ACEP."
             );
         }
+        if (!$expiry && !$acep) {
+            throw new Exception(
+                "Contenedor {$number}: debe informarse FechaVencimientoContenedor o ACEP."
+            );
+        }
         if ($expiry) {
             $w->writeElement($prefix . 'FechaVencimientoContenedor', $this->iaDate($expiry));
         }
@@ -4051,6 +4056,11 @@ class SimpleXmlGenerator
         if ($expiry && $acep) {
             throw new Exception(
                 "Contenedor {$number}: no se pueden informar simultáneamente FechaVencimientoContenedor y ACEP."
+            );
+        }
+        if (!$expiry && !$acep) {
+            throw new Exception(
+                "Contenedor {$number}: debe informarse FechaVencimientoContenedor o ACEP."
             );
         }
 
