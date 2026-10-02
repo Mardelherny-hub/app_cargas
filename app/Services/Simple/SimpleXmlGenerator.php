@@ -3768,11 +3768,20 @@ class SimpleXmlGenerator
             throw new Exception("Conocimiento {$number}: PosicionArancelaria debe tener entre 7 y 15 caracteres cuando no es consolidado.");
         }
 
-        $forwarder = $this->iaRequired(
-            $this->iaUniqueItemValue($items, 'foreign_forwarder_name'),
-            "Conocimiento {$number}: RazonSocialFowarderExterior",
-            70
-        );
+        $forwarder = $this->iaUniqueItemValue($items, 'foreign_forwarder_name');
+        if ($consolidated === 'S') {
+            $forwarder = $this->iaRequired(
+                $forwarder,
+                "Conocimiento {$number}: RazonSocialFowarderExterior",
+                70
+            );
+        } elseif ($forwarder) {
+            $forwarder = $this->iaRequired(
+                $forwarder,
+                "Conocimiento {$number}: RazonSocialFowarderExterior",
+                70
+            );
+        }
         $customs = null;
         $operative = null;
 
@@ -3870,7 +3879,9 @@ class SimpleXmlGenerator
         $w->writeElement('ar:IndicadorOperadorLogisticoSeguro', $this->iaYesNoRequired($this->iaUniqueItemValue($items, 'is_secure_logistics_operator'), 'IndicadorOperadorLogisticoSeguro'));
         $w->writeElement('ar:IndicadorTransitoMonitoreado', $this->iaYesNoRequired($this->iaUniqueItemValue($items, 'is_monitored_transit'), 'IndicadorTransitoMonitoreado'));
         $w->writeElement('ar:IndicadorRenar', $this->iaYesNoRequired($this->iaUniqueItemValue($items, 'is_renar'), 'IndicadorRenar'));
-        $w->writeElement('ar:RazonSocialFowarderExterior', $forwarder);
+        if ($forwarder) {
+            $w->writeElement('ar:RazonSocialFowarderExterior', $forwarder);
+        }
 
         $forwarderTax = $this->iaUniqueItemValue($items, 'foreign_forwarder_tax_id');
         if ($forwarderTax) {
