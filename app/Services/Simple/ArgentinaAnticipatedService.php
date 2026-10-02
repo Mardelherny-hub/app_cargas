@@ -563,7 +563,10 @@ class ArgentinaAnticipatedService
                 ->map(fn ($value) => trim((string) $value))
                 ->unique()
                 ->values();
-            if ($billMarks === '' && $itemMarks->isEmpty()) {
+            $allItemsContainerized = $items->isNotEmpty()
+                && $items->every(fn ($item) => $item->containers->isNotEmpty());
+
+            if ($billMarks === '' && $itemMarks->isEmpty() && !$allItemsContainerized) {
                 $missingTitleMarks++;
             } elseif ($billMarks === '' && $itemMarks->count() > 1) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: hay varias MarcaBultos y no existe una a nivel conocimiento";
@@ -673,11 +676,22 @@ class ArgentinaAnticipatedService
                 $seenLines[$line] = true;
 
                 $packagingCode = trim((string) $item->packaging_code);
+                if ($packagingCode === '' && $item->containers->isNotEmpty()) {
+                    $packagingCode = '05';
+                }
                 if (mb_strlen($packagingCode) !== 2) {
                     $missingPackaging++;
                 }
 
-                if ($item->package_quantity === null || !is_numeric($item->package_quantity) || (int) $item->package_quantity < 0 || (int) $item->package_quantity > 999999999) {
+                $manifestedQuantity = $packagingCode === '05'
+                    ? $item->containers->count()
+                    : $item->package_quantity;
+                if (
+                    $manifestedQuantity === null
+                    || !is_numeric($manifestedQuantity)
+                    || (int) $manifestedQuantity < 1
+                    || (int) $manifestedQuantity > 999999999
+                ) {
                     $validation['errors'][] = "Conocimiento {$billLabel}: CantidadManifestada inválida";
                 }
 
@@ -695,7 +709,7 @@ class ArgentinaAnticipatedService
                 }
 
                 $lineMarks = trim((string) $item->cargo_marks);
-                if ($lineMarks === '') {
+                if ($lineMarks === '' && $packagingCode !== '05') {
                     $missingLineMarks++;
                 } elseif (mb_strlen($lineMarks) > 100) {
                     $validation['errors'][] = "Conocimiento {$billLabel}: NumeroBultos supera 100 caracteres";
