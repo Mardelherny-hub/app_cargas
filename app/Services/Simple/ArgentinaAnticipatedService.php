@@ -536,7 +536,7 @@ class ArgentinaAnticipatedService
             if (!$bill->dischargePort || mb_strlen(trim((string) $bill->dischargePort?->code)) !== 5) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: CodigoPuertoDescarga inválido";
             }
-            if (!$closing) {
+            if ($bill->origin_loading_date) {
                 if (trim((string) $bill->origin_location) === '') {
                     $missingOrigin++;
                 } elseif (mb_strlen((string) $bill->origin_location) > 50) {
