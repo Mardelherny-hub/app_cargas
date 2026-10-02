@@ -493,6 +493,11 @@ class ArgentinaAnticipatedService
         }
 
         $bills = $query->get();
+        if (!$closing) {
+            $bills = $bills
+                ->filter(fn ($bill) => $this->billHasManifestedCargo($bill))
+                ->values();
+        }
         if ($bills->isEmpty()) {
             $validation['errors'][] = $closing
                 ? 'No hay conocimientos con descarga fuera de Argentina para CerrarViaje'
@@ -704,10 +709,7 @@ class ArgentinaAnticipatedService
                     $seenContainers[$key] = true;
 
                     $type = trim((string) ($container->containerType?->iso_code ?: $container->containerType?->code));
-                    $condition = strtoupper(trim((string) ($item->pivot?->container_condition ?: $item->container_condition ?: $container->container_condition)));
-                    if ($condition === '' && strtoupper(trim((string) $container->condition)) === 'V') {
-                        $condition = 'V';
-                    }
+                    $condition = $this->anticipatedContainerCondition($container, $item);
                     $tare = $container->tare_weight_kg;
                     $gross = $container->current_gross_weight_kg ?? $item->pivot?->gross_weight_kg;
                     $expiry = $container->expiry_date ?: $container->csc_expiry_date;
@@ -723,7 +725,6 @@ class ArgentinaAnticipatedService
                         || $tare === null || !is_numeric($tare)
                         || $gross === null || !is_numeric($gross)
                         || abs((float) $tare - round((float) $tare)) > 0.000001
-                        || abs((float) $gross - round((float) $gross)) > 0.000001
                         || $tareDigits > 10
                         || $grossDigits > 14
                         || (float) $tare > (float) $gross
@@ -767,6 +768,40 @@ class ArgentinaAnticipatedService
 
         $validation['errors'] = array_values(array_unique($validation['errors']));
         return $validation;
+    }
+
+    private function anticipatedContainerCondition($container, $item = null): string
+    {
+        if (strtoupper(trim((string) $container->condition)) === 'V') {
+            return 'V';
+        }
+
+        return strtoupper(trim((string) (
+            $item?->pivot?->container_condition
+            ?: $item?->container_condition
+            ?: $container->container_condition
+        )));
+    }
+
+    private function billHasManifestedCargo($bill): bool
+    {
+        foreach ($bill->shipmentItems as $item) {
+            if ($item->containers->isEmpty()) {
+                return true;
+            }
+
+            foreach ($item->containers as $container) {
+                if (!in_array(
+                    $this->anticipatedContainerCondition($container, $item),
+                    ['V', 'C'],
+                    true
+                )) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function hasAfipCountryValue($value): bool
