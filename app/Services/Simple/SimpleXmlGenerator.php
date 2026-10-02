@@ -2958,7 +2958,7 @@ class SimpleXmlGenerator
         $w->startElement('ar:Titulos');
 
         foreach ($bills as $bill) {
-            $this->writeIaTitle($w, $bill, false);
+            $this->writeIaTitle($w, $bill, $voyage, false);
         }
 
         $w->endElement(); // Titulos
@@ -3053,7 +3053,7 @@ class SimpleXmlGenerator
         $w->startElement('ar:Titulos');
 
         foreach ($bills as $bill) {
-            $this->writeIaTitle($w, $bill, true);
+            $this->writeIaTitle($w, $bill, $voyage, true);
         }
 
         $w->endElement();
@@ -3211,12 +3211,12 @@ class SimpleXmlGenerator
 
         $w->startElement($prefix . 'ContenedoresVaciosCorreo');
         foreach ($entries as $entry) {
-            $this->writeIaContainer($w, $entry['container'], $entry['bill'], $entry['item'], $prefix);
+            $this->writeIaContainer($w, $entry['container'], $entry['bill'], $entry['item'], $voyage, $prefix);
         }
         $w->endElement();
     }
 
-    private function writeIaContainer(\XMLWriter $w, $container, BillOfLading $bill, $item, string $prefix = ''): void
+    private function writeIaContainer(\XMLWriter $w, $container, BillOfLading $bill, $item, Voyage $voyage, string $prefix = ''): void
     {
         $number = $this->iaRequired($container->container_number, $prefix . 'IdentificadorContenedor', 20);
         $type = $container->containerType?->iso_code ?: $container->containerType?->code;
@@ -3262,9 +3262,12 @@ class SimpleXmlGenerator
             );
         }
         if (!$expiry && !$acep) {
-            throw new Exception(
-                "Contenedor {$number}: debe informarse FechaVencimientoContenedor o ACEP."
-            );
+            if (!$voyage->estimated_arrival_date) {
+                throw new Exception(
+                    "Contenedor {$number}: no se puede calcular FechaVencimientoContenedor sin FechaArribo."
+                );
+            }
+            $expiry = $voyage->estimated_arrival_date->copy()->addDays(480);
         }
         if ($expiry) {
             $w->writeElement($prefix . 'FechaVencimientoContenedor', $this->iaDate($expiry));
@@ -3736,7 +3739,7 @@ class SimpleXmlGenerator
         return $values->first();
     }
 
-    private function writeIaTitle(\XMLWriter $w, BillOfLading $bill, bool $closing = false): void
+    private function writeIaTitle(\XMLWriter $w, BillOfLading $bill, Voyage $voyage, bool $closing = false): void
     {
         $bill->loadMissing([
             'consignee',
@@ -4011,6 +4014,7 @@ class SimpleXmlGenerator
                     $entry['container'],
                     $bill,
                     $entry['item'],
+                    $voyage,
                     $closing
                 );
             }
@@ -4025,6 +4029,7 @@ class SimpleXmlGenerator
         $container,
         BillOfLading $bill,
         $item,
+        Voyage $voyage,
         bool $closing
     ): void {
         $number = $this->iaRequired($container->container_number, 'IdentificadorContenedor', 20);
@@ -4059,9 +4064,12 @@ class SimpleXmlGenerator
             );
         }
         if (!$expiry && !$acep) {
-            throw new Exception(
-                "Contenedor {$number}: debe informarse FechaVencimientoContenedor o ACEP."
-            );
+            if (!$voyage->estimated_arrival_date) {
+                throw new Exception(
+                    "Contenedor {$number}: no se puede calcular FechaVencimientoContenedor sin FechaArribo."
+                );
+            }
+            $expiry = $voyage->estimated_arrival_date->copy()->addDays(480);
         }
 
         $w->startElement('ar:' . ($closing ? 'ContenedorCierre' : 'Contenedor'));
