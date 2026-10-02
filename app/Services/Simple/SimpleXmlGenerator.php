@@ -3250,8 +3250,13 @@ class SimpleXmlGenerator
         $w->writeElement($prefix . 'PesoBruto', $this->iaIntegerWeight($gross, "Contenedor {$number}: PesoBruto", 14));
 
         $seal = trim((string) ($container->customs_seal ?: $container->shipper_seal ?: $container->carrier_seal));
-        if ($seal !== '') {
-            $w->writeElement($prefix . 'NumeroPrecintoOrigen', $this->iaRequired($seal, $prefix . 'NumeroPrecintoOrigen', 35));
+        if ($seal !== '' && mb_strlen($seal) <= 35) {
+            $w->writeElement($prefix . 'NumeroPrecintoOrigen', $seal);
+        } elseif ($seal !== '') {
+            Log::warning('Información Anticipada: se omite NumeroPrecintoOrigen porque el valor fuente supera 35 caracteres', [
+                'container_number' => $number,
+                'seal_length' => mb_strlen($seal),
+            ]);
         }
 
         $expiry = $container->expiry_date ?: $container->csc_expiry_date;
@@ -4104,8 +4109,13 @@ class SimpleXmlGenerator
         $w->writeElement('ar:PesoBruto', $this->iaDecimalWeight($gross, "Contenedor {$number}: PesoBruto", 14));
 
         $seal = trim((string) ($container->customs_seal ?: $container->shipper_seal ?: $container->carrier_seal));
-        if ($seal !== '') {
-            $w->writeElement('ar:NumeroPrecintoOrigen', $this->iaRequired($seal, 'NumeroPrecintoOrigen', 35));
+        if ($seal !== '' && mb_strlen($seal) <= 35) {
+            $w->writeElement('ar:NumeroPrecintoOrigen', $seal);
+        } elseif ($seal !== '') {
+            Log::warning('Información Anticipada: se omite NumeroPrecintoOrigen porque el valor fuente supera 35 caracteres', [
+                'container_number' => $number,
+                'seal_length' => mb_strlen($seal),
+            ]);
         }
         if ($expiry) {
             $w->writeElement('ar:FechaVencimientoContenedor', $this->iaDate($expiry));

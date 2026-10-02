@@ -6,6 +6,7 @@ use App\Models\Voyage;
 use App\Models\BillOfLading;
 use App\Models\Container;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 /**
@@ -406,8 +407,18 @@ class SimpleXmlGeneratorDesconsolidado
         $xml .= '<ar:PesoBruto>' . ($container->current_gross_weight_kg ?? 0) . '</ar:PesoBruto>';
         
         // NÚMERO PRECINTO ORIGEN (opcional)
-        if ($container->shipper_seal) {
-            $xml .= '<ar:NumeroPrecintoOrigen>' . $this->sanitize($container->shipper_seal) . '</ar:NumeroPrecintoOrigen>';
+        $seal = trim((string) (
+            $container->customs_seal
+            ?: $container->shipper_seal
+            ?: $container->carrier_seal
+        ));
+        if ($seal !== '' && mb_strlen($seal) <= 35) {
+            $xml .= '<ar:NumeroPrecintoOrigen>' . $this->sanitize($seal) . '</ar:NumeroPrecintoOrigen>';
+        } elseif ($seal !== '') {
+            Log::warning('Información Anticipada: se omite NumeroPrecintoOrigen porque el valor fuente supera 35 caracteres', [
+                'container_number' => $container->container_number,
+                'seal_length' => mb_strlen($seal),
+            ]);
         }
         
         // VIGENCIA CONTENEDOR: fecha o ACEP. Si faltan ambos,
