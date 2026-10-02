@@ -600,11 +600,11 @@ class ArgentinaAnticipatedService
                 ->map(fn ($value) => trim((string) $value))
                 ->unique()
                 ->values();
-            if ($forwarders->isEmpty()) {
+            if ($bill->is_consolidated && $forwarders->isEmpty()) {
                 $missingForwarder++;
             } elseif ($forwarders->count() > 1) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: RazonSocialFowarderExterior difiere entre ítems";
-            } elseif (mb_strlen((string) $forwarders->first()) > 70) {
+            } elseif ($forwarders->isNotEmpty() && mb_strlen((string) $forwarders->first()) > 70) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: RazonSocialFowarderExterior supera 70 caracteres";
             }
 
