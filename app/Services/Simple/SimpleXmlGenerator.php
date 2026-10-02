@@ -3820,16 +3820,6 @@ class SimpleXmlGenerator
 
         if ($bill->origin_loading_date) {
             $w->writeElement('ar:FechaCargaLugarOrigen', $this->iaDate($bill->origin_loading_date));
-        }
-
-        if ($closing) {
-            if ($bill->origin_location) {
-                $w->writeElement('ar:LugarOrigen', $this->iaRequired($bill->origin_location, 'LugarOrigen', 50));
-            }
-            if ($bill->origin_country_code) {
-                $w->writeElement('ar:CodigoPaisLugarOrigen', $this->iaCountryValue($bill->origin_country_code, 'CodigoPaisLugarOrigen'));
-            }
-        } else {
             $w->writeElement(
                 'ar:LugarOrigen',
                 $this->iaRequired($bill->origin_location, "Conocimiento {$number}: LugarOrigen", 50)
@@ -3984,8 +3974,15 @@ class SimpleXmlGenerator
             $w->writeElement('ar:DescripcionMercaderia', $description);
             $w->writeElement('ar:NumeroBultos', $packageMarks);
 
-            if ($item->cargoType?->code) {
-                $w->writeElement('ar:TipoCarga', $this->iaRequired($item->cargoType->code, 'TipoCarga', 3));
+            $cargoTypeCode = trim((string) (
+                $item->cargoType?->webservice_code
+                ?: $item->cargoType?->unece_code
+            ));
+            if ($cargoTypeCode !== '') {
+                $w->writeElement(
+                    'ar:TipoCarga',
+                    $this->iaRequired($cargoTypeCode, 'TipoCarga', 3)
+                );
             }
             if ($item->comments) {
                 $w->writeElement('ar:Comentario', $this->iaRequired($item->comments, 'Comentario', 60));
