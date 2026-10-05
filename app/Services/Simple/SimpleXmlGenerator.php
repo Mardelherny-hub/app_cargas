@@ -3187,6 +3187,7 @@ class SimpleXmlGenerator
             'shipments.billsOfLading.loadingPort',
             'shipments.billsOfLading.dischargePort',
             'shipments.billsOfLading.shipmentItems.containers.containerType',
+            'shipments.billsOfLading.shipmentItems.containers.operatorClient',
         ]);
 
         $entries = collect();
@@ -3243,6 +3244,16 @@ class SimpleXmlGenerator
         }
 
         $w->startElement($prefix . 'Contenedor');
+
+        $operatorTaxId = $container->operatorClient?->tax_id
+            ?: data_get($container->webservice_data, 'operator_tax_id');
+        if ($operatorTaxId) {
+            $w->writeElement(
+                $prefix . 'CuitAtaOperadorContenedor',
+                $this->iaNumeric($operatorTaxId, "Contenedor {$number}: CuitAtaOperadorContenedor", 11)
+            );
+        }
+
         $w->writeElement($prefix . 'CaracteristicasContenedor', $type);
         $w->writeElement($prefix . 'IdentificadorContenedor', $number);
         $w->writeElement($prefix . 'CondicionContenedor', $condition);
@@ -3747,6 +3758,7 @@ class SimpleXmlGenerator
     private function writeIaTitle(\XMLWriter $w, BillOfLading $bill, Voyage $voyage, bool $closing = false): void
     {
         $bill->loadMissing([
+            'shipper',
             'consignee',
             'notifyParty',
             'loadingPort.country',
@@ -3755,6 +3767,7 @@ class SimpleXmlGenerator
             'shipmentItems.packagingType',
             'shipmentItems.cargoType',
             'shipmentItems.containers.containerType',
+            'shipmentItems.containers.operatorClient',
         ]);
 
         $number = $this->iaRequired($bill->bill_number, 'NumeroConocimiento', 18);
@@ -3782,19 +3795,23 @@ class SimpleXmlGenerator
         }
 
         $forwarder = $this->iaUniqueItemValue($items, 'foreign_forwarder_name');
-        if ($consolidated === 'S') {
-            $forwarder = $this->iaRequired(
-                $forwarder,
-                "Conocimiento {$number}: RazonSocialFowarderExterior",
-                70
-            );
-        } elseif ($forwarder) {
+        if (!$closing && $forwarder === null) {
+            // En CBC el forwarder es el cargador; el dato manual tiene prioridad.
+            $forwarder = trim((string) $bill->shipper?->legal_name);
+            if ($forwarder === '') {
+                $forwarder = trim((string) $bill->shipper?->commercial_name);
+            }
+        }
+        if ($consolidated === 'S' || $forwarder) {
             $forwarder = $this->iaRequired(
                 $forwarder,
                 "Conocimiento {$number}: RazonSocialFowarderExterior",
                 70
             );
         }
+
+        $forwarderTax = $this->iaUniqueItemValue($items, 'foreign_forwarder_tax_id');
+        $forwarderCountry = $this->iaUniqueItemValue($items, 'foreign_forwarder_country');
         $customs = null;
         $operative = null;
 
@@ -3826,6 +3843,20 @@ class SimpleXmlGenerator
         $countryDestination = $bill->destination_country_code
             ? $this->iaCountryValue($bill->destination_country_code, 'CodigoPaisDestino')
             : $this->iaCountry($bill->dischargePort?->country, 'CodigoPaisDestino');
+
+        $destDocType = null;
+        $destId = null;
+        if (!$closing) {
+            foreach ($items as $item) {
+                $itemDocType = trim((string) $item->consignee_document_type);
+                $itemDestId = trim((string) $item->consignee_tax_id);
+                if (($itemDocType === '') !== ($itemDestId === '')) {
+                    throw new Exception("Conocimiento {$number}: tipo e identificador del destinatario deben informarse juntos en cada ítem.");
+                }
+            }
+            $destDocType = $this->iaUniqueItemValue($items, 'consignee_document_type');
+            $destId = $this->iaUniqueItemValue($items, 'consignee_tax_id');
+        }
 
         $w->startElement('ar:' . ($closing ? 'TituloCierre' : 'Titulo'));
         $w->writeElement('ar:FechaEmbarque', $this->iaDate($bill->loading_date));
@@ -3865,19 +3896,23 @@ class SimpleXmlGenerator
             if ($notify !== '') {
                 $w->writeElement('ar:NotificarA', $this->iaRequired($notify, 'NotificarA', 35));
             }
-
-            $docType = $this->iaUniqueItemValue($items, 'consignee_document_type');
-            if ($docType) {
-                $w->writeElement('ar:TipoDocumentoDestinatarioMercaderia', $this->iaRequired(strtoupper($docType), 'TipoDocumentoDestinatarioMercaderia', 4));
-            }
-            $destId = $this->iaUniqueItemValue($items, 'consignee_tax_id');
-            if ($destId) {
-                $w->writeElement('ar:IdentificadorDestinatarioMercaderia', $this->iaNumeric($destId, 'IdentificadorDestinatarioMercaderia', 11));
-            }
         }
 
         $w->writeElement('ar:IndicadorConsolidado', $consolidated);
         $w->writeElement('ar:IndicadorTransitoTrasbordo', $transit);
+
+        // El XSD exige los datos del destinatario después de los indicadores.
+        if (!$closing && $destDocType !== null && $destId !== null) {
+            $w->writeElement(
+                'ar:TipoDocumentoDestinatarioMercaderia',
+                $this->iaRequired(strtoupper((string) $destDocType), 'TipoDocumentoDestinatarioMercaderia', 4)
+            );
+            $w->writeElement(
+                'ar:IdentificadorDestinatarioMercaderia',
+                $this->iaNumeric($destId, 'IdentificadorDestinatarioMercaderia', 11)
+            );
+        }
+
         $w->writeElement('ar:PosicionArancelaria', $tariff);
         $w->writeElement('ar:IndicadorOperadorLogisticoSeguro', $this->iaYesNoRequired($this->iaUniqueItemValue($items, 'is_secure_logistics_operator'), 'IndicadorOperadorLogisticoSeguro'));
         $w->writeElement('ar:IndicadorTransitoMonitoreado', $this->iaYesNoRequired($this->iaUniqueItemValue($items, 'is_monitored_transit'), 'IndicadorTransitoMonitoreado'));
@@ -3886,13 +3921,17 @@ class SimpleXmlGenerator
             $w->writeElement('ar:RazonSocialFowarderExterior', $forwarder);
         }
 
-        $forwarderTax = $this->iaUniqueItemValue($items, 'foreign_forwarder_tax_id');
         if ($forwarderTax) {
-            $w->writeElement('ar:IndicadorTributarioForwarderExterior', $this->iaRequired($forwarderTax, 'IndicadorTributarioForwarderExterior', 35));
+            $w->writeElement(
+                'ar:IndicadorTributarioForwarderExterior',
+                $this->iaRequired($forwarderTax, 'IndicadorTributarioForwarderExterior', 35)
+            );
         }
-        $forwarderCountry = $this->iaUniqueItemValue($items, 'foreign_forwarder_country');
         if ($forwarderCountry) {
-            $w->writeElement('ar:CodigoPaisEmisorIdentificadorForwarderExterior', $this->iaCountryValue($forwarderCountry, 'CodigoPaisEmisorIdentificadorForwarderExterior'));
+            $w->writeElement(
+                'ar:CodigoPaisEmisorIdentificadorForwarderExterior',
+                $this->iaCountryValue($forwarderCountry, 'CodigoPaisEmisorIdentificadorForwarderExterior')
+            );
         }
 
         if ($firstItem?->comments) {
@@ -3900,8 +3939,8 @@ class SimpleXmlGenerator
         }
 
         if (!$closing) {
-            $w->writeElement('ar:CodigoAduanaDescarga', $customs);
             $w->writeElement('ar:CodigoLugarOperativoDescarga', $operative);
+            $w->writeElement('ar:CodigoAduanaDescarga', $customs);
         }
 
         $w->startElement('ar:Mercaderias');
