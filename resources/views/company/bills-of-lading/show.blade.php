@@ -889,7 +889,7 @@ if ($user) {
 
 
 {{-- DATOS AFIP ORIGEN/DESTINO --}}
-@if($billOfLading->origin_location || $billOfLading->origin_country_code || $billOfLading->origin_loading_date || $billOfLading->destination_country_code || $billOfLading->discharge_customs_code || $billOfLading->operational_discharge_code)
+@if($billOfLading->origin_location || $billOfLading->origin_country_code || $billOfLading->origin_loading_date || $billOfLading->destination_country_code || $billOfLading->discharge_customs_code || $billOfLading->operational_discharge_code || $billOfLading->is_transit_transshipment !== null)
 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
     <div class="px-6 py-4 border-b border-gray-200">
         <h3 class="text-lg font-medium text-gray-900 flex items-center">
@@ -922,6 +922,19 @@ if ($user) {
             </div>
             @endif
             
+            <div class="flex justify-between items-center">
+                <dt class="text-sm font-medium text-gray-500">Tránsito / Transbordo</dt>
+                <dd class="text-sm text-gray-900">
+                    @if(in_array($billOfLading->is_transit_transshipment, ['S', true, 1, '1'], true))
+                        <span class="px-2 py-0.5 bg-gray-100 text-gray-800 rounded text-xs font-medium">Sí</span>
+                    @elseif(in_array($billOfLading->is_transit_transshipment, ['N', false, 0, '0'], true))
+                        <span class="px-2 py-0.5 bg-gray-100 text-gray-800 rounded text-xs font-medium">No</span>
+                    @else
+                        —
+                    @endif
+                </dd>
+            </div>
+
             @if($billOfLading->destination_country_code)
             <div class="flex justify-between items-center">
                 <dt class="text-sm font-medium text-gray-500">País Destino</dt>
