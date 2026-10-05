@@ -61,6 +61,7 @@ class BillOfLadingController extends Controller
 
         // Construir consulta base - filtrar por empresa
         $query = BillOfLading::with([
+            'shipmentItems:id,bill_of_lading_id,tariff_position,commodity_code',
             'shipment.voyage:id,voyage_number,company_id',
             'shipper:id,legal_name,tax_id',
             'consignee:id,legal_name,tax_id',

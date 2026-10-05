@@ -434,6 +434,51 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
                                         </div>
                                     </div>
 
+                                    @php
+                                        $transitValue = $bill->is_transit_transshipment;
+                                        $transitYes = in_array($transitValue, ['S', true, 1, '1'], true);
+                                        $transitNo = in_array($transitValue, ['N', false, 0, '0'], true);
+                                        $customsPosition = trim((string) $bill->commodity_code);
+                                        if ($customsPosition === '' && $bill->relationLoaded('shipmentItems')) {
+                                            $itemPositions = $bill->getRelation('shipmentItems')
+                                                ->map(function ($item) {
+                                                    $tariff = trim((string) $item->tariff_position);
+                                                    return $tariff !== '' ? $tariff : trim((string) $item->commodity_code);
+                                                })
+                                                ->filter(fn ($value) => $value !== '')
+                                                ->unique()
+                                                ->values();
+                                            if ($itemPositions->count() === 1) {
+                                                $customsPosition = $itemPositions->first();
+                                            }
+                                        }
+                                    @endphp
+                                    <div class="mt-4 border-t border-gray-200 rounded-b-lg bg-gray-50 px-4 py-3">
+                                        <h4 class="text-xs font-semibold text-gray-600 mb-3">Datos aduaneros</h4>
+                                        <dl class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                                            <div class="min-w-0">
+                                                <dt class="text-xs text-gray-500">Tránsito / Transbordo</dt>
+                                                <dd class="mt-1 font-medium text-gray-900">
+                                                    @if($transitYes)
+                                                        <span class="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">Sí</span>
+                                                    @elseif($transitNo)
+                                                        <span class="inline-flex rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-700">No</span>
+                                                    @else
+                                                        —
+                                                    @endif
+                                                </dd>
+                                            </div>
+                                            <div class="min-w-0">
+                                                <dt class="text-xs text-gray-500">Fecha carga origen</dt>
+                                                <dd class="mt-1 font-medium text-gray-900">{{ $bill->origin_loading_date?->format('d/m/Y') ?? '—' }}</dd>
+                                            </div>
+                                            <div class="min-w-0">
+                                                <dt class="text-xs text-gray-500">NCM / Posición</dt>
+                                                <dd class="mt-1 font-medium text-gray-900 break-words">{{ $customsPosition !== '' ? $customsPosition : '—' }}</dd>
+                                            </div>
+                                        </dl>
+                                    </div>
+
                                     {{-- Vista Compacta (oculta por defecto) --}}
                                     <div class="compact-view mt-4 pt-4 border-t border-gray-200 hidden">
                                         <div class="flex items-center justify-between text-sm">
