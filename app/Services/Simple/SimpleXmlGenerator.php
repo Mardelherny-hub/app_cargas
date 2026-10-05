@@ -3297,6 +3297,18 @@ class SimpleXmlGenerator
             if ($bill->loading_date) {
                 $w->writeElement($prefix . 'FechaEmbarque', $this->iaDate($bill->loading_date));
             }
+            if (!$bill->origin_loading_date) {
+                throw new Exception("Contenedor {$number}: FechaCargaLugarOrigen es obligatoria para un contenedor vacío.");
+            }
+            $w->writeElement($prefix . 'FechaCargaLugarOrigen', $this->iaDate($bill->origin_loading_date));
+            $w->writeElement(
+                $prefix . 'CodigoLugarOrigen',
+                $this->iaRequired($bill->origin_location, "Contenedor {$number}: CodigoLugarOrigen", 5)
+            );
+            $w->writeElement(
+                $prefix . 'CodigoPaisLugarOrigen',
+                $this->iaCountryValue($bill->origin_country_code, "Contenedor {$number}: CodigoPaisLugarOrigen")
+            );
             $w->writeElement($prefix . 'CodigoPuertoDescarga', $this->iaPort($bill->dischargePort, $prefix . 'CodigoPuertoDescarga'));
             if ($bill->discharge_date) {
                 $w->writeElement($prefix . 'FechaDescarga', $this->iaDate($bill->discharge_date));
