@@ -91,6 +91,7 @@ class ProcessManifestImportJob implements ShouldQueue
             if ($result->isSuccessful()) {
                 $this->applyOperationalImportDates($parser, $result);
                 $this->applyContainerPrimaryTypes($result);
+                $this->applyTransitTransshipment($result);
 
                 $voyageId = $result->voyage?->id;
                 $manifestImportId = $this->resolveManifestImportId($voyageId);
@@ -312,6 +313,39 @@ class ProcessManifestImportJob implements ShouldQueue
         foreach ($bills as $bill) {
             $bill->primary_cargo_type_id = $cargoTypeId;
             $bill->primary_packaging_type_id = $packagingTypeId;
+            $bill->saveQuietly();
+        }
+    }
+
+    /**
+     * Regla funcional confirmada por Roberto: toda importación debe dejar
+     * Tránsito/Transbordo en S, independientemente del formato de origen.
+     */
+    protected function applyTransitTransshipment(
+        ManifestParseResult $result
+    ): void {
+        $voyage = $result->voyage;
+
+        if (!$voyage) {
+            return;
+        }
+
+        $shipmentIds = \App\Models\Shipment::where(
+            'voyage_id',
+            $voyage->id
+        )->pluck('id');
+
+        if ($shipmentIds->isEmpty()) {
+            return;
+        }
+
+        $bills = \App\Models\BillOfLading::whereIn(
+            'shipment_id',
+            $shipmentIds
+        )->get();
+
+        foreach ($bills as $bill) {
+            $bill->is_transit_transshipment = 'S';
             $bill->saveQuietly();
         }
     }
