@@ -3759,7 +3759,7 @@ class SimpleXmlGenerator
     {
         $bill->loadMissing([
             'shipper',
-            'consignee',
+            'consignee.documentType',
             'notifyParty',
             'loadingPort.country',
             'dischargePort.country',
@@ -3856,6 +3856,14 @@ class SimpleXmlGenerator
             }
             $destDocType = $this->iaUniqueItemValue($items, 'consignee_document_type');
             $destId = $this->iaUniqueItemValue($items, 'consignee_tax_id');
+            if ($destDocType === null && $destId === null) {
+                $clientDocType = trim((string) $bill->consignee?->documentType?->code);
+                $clientTaxId = trim((string) $bill->consignee?->tax_id);
+                if ($clientDocType !== '' && $clientTaxId !== '') {
+                    $destDocType = $clientDocType;
+                    $destId = $clientTaxId;
+                }
+            }
         }
 
         $w->startElement('ar:' . ($closing ? 'TituloCierre' : 'Titulo'));
