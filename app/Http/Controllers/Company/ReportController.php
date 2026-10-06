@@ -298,6 +298,9 @@ class ReportController extends Controller
             'destinationPort:id,name',
             'shipments',
             'billsOfLading',
+            'billsOfLading.loadingPort:id,name,code',
+            'billsOfLading.dischargePort:id,name,code',
+            'billsOfLading.finalDestinationPort:id,name,code',
         ])
         ->where('company_id', $company->id)
         ->whereHas('webserviceTransactions', function($query) {
@@ -318,6 +321,9 @@ class ReportController extends Controller
             'destinationPort:id,name',
             'shipments',
             'billsOfLading',
+            'billsOfLading.loadingPort:id,name,code',
+            'billsOfLading.dischargePort:id,name,code',
+            'billsOfLading.finalDestinationPort:id,name,code',
         ])
         ->where('company_id', $company->id)
         ->whereHas('billsOfLading')
