@@ -169,9 +169,33 @@ class MicdtaReportService
 
     private function formatClientTemplateBills(): array
     {
+        $billIds = collect((array) ($this->filters['bill_ids'] ?? []))
+            ->filter(fn ($id) => (is_int($id) || is_string($id))
+                && preg_match('/^[0-9]+$/D', trim((string) $id))
+                && (int) $id > 0)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $portFilters = [];
+        foreach (['loading_port_id', 'discharge_port_id', 'final_destination_port_id'] as $field) {
+            if (!empty($this->filters[$field])) {
+                $portFilters[$field] = (int) $this->filters[$field];
+            }
+        }
+
         return $this->voyage->shipments
-            ->flatMap(function ($shipment) {
-                return $shipment->billsOfLading->map(function ($bill) use ($shipment) {
+            ->flatMap(function ($shipment) use ($billIds, $portFilters) {
+                return $shipment->billsOfLading->filter(function ($bill) use ($billIds, $portFilters) {
+                    foreach ($portFilters as $field => $portId) {
+                        if ($bill->{$field} === null || (int) $bill->{$field} !== $portId) {
+                            return false;
+                        }
+                    }
+
+                    return $billIds === [] || in_array((int) $bill->id, $billIds, true);
+                })->map(function ($bill) use ($shipment) {
                     $shipper = $bill->getShipperCompleteData();
                     $consignee = $bill->getConsigneeCompleteData();
                     $notify = $bill->getNotifyPartyCompleteData();
