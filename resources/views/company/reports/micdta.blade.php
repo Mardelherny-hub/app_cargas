@@ -116,16 +116,6 @@
                                                         Reporte actual
                                                     </button>
                                                 </form>
-                                                <form method="POST" action="{{ route('company.reports.export', 'micdta') }}" class="inline">
-                                                    @csrf
-                                                    <input type="hidden" name="format" value="pdf">
-                                                    <input type="hidden" name="filters[voyage_id]" value="{{ $voyage->id }}">
-                                                    <input type="hidden" name="filters[template]" value="client">
-                                                    <button type="submit"
-                                                            class="inline-flex items-center px-3 py-2 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-sm font-medium rounded-md transition-all duration-200">
-                                                        Formato MIC/DTA
-                                                    </button>
-                                                </form>
                                             </div>
                                         </td>
                                     </tr>
@@ -164,8 +154,15 @@
                     </p>
                 </div>
 
+                @php
+                    $micdtaClientVoyages = $voyages
+                        ->concat($printableVoyages)
+                        ->unique('id')
+                        ->values();
+                @endphp
+
                 <div class="overflow-x-auto">
-                    @if($printableVoyages->count() > 0)
+                    @if($micdtaClientVoyages->count() > 0)
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
@@ -173,12 +170,32 @@
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Embarcación</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ruta</th>
                                     <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Conocimientos</th>
-                                    <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acción</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filtros y selección</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
-                                @foreach($printableVoyages as $voyage)
-                                    <tr class="hover:bg-gray-50">
+                                @foreach($micdtaClientVoyages as $voyage)
+                                    @php
+                                        $loadingPorts = $voyage->billsOfLading
+                                            ->pluck('loadingPort')
+                                            ->filter()
+                                            ->unique('id')
+                                            ->sortBy('name')
+                                            ->values();
+                                        $dischargePorts = $voyage->billsOfLading
+                                            ->pluck('dischargePort')
+                                            ->filter()
+                                            ->unique('id')
+                                            ->sortBy('name')
+                                            ->values();
+                                        $finalDestinationPorts = $voyage->billsOfLading
+                                            ->pluck('finalDestinationPort')
+                                            ->filter()
+                                            ->unique('id')
+                                            ->sortBy('name')
+                                            ->values();
+                                    @endphp
+                                    <tr class="align-top hover:bg-gray-50">
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                             {{ $voyage->voyage_number }}
                                         </td>
@@ -191,12 +208,67 @@
                                         <td class="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
                                             {{ $voyage->billsOfLading->count() }}
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-right">
-                                            <form method="POST" action="{{ route('company.reports.export', 'micdta') }}" class="inline">
+                                        <td class="px-6 py-4 min-w-[24rem]">
+                                            <form method="POST"
+                                                  action="{{ route('company.reports.export', 'micdta') }}"
+                                                  class="micdta-client-form space-y-4">
                                                 @csrf
                                                 <input type="hidden" name="format" value="pdf">
                                                 <input type="hidden" name="filters[voyage_id]" value="{{ $voyage->id }}">
                                                 <input type="hidden" name="filters[template]" value="client">
+
+                                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                    <label class="block text-xs font-medium text-gray-700">
+                                                        Puerto de carga
+                                                        <select name="filters[loading_port_id]" class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+                                                            <option value="">Todos</option>
+                                                            @foreach($loadingPorts as $port)
+                                                                <option value="{{ $port->id }}">{{ $port->code ? $port->code . ' - ' : '' }}{{ $port->name }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </label>
+                                                    <label class="block text-xs font-medium text-gray-700">
+                                                        Puerto de descarga
+                                                        <select name="filters[discharge_port_id]" class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+                                                            <option value="">Todos</option>
+                                                            @foreach($dischargePorts as $port)
+                                                                <option value="{{ $port->id }}">{{ $port->code ? $port->code . ' - ' : '' }}{{ $port->name }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </label>
+                                                    <label class="block text-xs font-medium text-gray-700">
+                                                        Destino final
+                                                        <select name="filters[final_destination_port_id]" class="mt-1 block w-full rounded-md border-gray-300 text-sm">
+                                                            <option value="">Todos</option>
+                                                            @foreach($finalDestinationPorts as $port)
+                                                                <option value="{{ $port->id }}">{{ $port->code ? $port->code . ' - ' : '' }}{{ $port->name }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </label>
+                                                </div>
+
+                                                <details class="rounded-md border border-gray-200 p-3">
+                                                    <summary class="cursor-pointer text-sm font-medium text-gray-700">
+                                                        Conocimientos ({{ $voyage->billsOfLading->count() }})
+                                                    </summary>
+                                                    <div class="mt-3 max-h-48 space-y-2 overflow-y-auto">
+                                                        <label class="flex items-center gap-2 border-b border-gray-100 pb-2 text-sm font-medium text-gray-700">
+                                                            <input type="checkbox" class="micdta-select-all rounded border-gray-300" checked>
+                                                            Seleccionar todos
+                                                        </label>
+                                                        @foreach($voyage->billsOfLading as $bill)
+                                                            <label class="flex items-center gap-2 text-sm text-gray-700">
+                                                                <input type="checkbox"
+                                                                       name="filters[bill_ids][]"
+                                                                       value="{{ $bill->id }}"
+                                                                       class="micdta-bill-checkbox rounded border-gray-300"
+                                                                       checked>
+                                                                {{ $bill->bill_number }}
+                                                            </label>
+                                                        @endforeach
+                                                    </div>
+                                                </details>
+
                                                 <button type="submit"
                                                         class="inline-flex items-center px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-md">
                                                     Formato MIC/DTA
@@ -209,10 +281,35 @@
                         </table>
                     @else
                         <div class="p-6 text-sm text-gray-500">
-                            No hay otros viajes con conocimientos disponibles para esta salida.
+                            No hay viajes con conocimientos disponibles para esta salida.
                         </div>
                     @endif
                 </div>
+                <script>
+                    document.querySelectorAll('.micdta-client-form').forEach((form) => {
+                        const selectAll = form.querySelector('.micdta-select-all');
+                        const billCheckboxes = Array.from(form.querySelectorAll('.micdta-bill-checkbox'));
+
+                        selectAll.addEventListener('change', () => {
+                            billCheckboxes.forEach((checkbox) => {
+                                checkbox.checked = selectAll.checked;
+                            });
+                        });
+
+                        billCheckboxes.forEach((checkbox) => {
+                            checkbox.addEventListener('change', () => {
+                                selectAll.checked = billCheckboxes.every((item) => item.checked);
+                            });
+                        });
+
+                        form.addEventListener('submit', (event) => {
+                            if (!billCheckboxes.some((checkbox) => checkbox.checked)) {
+                                event.preventDefault();
+                                alert('Seleccione al menos un conocimiento.');
+                            }
+                        });
+                    });
+                </script>
             </div>
         </div>
     </div>
