@@ -2134,6 +2134,79 @@ private function generateMicDta(string $format, array $filters, $company)
         abort(403, 'No tiene permisos para generar este reporte');
     }
 
+    $template = $filters['template'] ?? 'standard';
+    if (!is_string($template)) {
+        return back()->with('error', 'El formato de plantilla MIC/DTA seleccionado no es válido.');
+    }
+
+    $template = strtolower(trim($template));
+    $template = $template === '' ? 'standard' : $template;
+    if (!in_array($template, ['standard', 'client'], true)) {
+        return back()->with('error', 'El formato de plantilla MIC/DTA seleccionado no es válido.');
+    }
+    $filters['template'] = $template;
+
+    if ($template === 'client') {
+        $normalizeId = static function ($value): ?int {
+            if (!is_int($value) && !is_string($value)) {
+                return null;
+            }
+
+            $value = trim((string) $value);
+            if (!preg_match('/^[0-9]+$/D', $value)) {
+                return null;
+            }
+
+            $id = filter_var(ltrim($value, '0'), FILTER_VALIDATE_INT, [
+                'options' => ['min_range' => 1],
+            ]);
+
+            return $id === false ? null : $id;
+        };
+
+        $portErrors = [
+            'loading_port_id' => 'El puerto de carga seleccionado no es válido.',
+            'discharge_port_id' => 'El puerto de descarga seleccionado no es válido.',
+            'final_destination_port_id' => 'El puerto de destino final seleccionado no es válido.',
+        ];
+        foreach ($portErrors as $field => $error) {
+            $value = $filters[$field] ?? null;
+            if ($value === null || (is_string($value) && trim($value) === '')) {
+                unset($filters[$field]);
+                continue;
+            }
+
+            $id = $normalizeId($value);
+            if ($id === null) {
+                return back()->with('error', $error);
+            }
+            $filters[$field] = $id;
+        }
+
+        if (array_key_exists('bill_ids', $filters)) {
+            if (!is_array($filters['bill_ids'])) {
+                return back()->with('error', 'La selección de conocimientos contiene valores inválidos.');
+            }
+
+            $billIds = [];
+            foreach ($filters['bill_ids'] as $value) {
+                if ($value === null || (is_string($value) && trim($value) === '')) {
+                    continue;
+                }
+
+                $id = $normalizeId($value);
+                if ($id === null) {
+                    return back()->with('error', 'La selección de conocimientos contiene valores inválidos.');
+                }
+                $billIds[] = $id;
+            }
+            $filters['bill_ids'] = array_values(array_unique($billIds));
+        }
+    } else {
+        unset($filters['loading_port_id'], $filters['discharge_port_id'],
+            $filters['final_destination_port_id'], $filters['bill_ids']);
+    }
+
     $service = new MicDtaReportService($voyage, $filters, auth()->user()->name ?? 'Sistema');
 
     if (!$service->validate()) {
@@ -2144,7 +2217,6 @@ private function generateMicDta(string $format, array $filters, $company)
 
     // El informe MIC/DTA existente se conserva. El modelo basado en la
     // muestra del cliente es una salida alternativa, no un reemplazo.
-    $template = $filters['template'] ?? 'standard';
     $view = $template === 'client'
         ? 'company.reports.pdf.micdta-client'
         : 'company.reports.pdf.micdta';
