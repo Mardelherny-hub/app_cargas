@@ -60,12 +60,16 @@
             {{-- FORMULARIO DE GENERACIÓN --}}
             <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
                 <div class="px-4 py-5 sm:p-6">
-                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
-                        Generar Manifiesto de Carga
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-1">
+                        Formato actual
                     </h3>
+                    <p class="text-sm text-gray-500 mb-4">
+                        Reporte existente del sistema. Se conserva en PDF o Excel sin reemplazarlo.
+                    </p>
 
                     <form method="POST" action="{{ route('company.reports.export', 'manifests') }}">
                         @csrf
+                        <input type="hidden" name="filters[template]" value="standard">
 
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
                             {{-- SELECCIONAR VIAJE --}}
@@ -79,22 +83,15 @@
                                         class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
                                         onchange="updateVoyageDetails(this)">
                                     <option value="">Seleccione un viaje...</option>
-                                    @php
-                                        $voyages = \App\Models\Voyage::where('company_id', auth()->user()->userable->company_id ?? auth()->user()->userable_id)
-                                            ->whereHas('billsOfLading')
-                                            ->with(['leadVessel', 'originPort', 'destinationPort', 'billsOfLading'])
-                                            ->orderBy('departure_date', 'desc')
-                                            ->get();
-                                    @endphp
-                                    @forelse($voyages as $voyage)
-                                        <option value="{{ $voyage->id }}" 
+                                    @forelse($reportVoyages as $voyage)
+                                        <option value="{{ $voyage->id }}"
                                                 data-vessel="{{ $voyage->leadVessel->name ?? 'N/A' }}"
                                                 data-origin="{{ $voyage->originPort->name ?? 'N/A' }}"
                                                 data-destination="{{ $voyage->destinationPort->name ?? 'N/A' }}"
-                                                data-bills="{{ $voyage->billsOfLading->count() }}"
+                                                data-bills="{{ $voyage->bills_of_lading_count }}"
                                                 data-departure="{{ $voyage->departure_date ? \Carbon\Carbon::parse($voyage->departure_date)->format('d/m/Y') : 'N/A' }}">
-                                            {{ $voyage->voyage_number }} - {{ $voyage->leadVessel->name ?? 'N/A' }} 
-                                            ({{ $voyage->billsOfLading->count() }} BLs)
+                                            {{ $voyage->voyage_number }} - {{ $voyage->leadVessel->name ?? 'N/A' }}
+                                            ({{ $voyage->bills_of_lading_count }} BLs)
                                         </option>
                                     @empty
                                         <option value="" disabled>No hay viajes disponibles</option>
@@ -146,22 +143,6 @@
                                 </select>
                             </div>
 
-                            {{-- PRESENTACIÓN PDF --}}
-                            <div>
-                                <label for="template" class="block text-sm font-medium text-gray-700">
-                                    Presentación
-                                </label>
-                                <select id="template"
-                                        name="filters[template]"
-                                        class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-                                    <option value="standard">Reporte del sistema (actual)</option>
-                                    <option value="client">Cargo Manifest - formato según muestra</option>
-                                </select>
-                                <p class="mt-1 text-xs text-gray-500">
-                                    El formato según muestra se genera en paralelo y no reemplaza el reporte actual.
-                                </p>
-                            </div>
-
                             {{-- FILTROS OPCIONALES --}}
                             <div>
                                 <label for="status_filter" class="block text-sm font-medium text-gray-700">
@@ -196,14 +177,180 @@
                 </div>
             </div>
 
+            {{-- CARGO MANIFEST - FORMATO SEGÚN MUESTRA --}}
+            <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
+                <div class="px-4 py-5 sm:p-6">
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 mb-1">
+                        Cargo Manifest - formato según muestra
+                    </h3>
+                    <p class="text-sm text-gray-500 mb-4">
+                        PDF A4 apaisado. Permite seleccionar viaje, puertos y uno, varios o todos los conocimientos.
+                    </p>
+
+                    <form method="GET" action="{{ route('company.reports.manifests') }}" class="mb-6">
+                        <label for="client_voyage_id" class="block text-sm font-medium text-gray-700">
+                            Viaje <span class="text-red-500">*</span>
+                        </label>
+                        <div class="mt-1 flex flex-col sm:flex-row gap-3">
+                            <select id="client_voyage_id"
+                                    name="client_voyage_id"
+                                    required
+                                    class="block w-full sm:max-w-xl border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <option value="">Seleccione un viaje</option>
+                                @foreach($reportVoyages as $voyage)
+                                    <option value="{{ $voyage->id }}" {{ (string) request('client_voyage_id') === (string) $voyage->id ? 'selected' : '' }}>
+                                        {{ $voyage->voyage_number }} - {{ $voyage->leadVessel->name ?? 'N/A' }}
+                                        ({{ $voyage->bills_of_lading_count }} BLs)
+                                    </option>
+                                @endforeach
+                            </select>
+                            <button type="submit"
+                                    class="inline-flex justify-center items-center px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm font-medium rounded-md">
+                                Cargar conocimientos
+                            </button>
+                        </div>
+                    </form>
+
+                    @if($clientManifestVoyage)
+                        @php
+                            $manifestLoadingPorts = $clientManifestBills->pluck('loadingPort')->filter()->unique('id')->sortBy('name')->values();
+                            $manifestDischargePorts = $clientManifestBills->pluck('dischargePort')->filter()->unique('id')->sortBy('name')->values();
+                            $manifestFinalPorts = $clientManifestBills->pluck('finalDestinationPort')->filter()->unique('id')->sortBy('name')->values();
+                        @endphp
+
+                        <div class="mb-4 rounded-md bg-gray-50 border border-gray-200 p-3 text-sm text-gray-700">
+                            <strong>Viaje:</strong> {{ $clientManifestVoyage->voyage_number }}
+                            @if($clientManifestVoyage->leadVessel)
+                                · <strong>Embarcación:</strong> {{ $clientManifestVoyage->leadVessel->name }}
+                            @endif
+                            · <strong>Conocimientos:</strong> {{ $clientManifestBills->count() }}
+                        </div>
+
+                        <form method="POST"
+                              action="{{ route('company.reports.export', 'manifests') }}"
+                              id="manifest-client-form">
+                            @csrf
+                            <input type="hidden" name="format" value="pdf">
+                            <input type="hidden" name="filters[template]" value="client">
+                            <input type="hidden" name="filters[voyage_id]" value="{{ $clientManifestVoyage->id }}">
+
+                            <div class="grid grid-cols-1 gap-4 md:grid-cols-3 mb-5">
+                                <div>
+                                    <label for="manifest_loading_port_id" class="block text-sm font-medium text-gray-700">Puerto de carga</label>
+                                    <select id="manifest_loading_port_id" name="filters[loading_port_id]"
+                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                        <option value="">Todos</option>
+                                        @foreach($manifestLoadingPorts as $port)
+                                            <option value="{{ $port->id }}">{{ $port->code ? $port->code . ' - ' : '' }}{{ $port->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label for="manifest_discharge_port_id" class="block text-sm font-medium text-gray-700">Puerto de descarga</label>
+                                    <select id="manifest_discharge_port_id" name="filters[discharge_port_id]"
+                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                        <option value="">Todos</option>
+                                        @foreach($manifestDischargePorts as $port)
+                                            <option value="{{ $port->id }}">{{ $port->code ? $port->code . ' - ' : '' }}{{ $port->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label for="manifest_final_port_id" class="block text-sm font-medium text-gray-700">Destino final</label>
+                                    <select id="manifest_final_port_id" name="filters[final_destination_port_id]"
+                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                        <option value="">Todos</option>
+                                        @foreach($manifestFinalPorts as $port)
+                                            <option value="{{ $port->id }}">{{ $port->code ? $port->code . ' - ' : '' }}{{ $port->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
+                            <details class="rounded-md border border-gray-200 p-3 mb-5" open>
+                                <summary class="cursor-pointer text-sm font-medium text-gray-800">
+                                    Conocimientos a incluir ({{ $clientManifestBills->count() }})
+                                </summary>
+                                <div class="mt-3 max-h-64 overflow-y-auto space-y-2 pr-2">
+                                    <label class="flex items-center gap-2 pb-2 border-b border-gray-200 text-sm font-semibold text-gray-700">
+                                        <input type="checkbox" id="manifest-select-all" checked class="rounded border-gray-300">
+                                        Seleccionar todos
+                                    </label>
+
+                                    @foreach($clientManifestBills as $bill)
+                                        <label class="flex items-start gap-2 text-sm text-gray-700">
+                                            <input type="checkbox"
+                                                   name="filters[bill_ids][]"
+                                                   value="{{ $bill->id }}"
+                                                   class="manifest-bill-checkbox mt-1 rounded border-gray-300"
+                                                   checked>
+                                            <span>
+                                                <strong>{{ $bill->bill_number }}</strong>
+                                                <span class="text-xs text-gray-500">
+                                                    — {{ $bill->loadingPort?->name ?? 'Sin puerto de carga' }}
+                                                    → {{ $bill->dischargePort?->name ?? 'Sin puerto de descarga' }}
+                                                    @if($bill->finalDestinationPort)
+                                                        → {{ $bill->finalDestinationPort->name }}
+                                                    @endif
+                                                </span>
+                                            </span>
+                                        </label>
+                                    @endforeach
+                                </div>
+                            </details>
+
+                            <div class="flex justify-end">
+                                <button type="submit"
+                                        class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-md">
+                                    Generar Cargo Manifest
+                                </button>
+                            </div>
+                        </form>
+
+                        <script>
+                            (() => {
+                                const form = document.getElementById('manifest-client-form');
+                                if (!form) return;
+
+                                const selectAll = document.getElementById('manifest-select-all');
+                                const bills = Array.from(form.querySelectorAll('.manifest-bill-checkbox'));
+
+                                selectAll.addEventListener('change', () => {
+                                    bills.forEach((checkbox) => checkbox.checked = selectAll.checked);
+                                });
+
+                                bills.forEach((checkbox) => {
+                                    checkbox.addEventListener('change', () => {
+                                        selectAll.checked = bills.every((item) => item.checked);
+                                    });
+                                });
+
+                                form.addEventListener('submit', (event) => {
+                                    if (!bills.some((checkbox) => checkbox.checked)) {
+                                        event.preventDefault();
+                                        alert('Seleccione al menos un conocimiento.');
+                                    }
+                                });
+                            })();
+                        </script>
+                    @elseif(request()->filled('client_voyage_id'))
+                        <div class="rounded-md bg-yellow-50 border border-yellow-200 p-4 text-sm text-yellow-800">
+                            El viaje seleccionado no está disponible para esta empresa o no tiene conocimientos.
+                        </div>
+                    @endif
+                </div>
+            </div>
+
             {{-- LISTADO DE VIAJES DISPONIBLES --}}
             <div class="bg-white overflow-hidden shadow rounded-lg">
                 <div class="px-4 py-5 sm:p-6">
                     <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
-                        Viajes Disponibles ({{ $voyages->count() }})
+                        Viajes Disponibles ({{ $reportVoyages->count() }})
                     </h3>
 
-                    @if($voyages->count() > 0)
+                    @if($reportVoyages->count() > 0)
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
@@ -226,7 +373,7 @@
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    @foreach($voyages as $voyage)
+                                    @foreach($reportVoyages as $voyage)
                                         <tr class="hover:bg-gray-50">
                                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                                 {{ $voyage->voyage_number }}
@@ -239,7 +386,7 @@
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                                    {{ $voyage->billsOfLading->count() }} BLs
+                                                    {{ $voyage->bills_of_lading_count }} BLs
                                                 </span>
                                             </td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
