@@ -131,11 +131,68 @@ class ReportController extends Controller
         // Filtros disponibles
         $filters = $this->getManifestFilters();
 
+        // Viajes disponibles para generar reportes sin queries desde Blade.
+        $reportVoyagesQuery = Voyage::with([
+                'leadVessel:id,name',
+                'originPort:id,name',
+                'destinationPort:id,name',
+            ])
+            ->withCount('billsOfLading')
+            ->where('company_id', $company->id)
+            ->whereHas('billsOfLading')
+            ->orderByDesc('departure_date')
+            ->orderByDesc('id');
+
+        if ($this->isUser()) {
+            $reportVoyagesQuery->where('created_by', $this->getCurrentUser()->id);
+        }
+
+        $reportVoyages = $reportVoyagesQuery->get();
+
+        // Para el formato según muestra, cargar únicamente los BL del viaje
+        // elegido y los puertos que esos BL realmente utilizan.
+        $clientManifestVoyage = null;
+        $clientManifestBills = collect();
+        $selectedClientVoyageId = $request->input('client_voyage_id');
+
+        if (is_scalar($selectedClientVoyageId)
+            && preg_match('/^[1-9][0-9]*$/D', (string) $selectedClientVoyageId)) {
+            $clientVoyageQuery = Voyage::with(['leadVessel:id,name'])
+                ->where('company_id', $company->id)
+                ->where('id', (int) $selectedClientVoyageId)
+                ->whereHas('billsOfLading');
+
+            if ($this->isUser()) {
+                $clientVoyageQuery->where('created_by', $this->getCurrentUser()->id);
+            }
+
+            $clientManifestVoyage = $clientVoyageQuery->first();
+
+            if ($clientManifestVoyage) {
+                $clientManifestBills = BillOfLading::with([
+                        'loadingPort:id,name,code',
+                        'dischargePort:id,name,code',
+                        'finalDestinationPort:id,name,code',
+                    ])
+                    ->whereHas('shipment', function ($query) use ($clientManifestVoyage) {
+                        $query->where('voyage_id', $clientManifestVoyage->id);
+                    })
+                    ->orderBy('bill_number')
+                    ->get([
+                        'id', 'shipment_id', 'bill_number',
+                        'loading_port_id', 'discharge_port_id', 'final_destination_port_id',
+                    ]);
+            }
+        }
+
         return view('company.reports.manifests', compact(
             'manifests',
             'stats',
             'filters',
-            'company'
+            'company',
+            'reportVoyages',
+            'clientManifestVoyage',
+            'clientManifestBills'
         ));
     }
 
@@ -1509,6 +1566,78 @@ private function buildBillsOfLadingQuery($company)
      */
     private function generateManifestReport(string $format, array $filters, $company)
     {
+        $template = $filters['template'] ?? 'standard';
+        if (!is_string($template)) {
+            return back()->with('error', 'La presentación seleccionada no es válida.');
+        }
+
+        $template = strtolower(trim($template));
+        $template = $template === '' ? 'standard' : $template;
+        if (!in_array($template, ['standard', 'client'], true)) {
+            return back()->with('error', 'La presentación seleccionada no es válida.');
+        }
+        $filters['template'] = $template;
+
+        if ($template === 'client') {
+            if ($format !== 'pdf') {
+                return back()->with('error', 'Cargo Manifest - formato según muestra está disponible únicamente en PDF.');
+            }
+
+            $normalizeId = static function ($value): ?int {
+                if (!is_int($value) && !is_string($value)) {
+                    return null;
+                }
+
+                $value = trim((string) $value);
+                if (!preg_match('/^[0-9]+$/D', $value)) {
+                    return null;
+                }
+
+                $id = filter_var(ltrim($value, '0'), FILTER_VALIDATE_INT, [
+                    'options' => ['min_range' => 1],
+                ]);
+
+                return $id === false ? null : $id;
+            };
+
+            foreach (['voyage_id', 'loading_port_id', 'discharge_port_id', 'final_destination_port_id'] as $field) {
+                $value = $filters[$field] ?? null;
+                if ($value === null || (is_string($value) && trim($value) === '')) {
+                    unset($filters[$field]);
+                    continue;
+                }
+
+                $id = $normalizeId($value);
+                if ($id === null) {
+                    return back()->with('error', 'Los filtros seleccionados para el manifiesto contienen valores inválidos.');
+                }
+                $filters[$field] = $id;
+            }
+
+            if (array_key_exists('bill_ids', $filters)) {
+                if (!is_array($filters['bill_ids'])) {
+                    return back()->with('error', 'La selección de conocimientos contiene valores inválidos.');
+                }
+
+                $billIds = [];
+                foreach ($filters['bill_ids'] as $value) {
+                    $id = $normalizeId($value);
+                    if ($id === null) {
+                        return back()->with('error', 'La selección de conocimientos contiene valores inválidos.');
+                    }
+                    $billIds[] = $id;
+                }
+                $filters['bill_ids'] = array_values(array_unique($billIds));
+            }
+        } else {
+            unset(
+                $filters['loading_port_id'],
+                $filters['discharge_port_id'],
+                $filters['final_destination_port_id'],
+                $filters['bill_ids']
+            );
+        }
+
         // 1. Validar que existe voyage_id en filtros
         if (empty($filters['voyage_id'])) {
             return back()->with('error', 'Debe seleccionar un viaje para generar el manifiesto.');
