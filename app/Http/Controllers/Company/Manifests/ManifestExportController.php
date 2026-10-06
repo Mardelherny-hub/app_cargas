@@ -596,10 +596,10 @@ class ManifestExportController extends Controller
                 );
                 $lines[] = $this->tfpLine('LUGAROPERATIVA', '');
                 $lines[] = $this->tfpLine('BARCAZA', '');
-                $lines[] = $this->tfpLine(
-                    'ENTRANSITO',
-                    strtoupper(trim((string) $bill->is_transit_transshipment)) === 'S' ? 'S' : 'N'
-                );
+                // ENTRANSITO aparece vacío en todos los archivos TFP de referencia disponibles.
+                // No se reutiliza el indicador aduanero tránsito/transbordo porque no se confirmó
+                // que represente el mismo concepto en este formato.
+                $lines[] = $this->tfpLine('ENTRANSITO', '');
 
                 $lines[] = '    **CONTENEDORES**';
                 foreach ($this->uniqueBillContainers($bill) as $container) {
@@ -641,10 +641,12 @@ class ManifestExportController extends Controller
                         'TEMPERATURA',
                         $this->numericText($container->set_temperature)
                     );
-                    $lines[] = $this->tfpLine(
-                        'NROPRECINTA',
+                    $tfpSeals = preg_replace(
+                        '/\s*,\s*/',
+                        ' ',
                         implode(' ', $this->containerSeals($container))
                     );
+                    $lines[] = $this->tfpLine('NROPRECINTA', $tfpSeals);
                     $lines[] = $this->tfpLine(
                         'NUMERO',
                         $container->container_number
