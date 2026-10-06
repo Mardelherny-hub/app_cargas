@@ -2219,22 +2219,30 @@ private function generateMicDta(string $format, array $filters, $company)
         return back()->with('error', 'El viaje no tiene datos suficientes');
     }
 
-    $data = $service->prepareData();
+    try {
+        $data = $service->prepareData();
 
-    // El informe MIC/DTA existente se conserva. El modelo basado en la
-    // muestra del cliente es una salida alternativa, no un reemplazo.
-    $view = $template === 'client'
-        ? 'company.reports.pdf.micdta-client'
-        : 'company.reports.pdf.micdta';
+        // El informe MIC/DTA existente se conserva. El modelo basado en la
+        // muestra del cliente es una salida alternativa, no un reemplazo.
+        $view = $template === 'client'
+            ? 'company.reports.pdf.micdta-client'
+            : 'company.reports.pdf.micdta';
 
-    $pdf = \PDF::loadView($view, $data);
-    $pdf->setPaper('A4', $template === 'client' ? 'portrait' : 'landscape');
-    $pdf->setOptions([
-        'defaultFont' => 'Arial',
-        'isHtml5ParserEnabled' => true,
-        'isRemoteEnabled' => true
-    ]);
+        $pdf = \PDF::loadView($view, $data);
+        $pdf->setPaper('A4', $template === 'client' ? 'portrait' : 'landscape');
+        $pdf->setOptions([
+            'defaultFont' => 'Arial',
+            'isHtml5ParserEnabled' => true,
+            'isRemoteEnabled' => true
+        ]);
 
-    return $pdf->download($service->getSuggestedFilename('pdf'));
+        return $pdf->download($service->getSuggestedFilename('pdf'));
+    } catch (\RuntimeException $e) {
+        if ($template === 'client' && str_starts_with($e->getMessage(), 'El detalle ')) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        throw $e;
+    }
 }
 }
