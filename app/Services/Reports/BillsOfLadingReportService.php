@@ -65,7 +65,23 @@ class BillsOfLadingReportService
             });
         }
 
-        // Filtros de clientes
+        // Selección explícita de conocimientos para el formato solicitado por el cliente.
+        if (!empty($this->filters['bill_ids']) && is_array($this->filters['bill_ids'])) {
+            $query->whereIn('id', array_values(array_unique(array_map('intval', $this->filters['bill_ids']))));
+        }
+
+        // Filtro genérico de cliente: Client puede intervenir en distintos roles del conocimiento.
+        if (!empty($this->filters['client_id'])) {
+            $clientId = (int) $this->filters['client_id'];
+            $query->where(function ($q) use ($clientId) {
+                $q->where('shipper_id', $clientId)
+                    ->orWhere('consignee_id', $clientId)
+                    ->orWhere('notify_party_id', $clientId)
+                    ->orWhere('cargo_owner_id', $clientId);
+            });
+        }
+
+        // Filtros de clientes del reporte actual
         if (!empty($this->filters['shipper_id'])) {
             $query->where('shipper_id', $this->filters['shipper_id']);
         }
@@ -176,6 +192,15 @@ class BillsOfLadingReportService
             $applied[] = 'Viaje: ' . ($voyage?->voyage_number ?? $this->filters['voyage_id']);
         }
 
+        if (!empty($this->filters['client_id'])) {
+            $client = \App\Models\Client::find($this->filters['client_id']);
+            $applied[] = 'Cliente: ' . ($client?->commercial_name ?: $client?->legal_name ?: $this->filters['client_id']);
+        }
+
+        if (!empty($this->filters['bill_ids']) && is_array($this->filters['bill_ids'])) {
+            $applied[] = 'Conocimientos seleccionados: ' . count(array_unique($this->filters['bill_ids']));
+        }
+
         $portFilters = [
             'loading_port_id' => 'Puerto de carga',
             'discharge_port_id' => 'Puerto de descarga',
@@ -239,14 +264,21 @@ class BillsOfLadingReportService
     {
         $date = Carbon::now()->format('Ymd_His');
         $extension = $format === 'pdf' ? 'pdf' : 'xlsx';
+        $prefix = ($this->filters['template'] ?? 'standard') === 'client'
+            ? 'Conocimientos_Formato'
+            : 'Listado_Conocimientos';
         
-        return "Listado_Conocimientos_{$date}.{$extension}";
+        return "{$prefix}_{$date}.{$extension}";
     }
 
     public function validate(): bool
     {
         if (!$this->company->id) {
             throw new \Exception('Empresa no especificada.');
+        }
+
+        if (($this->filters['template'] ?? 'standard') === 'client' && empty($this->filters['voyage_id'])) {
+            throw new \Exception('Debe seleccionar un viaje para generar el formato de conocimientos.');
         }
         
         return true;
