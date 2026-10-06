@@ -180,7 +180,8 @@ class ManifestExportController extends Controller
     private function getVoyageForExport($voyageId): Voyage
     {
         return Voyage::with([
-            'shipments.vessel',
+            'shipments.vessel.owner',
+            'leadVessel.owner',
             'shipments.billsOfLading.shipper.contactData',
             'shipments.billsOfLading.shipper.country',
             'shipments.billsOfLading.consignee.contactData',
@@ -193,6 +194,7 @@ class ManifestExportController extends Controller
             'shipments.billsOfLading.shipmentItems.cargoType',
             'shipments.billsOfLading.shipmentItems.packagingType',
             'shipments.billsOfLading.shipmentItems.containers.containerType',
+            'shipments.billsOfLading.shipmentItems.containers.operatorClient',
             'originPort.country',
             'destinationPort.country',
             'company',
@@ -495,6 +497,12 @@ class ManifestExportController extends Controller
                 $loadingPort = $bill->loadingPort ?: $voyage->originPort;
                 $dischargePort = $bill->dischargePort ?: $voyage->destinationPort;
 
+                $transportDescription = trim((string) (
+                    $vessel->owner?->legal_name
+                    ?: $vessel->owner?->commercial_name
+                    ?: ''
+                ));
+
                 $lines[] = '  **BL**';
                 $lines[] = $this->tfpLine('BLNUMERO', $bill->bill_number);
                 $lines[] = $this->tfpLine(
@@ -502,11 +510,14 @@ class ManifestExportController extends Controller
                     $bill->master_bill_number ?? ''
                 );
                 $lines[] = $this->tfpLine('TRB', $bill->permiso_embarque ?? '');
+                $lines[] = $this->tfpLine('ADUANADESTINO', $bill->discharge_customs_code ?? '');
                 $lines[] = $this->tfpLine('BUQUE', $vessel->name);
+                $lines[] = $this->tfpLine('CIAAEREA', '');
                 $lines[] = $this->tfpLine(
                     'CONSOLIDADO',
-                    $bill->is_consolidated ? 'S' : 'N'
+                    (int) $bill->getRawOriginal('is_consolidated') === 1 ? 'S' : 'N'
                 );
+                $lines[] = $this->tfpLine('DESCTRANSP', $transportDescription);
                 $lines[] = $this->tfpLine(
                     'CONSIGNATARIO',
                     $consignee['company_name']
@@ -547,7 +558,15 @@ class ManifestExportController extends Controller
                         ? $notifyTfp['structured_ruc']
                         : ''
                 );
-                $lines[] = $this->tfpLine('MEDIOTRANSP', $vessel->name);
+                $lines[] = $this->tfpLine('FRACCIONADO', $bill->is_fractional ? 'S' : 'N');
+                // Todos los archivos TFP reales disponibles usan 8MTR para transporte acuático.
+                $lines[] = $this->tfpLine('MEDIOTRANSP', '8MTR');
+                $lines[] = $this->tfpLine('CODPAISORIGEN', $bill->origin_country_code ?? '');
+                $lines[] = $this->tfpLine('PAISORIGEN', '');
+                $lines[] = $this->tfpLine('CODPUERTOORIGEN', '');
+                $lines[] = $this->tfpLine('PUERTOORIGEN', '');
+                $lines[] = $this->tfpLine('PAISPUERTO', '');
+                $lines[] = $this->tfpLine('PAISTRASBORDO', '');
                 $lines[] = $this->tfpLine(
                     'CODPUERTOCARGA',
                     $this->portCode($loadingPort, 'puerto de carga TFP')
@@ -567,23 +586,51 @@ class ManifestExportController extends Controller
                         'Nombre puerto de descarga TFP'
                     )
                 );
+                $lines[] = $this->tfpLine('CODTERMINALCARGA', '');
+                $lines[] = $this->tfpLine('TERMINALCARGA', '');
+                $lines[] = $this->tfpLine('CODTERMINALDESCARGA', '');
+                $lines[] = $this->tfpLine('TERMINALDESCARGA', '');
+                $lines[] = $this->tfpLine(
+                    'CODLUGAROPERATIVA',
+                    $bill->operational_discharge_code ?? ''
+                );
+                $lines[] = $this->tfpLine('LUGAROPERATIVA', '');
+                $lines[] = $this->tfpLine('BARCAZA', '');
+                $lines[] = $this->tfpLine(
+                    'ENTRANSITO',
+                    strtoupper(trim((string) $bill->is_transit_transshipment)) === 'S' ? 'S' : 'N'
+                );
 
                 $lines[] = '    **CONTENEDORES**';
                 foreach ($this->uniqueBillContainers($bill) as $container) {
-                    $type = $this->requiredText(
+                    $storedType = $this->requiredText(
                         $container->containerType?->code,
                         "Tipo del contenedor {$container->container_number}"
                     );
+                    $type = match (strtoupper($storedType)) {
+                        '20GP' => '20DV',
+                        '40GP' => '40DV',
+                        default => $storedType,
+                    };
 
-                    $condition = in_array(
-                        $container->container_condition,
-                        ['H', 'P'],
-                        true
-                    )
-                        ? $container->container_condition
-                        : ($container->condition ?? '');
+                    $operationalCondition = strtoupper(trim((string) $container->condition));
+                    if ($operationalCondition === 'V') {
+                        $condition = 'V';
+                    } elseif (in_array($container->container_condition, ['H', 'P'], true)) {
+                        $condition = $container->container_condition;
+                    } elseif (in_array($operationalCondition, ['D', 'S', 'L', 'R'], true)) {
+                        $condition = $operationalCondition;
+                    } else {
+                        $condition = '';
+                    }
 
+                    $operatorName = trim((string) (
+                        $container->operatorClient?->commercial_name
+                        ?: $container->operatorClient?->legal_name
+                        ?: ''
+                    ));
                     $lines[] = $this->tfpLine('CONDICION', $condition);
+                    $lines[] = $this->tfpLine('LINEA', $operatorName);
                     $lines[] = $this->tfpLine('TIPO', $type);
                     $lines[] = $this->tfpLine('MEDIDA', $type);
                     $lines[] = $this->tfpLine(
@@ -591,8 +638,12 @@ class ManifestExportController extends Controller
                         $this->numericText($container->tare_weight_kg)
                     );
                     $lines[] = $this->tfpLine(
+                        'TEMPERATURA',
+                        $this->numericText($container->set_temperature)
+                    );
+                    $lines[] = $this->tfpLine(
                         'NROPRECINTA',
-                        implode(' / ', $this->containerSeals($container))
+                        implode(' ', $this->containerSeals($container))
                     );
                     $lines[] = $this->tfpLine(
                         'NUMERO',
@@ -601,42 +652,56 @@ class ManifestExportController extends Controller
                     $lines[] = $this->tfpLine('PESO', '');
                     $lines[] = $this->tfpLine('CANTIDAD', '');
                     $lines[] = $this->tfpLine(
-                        'TEMPERATURA',
-                        $this->numericText($container->set_temperature)
-                    );
-                    $lines[] = $this->tfpLine(
                         'OBS',
                         $bill->permiso_embarque ?? ''
                     );
                 }
                 $lines[] = '    **FIN CONTENEDORES**';
 
+                $lines[] = '    **LINEAS**';
                 foreach ($bill->shipmentItems as $item) {
                     $occurrences = $item->containers->isEmpty()
                         ? collect([null])
-                        : $item->containers;
+                        : $item->containers->values();
+                    $occurrenceCount = $occurrences->count();
 
                     foreach ($occurrences as $container) {
                         $pivot = $container?->pivot;
-                        $packages = $pivot?->package_quantity
-                            ?? $item->package_quantity;
-                        $gross = $pivot?->gross_weight_kg
-                            ?? $item->gross_weight_kg;
-                        $volume = $pivot?->volume_m3
-                            ?? $item->volume_m3;
+                        $isEmptyContainer = strtoupper(trim((string) ($container?->condition ?? ''))) === 'V';
 
-                        if (!is_numeric($packages) || (float) $packages <= 0) {
-                            throw new RuntimeException(
-                                "El ítem {$item->line_number} del BL {$bill->bill_number} "
-                                . 'no tiene cantidad de bultos válida para TFP.'
-                            );
+                        $packages = $pivot?->package_quantity;
+                        $gross = $pivot?->gross_weight_kg;
+                        $volume = $pivot?->volume_m3;
+
+                        if ($occurrenceCount === 1) {
+                            $packages ??= $item->package_quantity;
+                            $gross ??= $item->gross_weight_kg;
+                            $volume ??= $item->volume_m3;
                         }
 
-                        if (!is_numeric($gross) || (float) $gross <= 0) {
-                            throw new RuntimeException(
-                                "El ítem {$item->line_number} del BL {$bill->bill_number} "
-                                . 'no tiene peso bruto válido para TFP.'
-                            );
+                        if ($occurrenceCount > 1 && !$isEmptyContainer) {
+                            if ($packages === null || $gross === null) {
+                                throw new RuntimeException(
+                                    "El ítem {$item->line_number} del BL {$bill->bill_number} "
+                                    . 'tiene varios contenedores pero no tiene distribución de bultos/peso por contenedor.'
+                                );
+                            }
+                        }
+
+                        if (!$isEmptyContainer) {
+                            if (!is_numeric($packages) || (float) $packages <= 0) {
+                                throw new RuntimeException(
+                                    "El ítem {$item->line_number} del BL {$bill->bill_number} "
+                                    . 'no tiene cantidad de bultos válida para TFP.'
+                                );
+                            }
+
+                            if (!is_numeric($gross) || (float) $gross <= 0) {
+                                throw new RuntimeException(
+                                    "El ítem {$item->line_number} del BL {$bill->bill_number} "
+                                    . 'no tiene peso bruto válido para TFP.'
+                                );
+                            }
                         }
 
                         $description = $this->requiredText(
@@ -644,7 +709,6 @@ class ManifestExportController extends Controller
                             "Descripción TFP del BL {$bill->bill_number}"
                         );
 
-                        $lines[] = '    **LINEAS**';
                         $lines[] = $this->tfpLine('CANTPARCIALBULTOS', $packages);
                         $lines[] = $this->tfpLine('CANTTOTALBULTOS', $packages);
                         $lines[] = $this->tfpLine(
@@ -668,12 +732,21 @@ class ManifestExportController extends Controller
                             $this->packagingText($item)
                         );
                         $lines[] = $this->tfpLine(
+                            'MERCADERIASUELTA',
+                            $container ? 'NO' : 'SI'
+                        );
+                        $lines[] = $this->tfpLine('ESCOMBUSTIBLE', '');
+                        $lines[] = $this->tfpLine(
+                            'IMDG',
+                            $item->imdg_class ?: $item->cargoType?->imdg_class ?: ''
+                        );
+                        $lines[] = $this->tfpLine(
                             'CONTENEDOR',
                             $container?->container_number ?? ''
                         );
-                        $lines[] = '    **FIN LINEAS**';
                     }
                 }
+                $lines[] = '    **FIN LINEAS**';
 
                 $lines[] = '  **FIN BL**';
             }
