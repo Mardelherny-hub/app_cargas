@@ -1526,6 +1526,82 @@ private function buildBillsOfLadingQuery($company)
      */
     private function generateBillsOfLadingReport(string $format, array $filters, $company)
     {
+        $template = $filters['template'] ?? 'standard';
+        if (!is_string($template)) {
+            return back()->with('error', 'El formato de conocimientos seleccionado no es válido.');
+        }
+
+        $template = strtolower(trim($template));
+        $template = $template === '' ? 'standard' : $template;
+        if (!in_array($template, ['standard', 'client'], true)) {
+            return back()->with('error', 'El formato de conocimientos seleccionado no es válido.');
+        }
+        $filters['template'] = $template;
+
+        if ($template === 'client') {
+            if ($format !== 'pdf') {
+                return back()->with('error', 'El formato según muestra está disponible únicamente en PDF.');
+            }
+
+            $normalizeId = static function ($value): ?int {
+                if (!is_int($value) && !is_string($value)) {
+                    return null;
+                }
+
+                $value = trim((string) $value);
+                if (!preg_match('/^[0-9]+$/D', $value)) {
+                    return null;
+                }
+
+                $id = filter_var(ltrim($value, '0'), FILTER_VALIDATE_INT, [
+                    'options' => ['min_range' => 1],
+                ]);
+
+                return $id === false ? null : $id;
+            };
+
+            foreach (['voyage_id', 'loading_port_id', 'discharge_port_id', 'final_destination_port_id', 'client_id'] as $field) {
+                $value = $filters[$field] ?? null;
+                if ($value === null || (is_string($value) && trim($value) === '')) {
+                    unset($filters[$field]);
+                    continue;
+                }
+
+                $id = $normalizeId($value);
+                if ($id === null) {
+                    return back()->with('error', 'Los filtros seleccionados para conocimientos contienen valores inválidos.');
+                }
+                $filters[$field] = $id;
+            }
+
+            if (empty($filters['voyage_id'])) {
+                return back()->with('error', 'Debe seleccionar un viaje para generar el formato de conocimientos.');
+            }
+
+            $voyageExists = Voyage::where('id', $filters['voyage_id'])
+                ->where('company_id', $company->id)
+                ->exists();
+            if (!$voyageExists) {
+                return back()->with('error', 'Viaje no encontrado o no pertenece a su empresa.');
+            }
+
+            if (array_key_exists('bill_ids', $filters)) {
+                if (!is_array($filters['bill_ids'])) {
+                    return back()->with('error', 'La selección de conocimientos contiene valores inválidos.');
+                }
+
+                $billIds = [];
+                foreach ($filters['bill_ids'] as $value) {
+                    $id = $normalizeId($value);
+                    if ($id === null) {
+                        return back()->with('error', 'La selección de conocimientos contiene valores inválidos.');
+                    }
+                    $billIds[] = $id;
+                }
+                $filters['bill_ids'] = array_values(array_unique($billIds));
+            }
+        }
+
         $userName = $this->getCurrentUser()->name ?? 'Sistema';
         $service = new BillsOfLadingReportService($company, $filters, $userName);
         
@@ -1538,7 +1614,7 @@ private function buildBillsOfLadingQuery($company)
         $data = $service->prepareData();
         
         if ($format === 'pdf') {
-            return $this->generateBillsOfLadingPDF($data, $service, $company);
+            return $this->generateBillsOfLadingPDF($data, $service, $company, $template);
         } else {
             return $this->generateBillsOfLadingExcel($data, $service, $company);
         }
@@ -1547,17 +1623,30 @@ private function buildBillsOfLadingQuery($company)
     /**
      * Generar Listado de Conocimientos en PDF
      */
-    private function generateBillsOfLadingPDF(array $data, BillsOfLadingReportService $service, $company)
-    {
+    private function generateBillsOfLadingPDF(
+        array $data,
+        BillsOfLadingReportService $service,
+        $company,
+        string $template = 'standard'
+    ) {
         $companyLogo = null;
         if ($company->logo_path && file_exists(storage_path('app/public/' . $company->logo_path))) {
             $companyLogo = storage_path('app/public/' . $company->logo_path);
         }
         
         $data['company_logo'] = $companyLogo;
-        
-        $pdf = Pdf::loadView('company.reports.pdf.bills-of-lading', $data);
-        $pdf->setPaper('a4', 'portrait');
+
+        $view = $template === 'client'
+            ? 'company.reports.pdf.bills-of-lading-client'
+            : 'company.reports.pdf.bills-of-lading';
+        $pdf = Pdf::loadView($view, $data);
+
+        if ($template === 'client') {
+            // Hoja Oficio: 8,5 x 13 pulgadas.
+            $pdf->setPaper([0, 0, 612, 936], 'portrait');
+        } else {
+            $pdf->setPaper('a4', 'portrait');
+        }
         
         $filename = $service->getSuggestedFilename('pdf');
         
