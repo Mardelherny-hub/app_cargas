@@ -218,6 +218,10 @@ class MicdtaReportService
                                     ?: $container->containerType?->iso_size_type
                                     ?: $container->containerType?->code,
                                 'seals' => $seals,
+                                'package_quantity' => $container->pivot?->package_quantity,
+                                'gross_weight_kg' => $container->pivot?->gross_weight_kg,
+                                'net_weight_kg' => $container->pivot?->net_weight_kg,
+                                'volume_m3' => $container->pivot?->volume_m3,
                             ];
                         })->values()->all();
 
