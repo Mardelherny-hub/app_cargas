@@ -15,12 +15,10 @@
     }
     .page {
         width: 100%;
-        height: 287mm;
+        height: 286mm;
         position: relative;
-        page-break-after: always;
-        overflow: hidden;
     }
-    .page:last-child { page-break-after: auto; }
+    .page + .page { page-break-before: always; }
     .page-content { padding-bottom: 92mm; }
     .page-footer {
         position: absolute;
@@ -45,9 +43,10 @@
     .center { text-align: center; }
     .right { text-align: right; }
     .small { font-size: 5.7pt; }
-    .cargo td { padding-top: .8mm; padding-bottom: .8mm; }
+    .cargo td, .cargo th { padding-top: .8mm; padding-bottom: .8mm; }
     .cargo-row { page-break-inside: avoid; }
-    .container-line { margin-bottom: .8mm; }
+    .cargo-heading { font-weight: normal; text-align: left; }
+    .container-line { white-space: pre-line; overflow-wrap: anywhere; word-wrap: break-word; }
     .item-line { margin-bottom: .45mm; }
     .r6 td { height: 22mm; }
     .declaration td { height: 14mm; vertical-align: middle; }
@@ -72,104 +71,205 @@
         return mb_strtoupper(preg_replace('/[^A-Z0-9]/i', '', trim((string) $value)));
     };
 
-    $chunkText = function (?string $text, int $maxLength = 260) {
-        $text = trim(preg_replace('/\s+/u', ' ', (string) $text));
-
-        if ($text === '') {
-            return collect(['']);
-        }
-
+    // Normaliza saltos y fragmenta cada línea sin descartar caracteres visibles.
+    $wrapText = function (?string $text, int $width) {
+        $text = str_replace(["\r\n", "\r"], "\n", (string) $text);
         $chunks = [];
-        $current = '';
-
-        foreach (preg_split('/\s+/u', $text) ?: [] as $word) {
-            $candidate = $current === '' ? $word : $current.' '.$word;
-
-            if ($current !== '' && mb_strlen($candidate) > $maxLength) {
-                $chunks[] = $current;
-                $current = $word;
-                continue;
-            }
-
-            $current = $candidate;
-        }
-
-        if ($current !== '') {
-            $chunks[] = $current;
-        }
-
-        return collect($chunks ?: ['']);
-    };
-
-    $buildCargoRows = function (array $bill) use ($chunkText) {
-        $rows = collect();
-        $items = collect($bill['items'] ?? []);
-
-        if ($items->isNotEmpty()) {
-            foreach ($items as $item) {
-                $containers = collect($item['containers'] ?? [])->values();
-                $descriptionChunks = $chunkText($item['description'] ?? '', 260);
-                $containerChunks = $containers->chunk(3)->values();
-                $parts = max(1, $descriptionChunks->count(), $containerChunks->count());
-
-                for ($part = 0; $part < $parts; $part++) {
-                    $rows->push([
-                        'first_part' => $part === 0,
-                        'container_count' => $containers->count(),
-                        'quantity' => $part === 0 ? ($item['quantity'] ?? null) : null,
-                        'package_type' => $part === 0 ? ($item['package_type'] ?? null) : null,
-                        'description' => $descriptionChunks->get($part, ''),
-                        'commodity_code' => $part === 0 ? ($item['commodity_code'] ?? null) : null,
-                        'net_weight_kg' => $part === 0 ? ($item['net_weight_kg'] ?? null) : null,
-                        'gross_weight_kg' => $part === 0 ? ($item['gross_weight_kg'] ?? null) : null,
-                        'declared_value' => $part === 0 ? ($item['declared_value'] ?? null) : null,
-                        'cargo_marks' => $part === 0 ? ($item['cargo_marks'] ?? null) : null,
-                        'containers' => $containerChunks->get($part, collect()),
-                    ]);
+        foreach (explode("\n", $text) as $line) {
+            preg_match_all('/[\s\S]{1,'.$width.'}/u', $line, $matches);
+            foreach ($matches[0] ?? [] as $chunk) {
+                if (preg_match('/[^\s\p{Z}]/u', $chunk)) {
+                    $chunks[] = $chunk;
                 }
             }
+        }
+        return collect($chunks);
+    };
 
-            return $rows;
+    $estimateLines = function (?string $text, int $width): int {
+        $lines = 0;
+        $text = str_replace(["\r\n", "\r"], "\n", (string) $text);
+        foreach (explode("\n", $text) as $line) {
+            $lines += max(1, (int) ceil(mb_strlen($line) / $width));
+        }
+        return max(1, $lines);
+    };
+
+    $buildCargoRows = function (array $item, array $containers = [], bool $legacy = false) use ($wrapText, $estimateLines) {
+        $containers = array_values($containers);
+        $containerCount = count($containers);
+        $singleContainer = !$legacy && $containerCount === 1;
+        $baseRow = [
+            'bill_number' => $item['_bill_number'] ?? '',
+            'first_part' => true,
+            'label' => $legacy ? 'Total del conocimiento' : 'Total del ítem',
+            'container_count' => $containerCount,
+            'quantity' => $item['quantity'] ?? null,
+            'package_type' => $item['package_type'] ?? null,
+            'volume_m3' => $item['volume_m3'] ?? null,
+            'description' => $item['description'] ?? '',
+            'commodity_code' => $item['commodity_code'] ?? null,
+            'net_weight_kg' => $item['net_weight_kg'] ?? null,
+            'gross_weight_kg' => $item['gross_weight_kg'] ?? null,
+            'declared_value' => $item['declared_value'] ?? null,
+            'cargo_marks' => $item['cargo_marks'] ?? '',
+            'container_text' => '',
+            'container_number' => null,
+        ];
+        $detailRows = $singleContainer ? [] : [$baseRow];
+
+        foreach ($containers as $container) {
+            $row = $baseRow;
+            $row['label'] = $legacy ? 'Contenedor del conocimiento' : 'Contenedor del ítem';
+            $row['container_count'] = $singleContainer ? 1 : 0;
+            $row['container_number'] = (string) ($container['number'] ?? '');
+            foreach ([
+                'quantity' => 'package_quantity',
+                'gross_weight_kg' => 'gross_weight_kg',
+                'net_weight_kg' => 'net_weight_kg',
+                'volume_m3' => 'volume_m3',
+            ] as $field => $pivotField) {
+                $row[$field] = $container[$pivotField] ?? ($singleContainer ? $baseRow[$field] : null);
+            }
+            if (!$singleContainer) {
+                $row['description'] = '';
+                $row['cargo_marks'] = '';
+                $row['declared_value'] = null;
+            }
+            $row['container_text'] = $row['container_number'];
+            if (!empty($container['type'])) {
+                $row['container_text'] .= ' ['.$container['type'].']';
+            }
+            if (!empty($container['seals'])) {
+                $row['container_text'] .= "\n".(string) $container['seals'];
+            }
+            $detailRows[] = $row;
         }
 
-        // Compatibilidad con reportes antiguos o datos sin items detallados.
-        $descriptionChunks = $chunkText($bill['cargo_description'] ?? '', 650);
-        $containerChunks = collect($bill['containers'] ?? [])->chunk(8)->values();
-        $parts = max(1, $descriptionChunks->count(), $containerChunks->count());
+        $rows = collect();
+        foreach ($detailRows as $detail) {
+            $descriptionChunks = $wrapText($detail['description'], 52)->all();
+            $marksChunks = $wrapText($detail['cargo_marks'], 40)->all();
+            $partCount = max(1, count($descriptionChunks), count($marksChunks));
+            for ($part = 0; $part < $partCount; $part++) {
+                $row = $detail;
+                $row['description'] = $descriptionChunks[$part] ?? '';
+                $row['cargo_marks'] = $marksChunks[$part] ?? '';
+                if ($part > 0) {
+                    $row['first_part'] = false;
+                    $row['label'] = $legacy ? 'Continuación del conocimiento' : 'Continuación del ítem';
+                    foreach (['quantity', 'volume_m3', 'net_weight_kg', 'gross_weight_kg', 'declared_value'] as $field) {
+                        $row[$field] = null;
+                    }
+                    $row['container_text'] = '';
+                    $row['container_number'] = null;
+                }
 
-        for ($part = 0; $part < $parts; $part++) {
-            $rows->push([
-                'first_part' => $part === 0,
-                'container_count' => $bill['container_count'] ?? 0,
-                'quantity' => $part === 0 ? ($bill['total_packages'] ?? null) : null,
-                'package_type' => $part === 0 ? 'BULTOS' : null,
-                'description' => $descriptionChunks->get($part, ''),
-                'commodity_code' => null,
-                'net_weight_kg' => null,
-                'gross_weight_kg' => $part === 0 ? ($bill['gross_weight_kg'] ?? null) : null,
-                'declared_value' => $part === 0 ? ($bill['declared_value'] ?? null) : null,
-                'cargo_marks' => $part === 0 ? ($bill['cargo_marks'] ?? null) : null,
-                'containers' => $containerChunks->get($part, collect()),
-            ]);
+                $column11 = implode("\n", array_filter([
+                    $row['label'],
+                    $row['first_part'] && $row['container_count'] > 0
+                        ? $row['container_count'].' '.($row['container_count'] === 1 ? 'CONTENEDOR' : 'CONTENEDORES')
+                        : null,
+                    $row['quantity'] !== null ? $row['quantity'].' BULTOS' : null,
+                    $row['volume_m3'] !== null ? 'VOLUMEN: '.$row['volume_m3'].' M3' : null,
+                    $row['description'],
+                    !empty($row['commodity_code']) ? 'HS/NCM: '.$row['commodity_code'] : null,
+                    $row['net_weight_kg'] !== null ? 'NET WEIGHT: '.number_format((float) $row['net_weight_kg'], 3, '.', '').' KGS' : null,
+                ], static fn ($value) => $value !== null && $value !== ''));
+
+                $column14 = implode("\n", array_filter([
+                    $row['cargo_marks'],
+                    $row['container_text'],
+                ], static fn ($value) => $value !== ''));
+
+                $lineCount = max(
+                    1,
+                    $estimateLines((string) $row['bill_number'], 20),
+                    $estimateLines($column11, 52),
+                    $row['gross_weight_kg'] === null
+                        ? 1
+                        : $estimateLines(number_format((float) $row['gross_weight_kg'], 3, '.', ''), 18),
+                    $row['declared_value'] === null
+                        ? 1
+                        : $estimateLines(number_format((float) $row['declared_value'], 2, '.', ''), 10),
+                    $estimateLines($column14, 40)
+                );
+                $row['_line_cost'] = $lineCount + 1; // Padding vertical y bordes por fila.
+                $rows->push($row);
+            }
         }
 
         return $rows;
     };
 
     $documentPages = collect();
+    $pageLineBudget = 18;
 
     foreach ($client_template_bills as $bill) {
-        $cargoRows = $buildCargoRows($bill);
-        $cargoPages = $cargoRows->chunk(4)->values();
+        $items = collect($bill['items'] ?? []);
+        $cargoRows = collect();
 
-        if ($cargoPages->isEmpty()) {
-            $cargoPages = collect([collect()]);
+        if ($items->isNotEmpty()) {
+            foreach ($items as $item) {
+                $item['_bill_number'] = $bill['bill_number'] ?? '';
+                $cargoRows = $cargoRows->concat(
+                    $buildCargoRows($item, array_values($item['containers'] ?? []))
+                );
+            }
+        } else {
+            // Compatibilidad con el formato histórico sin items detallados.
+            $legacyItem = [
+                '_bill_number' => $bill['bill_number'] ?? '',
+                'quantity' => $bill['total_packages'] ?? null,
+                'package_type' => 'BULTOS',
+                'description' => $bill['cargo_description'] ?? '',
+                'commodity_code' => null,
+                'net_weight_kg' => null,
+                'gross_weight_kg' => $bill['gross_weight_kg'] ?? null,
+                'volume_m3' => $bill['volume_m3'] ?? null,
+                'declared_value' => $bill['declared_value'] ?? null,
+                'cargo_marks' => $bill['cargo_marks'] ?? '',
+            ];
+            $cargoRows = $buildCargoRows(
+                $legacyItem,
+                array_values($bill['containers'] ?? []),
+                true
+            );
         }
 
-        foreach ($cargoPages as $rows) {
+        $pageRows = collect();
+        $usedLines = 0;
+        foreach ($cargoRows as $row) {
+            $lineCost = $row['_line_cost'];
+            unset($row['_line_cost']);
+
+            if ($lineCost > $pageLineBudget) {
+                $detailName = $row['container_number'] !== null
+                    ? 'del contenedor '.$row['container_number']
+                    : 'del ítem';
+                throw new \RuntimeException(
+                    'El detalle '.$detailName.' del conocimiento '.$row['bill_number'].
+                    ' es demasiado extenso para imprimirse en una sola página MIC/DTA.'
+                );
+            }
+
+            if ($pageRows->isNotEmpty() && $usedLines + $lineCost > $pageLineBudget) {
+                $documentPages->push([
+                    'bill' => $bill,
+                    'rows' => $pageRows->values(),
+                ]);
+                $pageRows = collect();
+                $usedLines = 0;
+            }
+
+            $pageRows->push($row);
+            $usedLines += $lineCost;
+        }
+
+        if ($pageRows->isNotEmpty()) {
             $documentPages->push([
                 'bill' => $bill,
-                'rows' => $rows->values(),
+                'rows' => $pageRows->values(),
             ]);
         }
     }
@@ -268,21 +368,26 @@
         </table>
 
         <table class="cargo">
-            @foreach($rows as $rowIndex => $row)
-            <tr class="cargo-row">
-                <td style="width:14%">
-                    @if($rowIndex === 0)
-                        <span class="label">10. Conocimiento</span>
-                        <div class="value">{{ $bill['bill_number'] }}</div>
-                    @endif
-                </td>
-                <td style="width:34%">
-                    @if($rowIndex === 0)
-                        <span class="label">11. Cantidad, volumen y bultos</span>
-                    @endif
-                    <div class="value">@if($row['first_part'] && $row['container_count'] > 0){{ $row['container_count'] }} {{ $row['container_count'] === 1 ? 'CONTENEDOR' : 'CONTENEDORES' }}
+            <thead>
+                <tr>
+                    <th class="cargo-heading" style="width:14%">10. Conocimiento</th>
+                    <th class="cargo-heading" style="width:34%">11. Cantidad, volumen y bultos</th>
+                    <th class="cargo-heading right" style="width:16%">12. Peso bruto Kg.</th>
+                    <th class="cargo-heading right" style="width:9%">13. Valor FOB u$d</th>
+                    <th class="cargo-heading" style="width:27%">14. Marcas &amp; números, descripción de la mercadería</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($rows as $row)
+                <tr class="cargo-row">
+                    <td><div class="value">{{ $row['bill_number'] }}</div></td>
+                    <td>
+                        <div class="value">{{ $row['label'] }}
+@if($row['first_part'] && $row['container_count'] > 0){{ $row['container_count'] }} {{ $row['container_count'] === 1 ? 'CONTENEDOR' : 'CONTENEDORES' }}
 @endif
 @if($row['quantity'] !== null){{ $row['quantity'] }} BULTOS
+@endif
+@if($row['volume_m3'] !== null)VOLUMEN: {{ $row['volume_m3'] }} M3
 @endif
 @if($row['description'] !== ''){{ $row['description'] }}
 @endif
@@ -290,33 +395,25 @@
 @endif
 @if($row['net_weight_kg'] !== null)NET WEIGHT: {{ number_format((float)$row['net_weight_kg'], 3, '.', '') }} KGS
 @endif</div>
-                </td>
-                <td style="width:16%" class="right">
-                    @if($rowIndex === 0)<span class="label">12. Peso bruto Kg.</span>@endif
-                    @if($row['gross_weight_kg'] !== null)
-                        <div class="value">{{ number_format((float)$row['gross_weight_kg'], 3, '.', '') }}</div>
-                    @endif
-                </td>
-                <td style="width:9%" class="right">
-                    @if($rowIndex === 0)<span class="label">13. Valor FOB u$d</span>@endif
-                    @if((float)($row['declared_value'] ?? 0) > 0)
-                        <div class="value">{{ number_format((float)$row['declared_value'], 2, '.', '') }}</div>
-                    @endif
-                </td>
-                <td style="width:27%">
-                    @if($rowIndex === 0)
-                        <span class="label">14. Marcas &amp; números, descripción de la mercadería</span>
-                    @endif
-                    <div class="value">@if(!empty($row['cargo_marks'])){{ $row['cargo_marks'] }}
+                    </td>
+                    <td class="right">
+                        @if($row['gross_weight_kg'] !== null)
+                            <div class="value">{{ number_format((float)$row['gross_weight_kg'], 3, '.', '') }}</div>
+                        @endif
+                    </td>
+                    <td class="right">
+                        @if((float)($row['declared_value'] ?? 0) > 0)
+                            <div class="value">{{ number_format((float)$row['declared_value'], 2, '.', '') }}</div>
+                        @endif
+                    </td>
+                    <td>
+                        <div class="value">@if($row['cargo_marks'] !== ''){{ $row['cargo_marks'] }}
 @endif
-@foreach($row['containers'] as $container)
-<div class="container-line">{{ $container['number'] }}@if(!empty($container['type'])) &nbsp; {{ $container['type'] }}@endif
-@if(!empty($container['seals'])){{ $container['seals'] }}@endif</div>
-@endforeach
-                    </div>
-                </td>
-            </tr>
-            @endforeach
+@if($row['container_text'] !== '')<div class="container-line">{{ $row['container_text'] }}</div>@endif</div>
+                    </td>
+                </tr>
+                @endforeach
+            </tbody>
         </table>
     </div>
 
