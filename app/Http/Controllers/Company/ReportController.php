@@ -177,11 +177,77 @@ class ReportController extends Controller
         $stats = $this->getBillsOfLadingStats($company);
         $filters = $this->getBillsOfLadingFilters($company);
 
+        // El formato solicitado posteriormente por el cliente trabaja sobre un
+        // viaje seleccionado. Sólo al elegirlo se cargan sus BL y relaciones
+        // necesarias, evitando traer catálogos globales o todos los BL.
+        $clientFormatVoyage = null;
+        $clientFormatBills = collect();
+        $clientFormatPorts = collect();
+        $clientFormatClients = collect();
+        $selectedClientVoyageId = $request->input('client_voyage_id');
+
+        if (is_scalar($selectedClientVoyageId)
+            && preg_match('/^[1-9][0-9]*$/D', (string) $selectedClientVoyageId)) {
+            $clientFormatVoyage = Voyage::with(['leadVessel:id,name'])
+                ->where('company_id', $company->id)
+                ->where('id', (int) $selectedClientVoyageId)
+                ->whereHas('billsOfLading')
+                ->first();
+
+            if ($clientFormatVoyage) {
+                $clientFormatBills = BillOfLading::with([
+                    'loadingPort:id,name,code',
+                    'dischargePort:id,name,code',
+                    'finalDestinationPort:id,name,code',
+                    'shipper:id,legal_name,commercial_name',
+                    'consignee:id,legal_name,commercial_name',
+                    'notifyParty:id,legal_name,commercial_name',
+                    'cargoOwner:id,legal_name,commercial_name',
+                ])
+                    ->whereHas('shipment', function ($query) use ($clientFormatVoyage) {
+                        $query->where('voyage_id', $clientFormatVoyage->id);
+                    })
+                    ->orderBy('bill_number')
+                    ->get([
+                        'id', 'shipment_id', 'bill_number',
+                        'loading_port_id', 'discharge_port_id', 'final_destination_port_id',
+                        'shipper_id', 'consignee_id', 'notify_party_id', 'cargo_owner_id',
+                    ]);
+
+                $clientFormatPorts = $clientFormatBills
+                    ->flatMap(fn ($bill) => [
+                        $bill->loadingPort,
+                        $bill->dischargePort,
+                        $bill->finalDestinationPort,
+                    ])
+                    ->filter()
+                    ->unique('id')
+                    ->sortBy('name')
+                    ->values();
+
+                $clientFormatClients = $clientFormatBills
+                    ->flatMap(fn ($bill) => [
+                        $bill->shipper,
+                        $bill->consignee,
+                        $bill->notifyParty,
+                        $bill->cargoOwner,
+                    ])
+                    ->filter()
+                    ->unique('id')
+                    ->sortBy(fn ($client) => $client->commercial_name ?: $client->legal_name)
+                    ->values();
+            }
+        }
+
         return view('company.reports.bills-of-lading', compact(
             'billsOfLading',
             'stats',
             'filters',
-            'company'
+            'company',
+            'clientFormatVoyage',
+            'clientFormatBills',
+            'clientFormatPorts',
+            'clientFormatClients'
         ));
     }
 
@@ -1217,22 +1283,51 @@ private function buildBillsOfLadingQuery($company)
      */
     private function getBillsOfLadingFilters($company): array
     {
-        $ports = Port::where('active', true)
+        $voyages = Voyage::where('company_id', $company->id)
+            ->whereHas('billsOfLading')
+            ->orderByDesc('departure_date')
+            ->orderByDesc('id')
+            ->get(['id', 'voyage_number', 'departure_date']);
+
+        // Tomar únicamente IDs realmente utilizados por BL de esta empresa.
+        // Evita cargar completos los catálogos globales de puertos y clientes.
+        $filterRows = BillOfLading::whereHas('shipment.voyage', function ($query) use ($company) {
+                $query->where('company_id', $company->id);
+            })
+            ->get([
+                'shipper_id', 'consignee_id',
+                'loading_port_id', 'discharge_port_id', 'final_destination_port_id',
+            ]);
+
+        $portIds = $filterRows
+            ->flatMap(fn ($bill) => [
+                $bill->loading_port_id,
+                $bill->discharge_port_id,
+                $bill->final_destination_port_id,
+            ])
+            ->filter()
+            ->unique()
+            ->values();
+
+        $ports = Port::whereIn('id', $portIds)
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get(['id', 'name', 'code']);
+
+        $shipperIds = $filterRows->pluck('shipper_id')->filter()->unique()->values();
+        $consigneeIds = $filterRows->pluck('consignee_id')->filter()->unique()->values();
 
         return [
             'status' => ['pending', 'issued', 'in_transit', 'delivered'],
             'period' => ['today', 'week', 'month', 'quarter'],
-            'shipper' => Client::where('status', 'active')
+            'shipper' => Client::whereIn('id', $shipperIds)
                 ->orderBy('legal_name')
                 ->pluck('legal_name', 'id')
                 ->toArray(),
-            'voyages' => Voyage::where('company_id', $company->id)
-                ->whereHas('billsOfLading')
-                ->orderByDesc('departure_date')
-                ->orderByDesc('id')
-                ->get(['id', 'voyage_number', 'departure_date']),
+            'consignee' => Client::whereIn('id', $consigneeIds)
+                ->orderBy('legal_name')
+                ->pluck('legal_name', 'id')
+                ->toArray(),
+            'voyages' => $voyages,
             'ports' => $ports,
         ];
     }
