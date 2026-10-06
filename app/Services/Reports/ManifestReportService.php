@@ -147,6 +147,23 @@ class ManifestReportService
             $bills = $bills->where('consignee_id', $this->filters['consignee_id']);
         }
 
+        if (!empty($this->filters['loading_port_id'])) {
+            $bills = $bills->where('loading_port_id', (int) $this->filters['loading_port_id']);
+        }
+
+        if (!empty($this->filters['discharge_port_id'])) {
+            $bills = $bills->where('discharge_port_id', (int) $this->filters['discharge_port_id']);
+        }
+
+        if (!empty($this->filters['final_destination_port_id'])) {
+            $bills = $bills->where('final_destination_port_id', (int) $this->filters['final_destination_port_id']);
+        }
+
+        if (!empty($this->filters['bill_ids']) && is_array($this->filters['bill_ids'])) {
+            $billIds = array_values(array_unique(array_map('intval', $this->filters['bill_ids'])));
+            $bills = $bills->whereIn('id', $billIds);
+        }
+
         $bills = $bills
             ->sortBy(function ($bill) {
                 return implode('|', [
@@ -314,6 +331,23 @@ class ManifestReportService
 
         if (!empty($this->filters['consignee_id'])) {
             $bills = $bills->where('consignee_id', $this->filters['consignee_id']);
+        }
+
+        if (!empty($this->filters['loading_port_id'])) {
+            $bills = $bills->where('loading_port_id', (int) $this->filters['loading_port_id']);
+        }
+
+        if (!empty($this->filters['discharge_port_id'])) {
+            $bills = $bills->where('discharge_port_id', (int) $this->filters['discharge_port_id']);
+        }
+
+        if (!empty($this->filters['final_destination_port_id'])) {
+            $bills = $bills->where('final_destination_port_id', (int) $this->filters['final_destination_port_id']);
+        }
+
+        if (!empty($this->filters['bill_ids']) && is_array($this->filters['bill_ids'])) {
+            $billIds = array_values(array_unique(array_map('intval', $this->filters['bill_ids'])));
+            $bills = $bills->whereIn('id', $billIds);
         }
 
         return [
