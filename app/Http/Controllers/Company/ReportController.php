@@ -2535,6 +2535,16 @@ private function generateMicDta(string $format, array $filters, $company)
     try {
         $data = $service->prepareData();
 
+        if ($template === 'client') {
+            $contents = app(\App\Services\Reports\MicDtaClientPdfService::class)->generate($data);
+            return response($contents, 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => \Symfony\Component\HttpFoundation\HeaderUtils::makeDisposition(
+                    'attachment', $service->getSuggestedFilename('pdf')
+                ),
+            ]);
+        }
+
         // El informe MIC/DTA existente se conserva. El modelo basado en la
         // muestra del cliente es una salida alternativa, no un reemplazo.
         $view = $template === 'client'
@@ -2551,7 +2561,8 @@ private function generateMicDta(string $format, array $filters, $company)
 
         return $pdf->download($service->getSuggestedFilename('pdf'));
     } catch (\RuntimeException $e) {
-        if ($template === 'client' && str_starts_with($e->getMessage(), 'El detalle ')) {
+        if ($template === 'client' && (str_starts_with($e->getMessage(), 'El detalle ')
+            || str_starts_with($e->getMessage(), 'No se pudo generar el PDF MIC/DTA:'))) {
             return back()->with('error', $e->getMessage());
         }
 
