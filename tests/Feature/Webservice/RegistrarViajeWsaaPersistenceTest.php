@@ -84,7 +84,9 @@ class RegistrarViajeWsaaPersistenceTest extends TestCase
 
     private function generator(int $company = 1, string $environment = 'testing'): SimpleXmlGenerator
     {
-        return new class($this->company($company), ['environment' => $environment], $this->wsaa) extends SimpleXmlGenerator {
+        $issuer = $this->company($company);
+        $issuer->ws_environment = $environment;
+        return new class($issuer, [], $this->wsaa) extends SimpleXmlGenerator {
             public function __construct(Company $company, array $config, private object $wsaa)
             {
                 parent::__construct($company, $config);

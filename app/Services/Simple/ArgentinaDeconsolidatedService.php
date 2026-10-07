@@ -50,11 +50,11 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         return [
             'webservice_type' => 'desconsolidados',
             'country' => 'AR',
-            'environment' => 'testing',
+            'environment' => WebserviceEnvironment::resolve($this->company),
             
             // URLs AFIP
-            'webservice_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx',
-            'wsdl_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx?wsdl',
+            'webservice_url' => WebserviceEnvironment::argentinaEndpoint($this->company, 'wgesinformacionanticipada'),
+            'wsdl_url' => WebserviceEnvironment::argentinaEndpoint($this->company, 'wgesinformacionanticipada') . '?wsdl',
             
             // SOAP Actions
             'soap_action_registrar' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarTitulosDesconsolidador',
@@ -381,7 +381,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'soap_action' => $this->config["soap_action_{$methodType}"] ?? '',
             'status' => 'pending',
             'request_xml' => $xmlContent,
-            'environment' => $this->config['environment'] ?? 'testing',
+            'environment' => $this->config['environment'],
             'currency_code' => 'USD',
             'container_count' => 0,
             'bill_of_lading_count' => $voyage->billsOfLading()->whereNotNull('master_bill_number')->count(),

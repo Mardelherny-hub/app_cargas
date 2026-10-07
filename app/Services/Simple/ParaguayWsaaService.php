@@ -57,10 +57,10 @@ class ParaguayWsaaService
     /**
      * Constructor
      */
-    public function __construct(Company $company, string $environment = 'testing')
+    public function __construct(Company $company, ?string $environment = null)
     {
         $this->company = $company;
-        $this->environment = $environment;
+        $this->environment = WebserviceEnvironment::resolve($company);
     }
 
     /**
@@ -462,7 +462,7 @@ Log::debug('WSAA Paraguay: SOAP Response recibido', [
      */
     private function getWsaaUrl(): string
     {
-        return self::WSAA_URLS[$this->environment] ?? self::WSAA_URLS['testing'];
+        return self::WSAA_URLS[$this->environment];
     }
 
     /**
@@ -560,7 +560,7 @@ Log::debug('WSAA Paraguay: SOAP Response recibido', [
      */
     private function getWsaaDestination(): string
     {
-        return self::WSAA_DESTINATION[$this->environment] ?? self::WSAA_DESTINATION['testing'];
+        return self::WSAA_DESTINATION[$this->environment];
     }
 
     /**

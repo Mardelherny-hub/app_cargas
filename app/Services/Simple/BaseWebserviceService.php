@@ -84,7 +84,15 @@ abstract class BaseWebserviceService
     {
         $this->company = $company;
         $this->user = $user;
-        $this->config = array_merge(self::BASE_CONFIG, $this->getWebserviceConfig(), $config);
+        $serviceConfig = $this->getWebserviceConfig();
+        $this->config = array_merge(self::BASE_CONFIG, $serviceConfig, $config);
+        // El caller puede ajustar opciones operativas, nunca ambiente ni endpoints.
+        $this->config['environment'] = WebserviceEnvironment::resolve($company);
+        foreach (['webservice_url', 'wsdl_url'] as $key) {
+            if (array_key_exists($key, $serviceConfig)) {
+                $this->config[$key] = $serviceConfig[$key];
+            }
+        }
 
         // Inicializar servicios directos
             $this->certificateManager = new CertificateManagerService($company);  
@@ -399,7 +407,7 @@ abstract class BaseWebserviceService
             'retry_count' => 0,
             'max_retries' => $this->config['max_retries'],
             'currency_code' => $this->config['currency_code'],
-            'environment' => $this->config['environment'] ?? 'testing',
+            'environment' => $this->config['environment'],
             'certificate_used' => $this->company->certificate_path,
             'additional_metadata' => $options,
         ]);
@@ -422,7 +430,7 @@ abstract class BaseWebserviceService
                 'message' => $message,
                 'category' => 'webservice_operation',
                 'context' => $context,
-                'environment' => $this->config['environment'] ?? 'testing',
+                'environment' => $this->config['environment'],
             ]);
         }
     }
@@ -559,7 +567,7 @@ abstract class BaseWebserviceService
                 'soap_action' => $data['webservice_method'] ?? $data['soap_action'] ?? null,
                 'country' => $data['country'] ?? $this->config['country'] ?? 'AR',
                 'status' => $data['status'] ?? 'pending',
-                'environment' => $data['environment'] ?? $this->config['environment'] ?? 'testing',
+                'environment' => $this->config['environment'],
                 'request_xml' => $data['request_xml'] ?? null,
                 'response_xml' => $data['response_xml'] ?? null,
                 'webservice_url' => $this->config['webservice_url'] ?? null,

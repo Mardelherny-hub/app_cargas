@@ -36,7 +36,7 @@ class SimpleXmlGenerator
     public function __construct(Company $company, array $config = [])
     {
         $this->company = $company;
-        $this->config = $config;
+        $this->config = array_merge($config, ['environment' => WebserviceEnvironment::resolve($company)]);
     }
 
     /**
@@ -1499,7 +1499,7 @@ class SimpleXmlGenerator
             $cachedToken = \App\Models\WsaaToken::getValidToken(
                 $this->company->id, 
                 $serviceName, 
-                $this->config['environment'] ?? 'testing'
+                $this->config['environment']
             );
             
             if ($cachedToken) {
@@ -1518,7 +1518,7 @@ class SimpleXmlGenerator
             \App\Models\WsaaToken::createToken([
                 'company_id' => $this->company->id,
                 'service_name' => $serviceName,
-                'environment' => $this->config['environment'] ?? 'testing',
+                'environment' => $this->config['environment'],
                 'token' => $wsaaTokens['token'],
                 'sign' => $wsaaTokens['sign'],
                 'issued_at' => now(),
@@ -1641,7 +1641,7 @@ class SimpleXmlGenerator
 
     private function callWSAA(string $signedTicket): array
     {
-        $environment = $this->config['environment'] ?? 'testing';
+        $environment = $this->config['environment'];
         $wsdlUrl = $environment === 'production'
             ? 'https://wsaa.afip.gov.ar/ws/services/LoginCms?wsdl'
             : 'https://wsaahomo.afip.gov.ar/ws/services/LoginCms?wsdl';
