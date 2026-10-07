@@ -56,14 +56,14 @@ class ArgentinaAnticipatedService
         $this->config = array_merge([
             'webservice_type' => 'anticipada',
             'country' => 'AR',
-            'environment' => $company->ws_environment ?? 'testing',
+            'environment' => WebserviceEnvironment::resolve($company),
             'soap_action_registrar_viaje' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarViaje',
             'soap_action_rectificar_viaje' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RectificarViaje',
             'soap_action_registrar_titulos_cbc' => 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada/RegistrarTitulosCbc',
             'timeout_seconds' => 60,
             'max_retries' => 3,
             'require_certificate' => true,
-        ], $config);
+        ], $config, ['environment' => WebserviceEnvironment::resolve($company)]);
     }
 
     /**
@@ -1480,7 +1480,7 @@ class ArgentinaAnticipatedService
                 [
                     'xml_size_kb' => round(strlen($xmlContent) / 1024, 2),
                     'method' => $method,
-                    'environment' => $this->config['environment'] ?? 'testing',
+                    'environment' => $this->config['environment'],
                 ]
             );
 
@@ -1776,7 +1776,7 @@ class ArgentinaAnticipatedService
 
     private function getServiceEndpoint(): string
     {
-        return ($this->config['environment'] ?? 'testing') === 'production'
+        return $this->config['environment'] === 'production'
             ? 'https://webservicesadu.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx'
             : 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesinformacionanticipada/wgesinformacionanticipada.asmx';
     }

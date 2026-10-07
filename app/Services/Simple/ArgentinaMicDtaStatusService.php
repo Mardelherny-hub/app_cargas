@@ -4,6 +4,7 @@ namespace App\Services\Simple;
 
 use App\Models\Company;
 use App\Models\User;
+use App\Models\Voyage;
 use App\Models\WebserviceTransaction;
 use App\Models\WebserviceResponse;
 use App\Models\WebserviceLog;
@@ -41,7 +42,7 @@ use Carbon\Carbon;
  */
 class ArgentinaMicDtaStatusService extends BaseWebserviceService
 {
-    private SoapClientService $soapClient;
+    private SoapClientService $soapClientService;
     private SimpleXmlGenerator $xmlGenerator;
 
     /**
@@ -52,7 +53,7 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
         return [
             'webservice_type' => 'micdta_status',
             'country' => 'AR',
-            'environment' => 'testing',
+            'environment' => WebserviceEnvironment::resolve($this->company),
             'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarEstadoMicDta',
             'timeout_seconds' => 30,
             'require_certificate' => true,
@@ -71,13 +72,7 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
 
     protected function getWsdlUrl(): string
     {
-        // Usar la misma URL que MIC/DTA principal
-        $environment = $this->config['environment'] ?? 'testing';
-        $urls = [
-            'testing' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
-            'production' => 'https://wsaduext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
-        ];
-        return $urls[$environment] ?? $urls['testing'];
+        return WebserviceEnvironment::argentinaEndpoint($this->company, 'wgesregsintia2') . '?wsdl';
     }
 
     public function __construct(Company $company, User $user, array $config = [])
@@ -85,8 +80,21 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
         parent::__construct($company, $user, $config);
         
         // Inicializar servicios reutilizando infraestructura existente
-        $this->soapClient = new SoapClientService($company);
+        $this->soapClientService = new SoapClientService($company);
         $this->xmlGenerator = new SimpleXmlGenerator($company, $this->config);
+    }
+
+    /**
+     * Status consulta transacciones existentes, no registra envíos de un viaje.
+     * El flujo público vigente es consultarEstadoTransacciones().
+     */
+    protected function sendSpecificWebservice(Voyage $voyage, array $options = []): array
+    {
+        return [
+            'success' => false,
+            'error_code' => 'STATUS_REQUIRES_TRANSACTION_QUERY',
+            'error_message' => 'Utilice consultarEstadoTransacciones() para consultar estados MIC/DTA.',
+        ];
     }
 
     /**
@@ -193,8 +201,8 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
             $xmlConsulta = $this->generarXmlConsulta($transaccion->external_reference);
             
             // Enviar consulta a AFIP
-            $soapClient = $this->soapClient->createClient('micdta', $this->config['environment']);
-            $respuestaAfip = $this->enviarConsultaSoap($consultaTransaction, $soapClient, $xmlConsulta);
+            $this->soapClient = $this->soapClientService->createClient('micdta', $this->config['environment']);
+            $respuestaAfip = $this->enviarConsultaSoap($consultaTransaction, $this->soapClient, $xmlConsulta);
             
             if ($respuestaAfip['success']) {
                 // Procesar respuesta exitosa
@@ -320,7 +328,7 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
             $transaction->update(['status' => 'sending', 'sent_at' => now()]);
 
             // Enviar usando SoapClientService existente
-            $result = $this->soapClient->sendRequest($transaction, 'ConsultarEstadoMicDta', ['xmlParam' => $xmlContent]);
+            $result = $this->soapClientService->sendRequest($transaction, 'ConsultarEstadoMicDta', ['xmlParam' => $xmlContent]);
             
             $endTime = microtime(true);
             $responseTime = round(($endTime - $startTime) * 1000);

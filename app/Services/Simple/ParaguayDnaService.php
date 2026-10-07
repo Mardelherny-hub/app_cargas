@@ -74,20 +74,12 @@ class ParaguayDnaService extends BaseWebserviceService
     /**
      * Ambiente canónico de DNA. Fuente única para URL y certificado del servidor:
      * si ambos no salen de acá, pueden desincronizarse (URL de producción con
-     * certificado de testing). Acepta 'test' como sinónimo histórico de 'testing'.
+     * certificado de testing). Sólo acepta los valores del switch: 'testing' y 'production'.
      * Cualquier otro valor es un error de configuración, no un default silencioso.
      */
     protected function resolveDnaEnvironment(): string
     {
-        $raw = $this->company->ws_environment;
-
-        return match ($raw) {
-            'test', 'testing' => 'testing',
-            'production' => 'production',
-            default => throw new Exception(
-                'Ambiente de webservice DNA inválido para la empresa: ' . var_export($raw, true)
-            ),
-        };
+        return WebserviceEnvironment::resolve($this->company);
     }
 
     /**
@@ -111,8 +103,8 @@ class ParaguayDnaService extends BaseWebserviceService
     protected function getWebserviceConfig(): array
     {
         return array_merge(parent::BASE_CONFIG, [
-            'environment' => config('services.paraguay.environment', 'testing'),
-            'webservice_url' => config('services.paraguay.wsdl'),
+            'environment' => $this->resolveDnaEnvironment(),
+            'webservice_url' => $this->getWsdlUrl(),
             'soap_method' => 'EnviarMensajeFluvial',
             'require_certificate' => config('services.paraguay.require_certificate', true),
             'dna_public_certificate' => config('services.paraguay.dna_public_certificate'),
@@ -1881,7 +1873,7 @@ XML;
             'country' => 'PY',
             'webservice_url' => $this->getWsdlUrl(), // ← FIX
             'soap_action' => 'EnviarMensajeFluvial',
-            'environment' => $this->config['environment'] ?? 'testing',
+            'environment' => $this->config['environment'],
             'status' => 'pending',
             'retry_count' => 0,
             'max_retries' => 3,

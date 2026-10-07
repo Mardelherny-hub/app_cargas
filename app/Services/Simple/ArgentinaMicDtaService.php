@@ -41,11 +41,11 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         return [
             'webservice_type' => 'micdta',
             'country' => 'AR',
-            'environment' => 'testing',
+            'environment' => WebserviceEnvironment::resolve($this->company),
             
             // URLs OBLIGATORIAS
-            'webservice_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
-            'wsdl_url' => 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl',
+            'webservice_url' => WebserviceEnvironment::argentinaEndpoint($this->company, 'wgesregsintia2'),
+            'wsdl_url' => WebserviceEnvironment::argentinaEndpoint($this->company, 'wgesregsintia2') . '?wsdl',
             
             // SOAP ACTIONS COMPLETAS - OBLIGATORIAS
             'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta',
@@ -844,7 +844,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 $validation['warnings'][] = 'Webservices no activados para la empresa';
             }
 
-            $environment = $this->company->ws_environment ?? 'testing';
+            $environment = $this->config['environment'];
             $validation['details'][] = "Ambiente webservice: {$environment} ✓";
 
             // RESUMEN FINAL
@@ -2631,7 +2631,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitMicDta',
                     'country' => 'AR',
                     'status' => 'success',
-                    'environment' => $this->config['environment'] ?? 'testing',
+                    'environment' => $this->config['environment'],
                     'webservice_url' => $this->getWsdlUrl(),
                     'request_xml' => $xmlContent,
                     'response_xml' => $response,
@@ -3030,7 +3030,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/AnularTitulo',
                 'country' => 'AR',
                 'status' => 'pending',
-                'environment' => $this->config['environment'] ?? 'testing',
+                'environment' => $this->config['environment'],
                 'webservice_url' => $this->getWsdlUrl(),
                 'sent_at' => now(),
             ]);
@@ -3834,7 +3834,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'soap_action' => 'ConsultarMicDtaAsig',
                 'country' => 'AR',
                 'status' => 'pending',
-                'environment' => $this->config['environment'] ?? 'testing',
+                'environment' => $this->config['environment'],
                 'webservice_url' => $this->getWsdlUrl(),
                 'sent_at' => now(),
             ]);
@@ -4042,7 +4042,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarTitEnviosReg',
                 'country' => 'AR',
                 'status' => 'pending',
-                'environment' => $this->config['environment'] ?? 'testing',
+                'environment' => $this->config['environment'],
                 'webservice_url' => $this->getWsdlUrl(),
                 'sent_at' => now(),
             ]);
@@ -4415,7 +4415,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarPrecumplido',
                 'country' => 'AR',
                 'status' => 'pending',
-                'environment' => $this->config['environment'] ?? 'testing',
+                'environment' => $this->config['environment'],
                 'webservice_url' => $this->getWsdlUrl(),
                 'sent_at' => now(),
             ]);
@@ -6930,7 +6930,7 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
             
             // ✅ GENERACIÓN AUTOMÁTICA DE TRACKs FAKE EN TESTING
             if (empty($tracks)) {
-                $environment = $this->config['environment'] ?? 'testing';
+                $environment = $this->config['environment'];
                 
                 if ($environment === 'testing') {
                     $this->logOperation('info', '🔄 Ambiente TESTING: Generando TRACK ficticio', [
