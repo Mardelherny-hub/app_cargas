@@ -927,8 +927,18 @@ class ArgentinaAnticipatedService
             ];
         }
 
+        $this->currentTransactionId = null;
+        $transactionStarted = false;
         try {
+            $xmlGenerator = app(SimpleXmlGenerator::class, [
+                'company' => $this->company,
+                'config' => $this->config,
+            ]);
+            // El TA queda confirmado antes del BEGIN: un rollback del viaje no lo elimina.
+            $xmlGenerator->prepareRegistrarViajeAuthentication($voyage);
+
             DB::beginTransaction();
+            $transactionStarted = true;
 
             // Crear transacción
             $transaction = $this->createWebserviceTransaction($voyage, array_merge($options, [
@@ -952,7 +962,6 @@ class ArgentinaAnticipatedService
 
             // Generar XML para RegistrarViaje
             $transactionId = $transaction->transaction_id;
-            $xmlGenerator = new SimpleXmlGenerator($this->company, $this->config);
             $xmlContent = $xmlGenerator->createRegistrarViajeXml($voyage, $transactionId, $options);
 
             if (!$xmlContent) {
@@ -1035,7 +1044,7 @@ class ArgentinaAnticipatedService
             }
 
         } catch (Exception $e) {
-            if (DB::transactionLevel() > 0) {
+            if ($transactionStarted && DB::transactionLevel() > 0) {
                 DB::rollBack();
             }
             
