@@ -149,7 +149,7 @@ class ReportController extends Controller
 
         $reportVoyages = $reportVoyagesQuery->get();
 
-        // Para el formato según muestra, cargar únicamente los BL del viaje
+        // Para Cargo Manifest, cargar únicamente los BL del viaje
         // elegido y los puertos que esos BL realmente utilizan.
         $clientManifestVoyage = null;
         $clientManifestBills = collect();
@@ -1580,7 +1580,7 @@ private function buildBillsOfLadingQuery($company)
 
         if ($template === 'client') {
             if ($format !== 'pdf') {
-                return back()->with('error', 'Cargo Manifest - formato según muestra está disponible únicamente en PDF.');
+                return back()->with('error', 'Cargo Manifest está disponible únicamente en PDF.');
             }
 
             $normalizeId = static function ($value): ?int {

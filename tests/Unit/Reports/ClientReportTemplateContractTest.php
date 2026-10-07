@@ -37,8 +37,9 @@ class ClientReportTemplateContractTest extends TestCase
     {
         $view = $this->source('resources/views/company/reports/manifests.blade.php');
 
-        $this->assertStringContainsString('Reporte del sistema (actual)', $view);
-        $this->assertStringContainsString('Cargo Manifest - formato según muestra', $view);
+        $this->assertStringContainsString('>Formato actual</option>', $view);
+        $this->assertStringContainsString('>Cargo Manifest</option>', $view);
+        $this->assertStringNotContainsString('formato según muestra', $view);
         $this->assertStringContainsString('name="filters[template]"', $view);
     }
 
