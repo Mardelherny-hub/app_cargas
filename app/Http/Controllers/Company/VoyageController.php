@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Company;
 
 use App\Http\Controllers\Controller;
 use App\Models\Voyage;
+use App\Services\VoyageTransferService;
 use App\Models\Vessel;
 use App\Models\Captain;
 use App\Models\Country;
@@ -27,12 +28,13 @@ class VoyageController extends Controller
     public function index(Request $request)
     {
         // 1. Verificar permiso básico para ver cargas (viajes son parte del módulo cargas)
-        if (!$this->canPerform('view_cargas')) {
+        if (!$this->isCompanyAdmin() && !$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para ver viajes.');
         }
 
         // 2. Verificar que la empresa tenga rol "Cargas"
-        if (!$this->hasCompanyRole('Cargas')) {
+        // Una empresa activa puede recibir viajes aunque no tenga el rol Cargas.
+        if (!$this->isCompanyAdmin() && !$this->hasCompanyRole('Cargas')) {
             abort(403, 'Su empresa no tiene el rol de Cargas para gestionar viajes.');
         }
 
@@ -334,11 +336,12 @@ class VoyageController extends Controller
     public function show(Voyage $voyage)
     {
         // 1. Verificar permisos
-        if (!$this->canPerform('view_cargas')) {
+        if (!$this->isCompanyAdmin() && !$this->canPerform('view_cargas')) {
             abort(403, 'No tiene permisos para ver viajes.');
         }
 
-        if (!$this->hasCompanyRole('Cargas')) {
+        // Una empresa activa puede recibir viajes aunque no tenga el rol Cargas.
+        if (!$this->isCompanyAdmin() && !$this->hasCompanyRole('Cargas')) {
             abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
@@ -362,7 +365,35 @@ class VoyageController extends Controller
             //'createdByUser'
         ]);
 
-        return view('company.voyages.show', compact('voyage'));
+        $transferService = app(VoyageTransferService::class);
+        $canTransferVoyage = $transferService->canTransfer(Auth::user(), $voyage);
+        $transferBlocked = $canTransferVoyage && $transferService->hasTransmission($voyage);
+        $transferCompanies = $canTransferVoyage && !$transferBlocked
+            ? \App\Models\Company::where('active', true)->where('id', '!=', $voyage->company_id)
+                ->orderBy('legal_name')->get(['id', 'legal_name'])
+            : collect();
+
+        return view('company.voyages.show', compact('voyage', 'canTransferVoyage', 'transferBlocked', 'transferCompanies'));
+    }
+
+    public function transfer(Request $request, Voyage $voyage, VoyageTransferService $service)
+    {
+        abort_unless($service->canTransfer($request->user(), $voyage), 403, 'No tiene permisos para transferir este viaje.');
+        $validated = $request->validate(['destination_company_id' => 'required|integer']);
+
+        try {
+            $service->transfer($request->user(), $voyage, (int) $validated['destination_company_id']);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpExceptionInterface $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->withErrors(['transfer' => 'No se pudo transferir el viaje. No se guardaron cambios.']);
+        }
+
+        return redirect()->route('company.voyages.index')
+            ->with('success', 'Viaje '.$voyage->voyage_number.' (ID '.$voyage->id.') transferido correctamente. Ya no pertenece a su empresa.');
     }
 
     /**
@@ -374,7 +405,8 @@ class VoyageController extends Controller
             abort(403, 'No tiene permisos para editar viajes.');
         }
 
-        if (!$this->hasCompanyRole('Cargas')) {
+        // Una empresa activa puede recibir viajes aunque no tenga el rol Cargas.
+        if (!$this->isCompanyAdmin() && !$this->hasCompanyRole('Cargas')) {
             abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
@@ -440,7 +472,8 @@ class VoyageController extends Controller
             abort(403, 'No tiene permisos para editar viajes.');
         }
 
-        if (!$this->hasCompanyRole('Cargas')) {
+        // Una empresa activa puede recibir viajes aunque no tenga el rol Cargas.
+        if (!$this->isCompanyAdmin() && !$this->hasCompanyRole('Cargas')) {
             abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
