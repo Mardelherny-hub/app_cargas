@@ -183,7 +183,8 @@ class SimpleManifestController extends Controller
                     'error' => 'Error ejecutando ' . $method,
                     'details' => $result['error_message'] ?? 'Error desconocido',
                     'error_code' => $result['error_code'] ?? 'METHOD_EXECUTION_FAILED',
-                    'transaction_id' => $result['transaction_id'] ?? null
+                    'transaction_id' => $result['transaction_id'] ?? null,
+                    'transaction_record_id' => $result['transaction_record_id'] ?? null
                 ];
             }
 

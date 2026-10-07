@@ -2635,12 +2635,14 @@
         const txId = result?.transaction_id || result?.data?.transaction_id || null;
         const ref = result?.external_reference || result?.data?.external_reference || null;
         const mainMessage = result?.message || result?.data?.message || '';
+        const errorContext = result?.error || result?.data?.error || '';
         const errorText =
-            result?.error || result?.data?.error ||
-            result?.error_message || result?.data?.error_message ||
             result?.details || result?.data?.details ||
-            'Error desconocido';
-        const errorCode = result?.error_code || result?.code || null;
+            result?.error_message || result?.data?.error_message ||
+            errorContext || mainMessage || 'Error desconocido';
+        const errorCode = result?.error_code || result?.data?.error_code ||
+            result?.code || result?.data?.code || null;
+        const transactionRecordId = result?.transaction_record_id || result?.data?.transaction_record_id || null;
         const afip = result?.afip_messages || result?.data?.afip_messages || null;
 
         // Warnings: soportar null, string y array
@@ -2669,7 +2671,9 @@
 
             let errorHtml = `
                 <p class="text-sm text-gray-700">
-                    <strong>Error:</strong> ${esc(errorText)}<br>
+                    <strong>Detalle:</strong> ${esc(errorText)}<br>
+                    ${errorContext && errorContext !== errorText ? `<strong>Contexto:</strong> ${esc(errorContext)}<br>` : ''}
+                    ${transactionRecordId ? `<strong>Transacción:</strong> ${esc(transactionRecordId)}<br>` : ''}
                     ${errorCode ? `<strong>Código:</strong> ${esc(errorCode)}<br>` : ''}
                     ${txId ? `<strong>Transaction ID:</strong> ${esc(txId)}<br>` : ''}
                     ${ref ? `<strong>Referencia:</strong> ${esc(ref)}<br>` : ''}
