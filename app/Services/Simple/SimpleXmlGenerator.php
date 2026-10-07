@@ -3324,21 +3324,27 @@ class SimpleXmlGenerator
 
         if ($condition === 'V') {
             $w->writeElement($prefix . 'CodigoPuertoEmbarque', $this->iaPort($bill->loadingPort, $prefix . 'CodigoPuertoEmbarque'));
-            if ($bill->loading_date) {
-                $w->writeElement($prefix . 'FechaEmbarque', $this->iaDate($bill->loading_date));
+            if (!$bill->loading_date) {
+                throw new Exception("Contenedor {$number}: FechaEmbarque es obligatoria cuando se informa CodigoPuertoEmbarque.");
             }
-            if (!$bill->origin_loading_date) {
-                throw new Exception("Contenedor {$number}: FechaCargaLugarOrigen es obligatoria para un contenedor vacío.");
+            $w->writeElement($prefix . 'FechaEmbarque', $this->iaDate($bill->loading_date));
+
+            $originDate = $bill->origin_loading_date;
+            $originPlace = trim((string) $bill->origin_location);
+            $originCountry = trim((string) $bill->origin_country_code);
+            // La ausencia del bloque no declara igualdad entre origen y embarque.
+            if ($originDate || $originPlace !== '' || $originCountry !== '') {
+                $originPlace = $this->iaRequired($originPlace, "Contenedor {$number}: CodigoLugarOrigen", 5);
+                $originCountry = $this->iaRequired($originCountry, "Contenedor {$number}: CodigoPaisLugarOrigen");
+                // El contrato IA no admite lugar de origen sin su fecha de carga.
+                if (!$originDate) {
+                    throw new Exception("Contenedor {$number}: FechaCargaLugarOrigen es obligatoria cuando se informa CodigoLugarOrigen.");
+                }
+                $originCountry = $this->iaCountryValue($originCountry, "Contenedor {$number}: CodigoPaisLugarOrigen");
+                $w->writeElement($prefix . 'FechaCargaLugarOrigen', $this->iaDate($originDate));
+                $w->writeElement($prefix . 'CodigoLugarOrigen', $originPlace);
+                $w->writeElement($prefix . 'CodigoPaisLugarOrigen', $originCountry);
             }
-            $w->writeElement($prefix . 'FechaCargaLugarOrigen', $this->iaDate($bill->origin_loading_date));
-            $w->writeElement(
-                $prefix . 'CodigoLugarOrigen',
-                $this->iaRequired($bill->origin_location, "Contenedor {$number}: CodigoLugarOrigen", 5)
-            );
-            $w->writeElement(
-                $prefix . 'CodigoPaisLugarOrigen',
-                $this->iaCountryValue($bill->origin_country_code, "Contenedor {$number}: CodigoPaisLugarOrigen")
-            );
             $w->writeElement($prefix . 'CodigoPuertoDescarga', $this->iaPort($bill->dischargePort, $prefix . 'CodigoPuertoDescarga'));
             if ($bill->discharge_date) {
                 $w->writeElement($prefix . 'FechaDescarga', $this->iaDate($bill->discharge_date));
