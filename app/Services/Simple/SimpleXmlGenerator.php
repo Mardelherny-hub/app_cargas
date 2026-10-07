@@ -31,6 +31,7 @@ class SimpleXmlGenerator
     private const AFIP_ANTICIPADA_NAMESPACE = 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada';
     private const WSDL_URL = 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx?wsdl';
     private array $config;
+    private array $preparedWsaaTokens = [];
 
     public function __construct(Company $company, array $config = [])
     {
@@ -1470,10 +1471,29 @@ class SimpleXmlGenerator
     }
 
     /**
-     * Obtener tokens WSAA - MÉTODO SIN CAMBIOS (funciona correctamente)
+     * RegistrarViaje autentica antes de abrir la transacción de negocio.
+     * Se conserva el TA en esta instancia para no volver a obtenerlo dentro de ella.
+     */
+    public function prepareRegistrarViajeAuthentication(Voyage $voyage): void
+    {
+        if (\Illuminate\Support\Facades\DB::transactionLevel() !== 0) {
+            throw new Exception('RegistrarViaje debe obtener el TA fuera de una transacción de negocio.');
+        }
+
+        $this->validateVoyageData($voyage);
+        $this->preparedWsaaTokens['wgesinformacionanticipada'] =
+            $this->getWSAATokens('wgesinformacionanticipada');
+    }
+
+    /**
+     * Obtener tokens WSAA por empresa, servicio y ambiente.
      */
     private function getWSAATokens(string $serviceName = 'wgesregsintia2'): array
     {
+        if (isset($this->preparedWsaaTokens[$serviceName])) {
+            return $this->preparedWsaaTokens[$serviceName];
+        }
+
         try {
             // Verificar cache primero
             $cachedToken = \App\Models\WsaaToken::getValidToken(
@@ -1492,16 +1512,7 @@ class SimpleXmlGenerator
             }
             
             // Generar nuevo token
-            $certificateManager = new \App\Services\Webservice\CertificateManagerService($this->company);
-            $certData = $certificateManager->readCertificate();
-            
-            if (!$certData) {
-                throw new Exception("No se pudo leer el certificado .p12");
-            }
-            
-            $loginTicket = $this->generateLoginTicket($serviceName);
-            $signedTicket = $this->signLoginTicket($loginTicket, $certData);
-            $wsaaTokens = $this->callWSAA($signedTicket);
+            $wsaaTokens = $this->requestWsaaTokens($serviceName);
             
             // Guardar en cache
             \App\Models\WsaaToken::createToken([
@@ -1531,6 +1542,22 @@ class SimpleXmlGenerator
             \Log::info("WSAA ERROR: " . $e->getMessage());
             throw $e;
         }
+    }
+
+    /** Solicitud externa separada para poder simular WSAA sin certificados ni red. */
+    protected function requestWsaaTokens(string $serviceName): array
+    {
+        $certificateManager = new \App\Services\Webservice\CertificateManagerService($this->company);
+        $certData = $certificateManager->readCertificate();
+
+        if (!$certData) {
+            throw new Exception("No se pudo leer el certificado .p12");
+        }
+
+        $loginTicket = $this->generateLoginTicket($serviceName);
+        $signedTicket = $this->signLoginTicket($loginTicket, $certData);
+
+        return $this->callWSAA($signedTicket);
     }
 
     private function generateLoginTicket(string $serviceName = 'wgesregsintia2'): string
