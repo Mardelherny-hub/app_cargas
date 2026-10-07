@@ -41,10 +41,22 @@ class LoginXmlManifestExporter
             );
         }
 
-        $document = new DOMDocument('1.0', 'UTF-8');
+        // El archivo Login original entregado usa Windows-1252 y declara
+        // los namespaces XML Schema en el nodo raíz.
+        $document = new DOMDocument('1.0', 'Windows-1252');
         $document->formatOutput = true;
 
         $root = $document->createElement('BillOfLadingRoot');
+        $root->setAttributeNS(
+            'http://www.w3.org/2000/xmlns/',
+            'xmlns:xsi',
+            'http://www.w3.org/2001/XMLSchema-instance'
+        );
+        $root->setAttributeNS(
+            'http://www.w3.org/2000/xmlns/',
+            'xmlns:xsd',
+            'http://www.w3.org/2001/XMLSchema'
+        );
         $document->appendChild($root);
 
         foreach ($voyage->shipments as $shipment) {
@@ -306,6 +318,20 @@ class LoginXmlManifestExporter
             $container->pivot?->source_line_numbers
         );
 
+        if (count($sourceLines) > 1) {
+            throw new DomainException(
+                "El contenedor {$container->container_number} conserva múltiples líneas Login de origen "
+                . 'y la relación original entre línea, NCM y precintos ya no puede reconstruirse sin inventar datos.'
+            );
+        }
+
+        if (strtoupper(trim((string) $container->condition)) === 'V') {
+            throw new DomainException(
+                "El contenedor {$container->container_number} está marcado como vacío. "
+                . 'El formato Login disponible no contiene un nodo de condición vacío/lleno; no se exportará perdiendo ese dato.'
+            );
+        }
+
         $this->addText(
             $document,
             $line,
@@ -355,13 +381,7 @@ class LoginXmlManifestExporter
             $this->number($container->pivot->gross_weight_kg)
         );
 
-        $seals = $this->decodeList(
-            $container->pivot?->source_seals
-        );
-
-        if ($seals === []) {
-            $seals = $this->additionalSeals($container);
-        }
+        $seals = $this->containerSeals($container);
 
         if ($seals !== []) {
             $sealElement = $document->createElement('Seal');
@@ -458,6 +478,37 @@ class LoginXmlManifestExporter
                 $codes
             ),
             fn ($code) => $code !== ''
+        )));
+    }
+
+    private function containerSeals(Container $container): array
+    {
+        $seals = $this->decodeList(
+            $container->pivot?->source_seals
+        );
+
+        foreach ([
+            $container->shipper_seal,
+            $container->customs_seal,
+            $container->carrier_seal,
+        ] as $seal) {
+            $seal = trim((string) $seal);
+            if ($seal !== '') {
+                $seals[] = $seal;
+            }
+        }
+
+        $seals = array_merge(
+            $seals,
+            $this->additionalSeals($container)
+        );
+
+        return array_values(array_unique(array_filter(
+            array_map(
+                static fn ($seal) => trim((string) $seal),
+                $seals
+            ),
+            static fn ($seal) => $seal !== ''
         )));
     }
 
