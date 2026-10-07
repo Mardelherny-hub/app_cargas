@@ -869,24 +869,19 @@ class ManifestExportController extends Controller
                     . "'";
             }
 
-            if ($container->shipper_seal) {
-                $message[] = "SEL+"
-                    . $this->ediText($container->shipper_seal)
-                    . "+SH'";
-            }
-            if ($container->customs_seal) {
-                $message[] = "SEL+"
-                    . $this->ediText($container->customs_seal)
-                    . "+CU'";
-            }
-            if ($container->carrier_seal) {
-                $message[] = "SEL+"
-                    . $this->ediText($container->carrier_seal)
-                    . "+CA'";
-            }
+            foreach ($this->ediContainerSeals($container) as $seal) {
+                if ($seal['issuer'] === '') {
+                    throw new RuntimeException(
+                        "El precinto {$seal['number']} del contenedor {$container->container_number} "
+                        . 'no tiene emisor informado (SH/CU/CA/otro código). CUSCAR no se exportará inventando ese rol.'
+                    );
+                }
 
-            foreach ($this->additionalSealValues($container) as $seal) {
-                $message[] = "SEL+" . $this->ediText($seal) . "+AB'";
+                $message[] = 'SEL+'
+                    . $this->ediText($seal['number'])
+                    . '+'
+                    . $this->ediText($seal['issuer'])
+                    . "'";
             }
 
             if ($container->set_temperature !== null) {
@@ -909,6 +904,19 @@ class ManifestExportController extends Controller
 
             $message[] = 'CNI+' . ($billIndex + 1) . "++'";
             $message[] = 'RFF+BM:' . $billNumber . "'";
+
+            $billLoadingPort = $bill->loadingPort ?: $voyage->originPort;
+            $billDischargePort = $bill->dischargePort ?: $voyage->destinationPort;
+            $message[] = 'LOC+9+'
+                . $this->ediReference(
+                    $this->portCode($billLoadingPort, 'puerto de carga del BL CUSCAR')
+                )
+                . "::139'";
+            $message[] = 'LOC+11+'
+                . $this->ediReference(
+                    $this->portCode($billDischargePort, 'puerto de descarga del BL CUSCAR')
+                )
+                . "::139'";
 
             if ($bill->permiso_embarque) {
                 $message[] = 'RFF+EP:'
@@ -1256,6 +1264,59 @@ class ManifestExportController extends Controller
             static fn ($seal) => trim((string) $seal),
             $seals
         ))));
+    }
+
+    private function ediContainerSeals(Container $container): array
+    {
+        $entries = [];
+
+        $addSeal = static function (array &$entries, $number, $issuer = null): void {
+            $number = trim((string) $number);
+            $issuer = strtoupper(trim((string) ($issuer ?? '')));
+
+            if ($number === '') {
+                return;
+            }
+
+            if (!isset($entries[$number]) || ($entries[$number]['issuer'] === '' && $issuer !== '')) {
+                $entries[$number] = [
+                    'number' => $number,
+                    'issuer' => $issuer,
+                ];
+            }
+        };
+
+        $source = $container->pivot?->source_seals;
+        if (is_string($source) && trim($source) !== '') {
+            $decoded = json_decode($source, true);
+            $source = is_array($decoded) ? $decoded : [$source];
+        }
+        if (is_array($source)) {
+            foreach ($source as $seal) {
+                $addSeal($entries, $seal);
+            }
+        }
+
+        $addSeal($entries, $container->shipper_seal, 'SH');
+        $addSeal($entries, $container->customs_seal, 'CU');
+        $addSeal($entries, $container->carrier_seal, 'CA');
+
+        $additional = $container->additional_seals ?? [];
+        if (is_array($additional)) {
+            foreach ($additional as $seal) {
+                if (is_array($seal)) {
+                    $addSeal(
+                        $entries,
+                        $seal['seal_number'] ?? null,
+                        $seal['issuer_code'] ?? null
+                    );
+                } else {
+                    $addSeal($entries, $seal);
+                }
+            }
+        }
+
+        return array_values($entries);
     }
 
     private function additionalSealValues(Container $container): array
