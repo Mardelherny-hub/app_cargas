@@ -13,6 +13,13 @@
             </div>
 
             <div class="flex items-center space-x-2">
+                @if($canTransferVoyage ?? false)
+                    <button type="button" onclick="document.getElementById('voyage-transfer-dialog').showModal()"
+                        class="px-3 py-2 border rounded-md text-sm font-medium text-indigo-700">
+                        Transferir a otra empresa
+                    </button>
+                @endif
+
                 @if($userPermissions['can_edit'] ?? false)
                     <a href="{{ route('company.voyages.edit', $voyage) }}" 
                        class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
@@ -42,6 +49,37 @@
             </div>
         </div>
     </x-slot>
+
+    @if($canTransferVoyage ?? false)
+        <dialog id="voyage-transfer-dialog" class="rounded-lg p-6 w-full max-w-lg" aria-labelledby="voyage-transfer-title">
+            <h3 id="voyage-transfer-title" class="text-lg font-semibold">Transferir a otra empresa</h3>
+            <p class="my-3">Viaje {{ $voyage->voyage_number }} · ID {{ $voyage->id }}<br>
+                Empresa actual: {{ $voyage->company->legal_name }}</p>
+            @if($transferBlocked)
+                <p class="text-red-700">{{ \App\Services\VoyageTransferService::TRANSMITTED_MESSAGE }}</p>
+            @else
+                <form method="POST" action="{{ route('company.voyages.transfer', $voyage) }}"
+                    onsubmit="return confirm('¿Confirmar la transferencia del viaje completo a la empresa seleccionada? Su empresa dejará de administrarlo.');">
+                    @csrf
+                    <label for="destination_company_id" class="block">Empresa destino</label>
+                    <select name="destination_company_id" id="destination_company_id" required class="w-full rounded border-gray-300 my-3">
+                        <option value="">Seleccione una empresa</option>
+                        @foreach($transferCompanies as $destination)
+                            <option value="{{ $destination->id }}" @selected(old('destination_company_id') == $destination->id)>{{ $destination->legal_name }}</option>
+                        @endforeach
+                    </select>
+                    <p class="text-sm mb-3">Se transfiere el viaje completo con sus datos y documentos, sin duplicarlos.</p>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded" @disabled($transferCompanies->isEmpty())>Confirmar transferencia</button>
+                </form>
+            @endif
+            <button type="button" onclick="document.getElementById('voyage-transfer-dialog').close()" class="mt-4 px-4 py-2 border rounded">Cerrar</button>
+        </dialog>
+    @endif
+    @if($errors->has('destination_company_id') || $errors->has('transfer'))
+        <div role="alert" class="max-w-7xl mx-auto mt-4 p-4 bg-red-50 text-red-700">
+            {{ $errors->first('destination_company_id') ?: $errors->first('transfer') }}
+        </div>
+    @endif
 
     <div class="py-12">
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
