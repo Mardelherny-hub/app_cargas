@@ -425,7 +425,7 @@ class CmspEdiParser implements ManifestParserInterface
                         && ($segment['elements'][0] ?? '') === 'AAE'
                         && ($segment['elements'][1] ?? '') === 'T') {
                         $mea = explode(':', $segment['elements'][2] ?? '');
-                        if (($mea[0] ?? '') === 'KGM' && isset($mea[1])) {
+                        if (($mea[0] ?? '') === 'KGM' && isset($mea[1]) && is_numeric($mea[1])) {
                             $this->parsedData['equipment'][$currentEquipment]['tare_weight_kg'] = (float) $mea[1];
                         }
                         break;
@@ -439,7 +439,7 @@ class CmspEdiParser implements ManifestParserInterface
                         && ($segment['elements'][1] ?? '') === 'T'
                         && !isset($this->parsedData['equipment'][$currentEquipment]['tare_weight_kg'])) {
                         $mea = explode(':', $segment['elements'][2] ?? '');
-                        if (($mea[0] ?? '') === 'KGM' && isset($mea[1])) {
+                        if (($mea[0] ?? '') === 'KGM' && isset($mea[1]) && is_numeric($mea[1])) {
                             $this->parsedData['equipment'][$currentEquipment]['tare_weight_kg'] = (float) $mea[1];
                         }
                         break;
@@ -2968,7 +2968,8 @@ class CmspEdiParser implements ManifestParserInterface
          * unidad física. Si el archivo no la informa, queda NULL.
          */
         $tareWeight = isset($equipment['tare_weight_kg'])
-            && $equipment['tare_weight_kg'] !== null
+            && is_numeric($equipment['tare_weight_kg'])
+            && is_finite((float) $equipment['tare_weight_kg'])
                 ? (float) $equipment['tare_weight_kg']
                 : null;
 
@@ -2982,6 +2983,11 @@ class CmspEdiParser implements ManifestParserInterface
         $currentGrossWeight = $vgmWeight > 0
             ? $vgmWeight
             : null;
+
+        // Vacío: sólo la tara explícita del EQD puede completar el bruto físico.
+        if ($condition === 'V' && $currentGrossWeight === null && $tareWeight > 0) {
+            $currentGrossWeight = $tareWeight;
+        }
 
         /*
          * Peso de carga del contenedor:

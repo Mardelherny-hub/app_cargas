@@ -3266,6 +3266,9 @@ class SimpleXmlGenerator
         if ($gross === null || !is_numeric($gross)) {
             throw new Exception("Contenedor {$number}: PesoBruto es obligatorio.");
         }
+        if ((float) $gross <= 0) {
+            throw new Exception("Contenedor {$number}: PesoBruto debe ser mayor que cero.");
+        }
         if ((float) $tare > (float) $gross) {
             throw new Exception("Contenedor {$number}: Tara no puede superar PesoBruto.");
         }

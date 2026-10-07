@@ -743,13 +743,27 @@ protected function extractValue(string $scope, string $label): ?string
 
         $containerType = $this->findOrCreateContainerType($data['tipo'] ?? '');
 
+        $condition = $this->mapTfpCondition($data['condicion'] ?? null);
+        $sourceTare = isset($data['tara']) && is_numeric($data['tara'])
+            && is_finite((float) $data['tara']) && (float) $data['tara'] > 0
+                ? (float) $data['tara'] : null;
+        // Ausencia no equivale a un cero declarado por el archivo.
+        $sourceGross = isset($data['peso']) && is_numeric($data['peso'])
+            && is_finite((float) $data['peso'])
+                ? (float) $data['peso'] : null;
+        $grossWeight = $sourceGross;
+        if ($condition['condition'] === 'V' && ($sourceGross === null || $sourceGross <= 0)
+            && $sourceTare !== null) {
+            $grossWeight = $sourceTare;
+        }
+
         return Container::create([
             'container_number' => $data['numero'],
             'container_type_id' => $containerType->id,
-            'tare_weight_kg' => $containerType->tare_weight_kg,
+            'tare_weight_kg' => $sourceTare ?? $containerType->tare_weight_kg,
             'max_gross_weight_kg' => $containerType->max_gross_weight_kg,
-            'current_gross_weight_kg' => floatval($data['peso'] ?? 0),
-            'cargo_weight_kg' => floatval($data['peso'] ?? 0),
+            'current_gross_weight_kg' => $grossWeight,
+            'cargo_weight_kg' => $condition['condition'] === 'V' ? 0 : floatval($data['peso'] ?? 0),
             'condition' => $this->mapTfpCondition($data['condicion'] ?? null)['condition'],
             'container_condition' => $this->mapTfpCondition($data['condicion'] ?? null)['container_condition'],
             'shipper_seal' => $data['nro_precinta'] ?? null,
