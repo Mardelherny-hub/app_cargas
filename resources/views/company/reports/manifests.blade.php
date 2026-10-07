@@ -49,9 +49,9 @@
                     <div class="ml-3">
                         <p class="text-sm text-blue-700">
                             <strong>¿Cómo generar un manifiesto?</strong><br>
-                            1. Seleccione un viaje de la lista<br>
-                            2. Elija el formato deseado (PDF recomendado)<br>
-                            3. Haga clic en "Generar Reporte"
+                            1. Elija Formato actual o Cargo Manifest<br>
+                            2. Seleccione un viaje<br>
+                            3. Genere el reporte o cargue los conocimientos para Cargo Manifest
                         </p>
                     </div>
                 </div>
@@ -61,15 +61,21 @@
             <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
                 <div class="px-4 py-5 sm:p-6">
                     <h3 class="text-lg leading-6 font-medium text-gray-900 mb-1">
-                        Formato actual
+                        Generar manifiesto
                     </h3>
                     <p class="text-sm text-gray-500 mb-4">
-                        Reporte existente del sistema. Se conserva en PDF o Excel sin reemplazarlo.
+                        Elija el formato y el viaje. Cargo Manifest permite seleccionar conocimientos y filtrar por puertos.
                     </p>
 
-                    <form method="POST" action="{{ route('company.reports.export', 'manifests') }}">
+                    <form method="POST" action="{{ route('company.reports.export', 'manifests') }}"
+                          id="manifest-report-form" data-load-url="{{ route('company.reports.manifests') }}">
                         @csrf
-                        <input type="hidden" name="filters[template]" value="standard">
+                        <label for="manifest-presentation" class="block text-sm font-medium text-gray-700">Formato de reporte</label>
+                        <select id="manifest-presentation" name="filters[template]"
+                                class="mt-1 mb-6 block w-full border-gray-300 rounded-md shadow-sm">
+                            <option value="standard" {{ request()->filled('client_voyage_id') ? '' : 'selected' }}>Formato actual</option>
+                            <option value="client" {{ request()->filled('client_voyage_id') ? 'selected' : '' }}>Cargo Manifest</option>
+                        </select>
 
                         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
                             {{-- SELECCIONAR VIAJE --}}
@@ -85,6 +91,7 @@
                                     <option value="">Seleccione un viaje...</option>
                                     @forelse($reportVoyages as $voyage)
                                         <option value="{{ $voyage->id }}"
+                                                {{ (string) request('client_voyage_id') === (string) $voyage->id ? 'selected' : '' }}
                                                 data-vessel="{{ $voyage->leadVessel->name ?? 'N/A' }}"
                                                 data-origin="{{ $voyage->originPort->name ?? 'N/A' }}"
                                                 data-destination="{{ $voyage->destinationPort->name ?? 'N/A' }}"
@@ -130,9 +137,9 @@
                             </div>
 
                             {{-- FORMATO --}}
-                            <div>
+                            <div id="manifest-file-options">
                                 <label for="format" class="block text-sm font-medium text-gray-700">
-                                    Formato <span class="text-red-500">*</span>
+                                    Tipo de archivo <span class="text-red-500">*</span>
                                 </label>
                                 <select id="format" 
                                         name="format" 
@@ -144,7 +151,7 @@
                             </div>
 
                             {{-- FILTROS OPCIONALES --}}
-                            <div>
+                            <div id="manifest-status-options">
                                 <label for="status_filter" class="block text-sm font-medium text-gray-700">
                                     Estado BL (opcional)
                                 </label>
@@ -170,46 +177,22 @@
                                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                                 </svg>
-                                Generar Reporte
+                                <span id="manifest-submit-label">Generar Reporte</span>
                             </button>
                         </div>
                     </form>
                 </div>
             </div>
 
-            {{-- CARGO MANIFEST - FORMATO SEGÚN MUESTRA --}}
-            <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
+            {{-- CARGO MANIFEST --}}
+            <div id="manifest-cargo-options" data-voyage-id="{{ $clientManifestVoyage?->id }}" @if(!request()->filled('client_voyage_id')) hidden @endif class="bg-white overflow-hidden shadow rounded-lg mb-6">
                 <div class="px-4 py-5 sm:p-6">
                     <h3 class="text-lg leading-6 font-medium text-gray-900 mb-1">
-                        Cargo Manifest - formato según muestra
+                        Cargo Manifest
                     </h3>
                     <p class="text-sm text-gray-500 mb-4">
                         PDF A4 apaisado. Permite seleccionar viaje, puertos y uno, varios o todos los conocimientos.
                     </p>
-
-                    <form method="GET" action="{{ route('company.reports.manifests') }}" class="mb-6">
-                        <label for="client_voyage_id" class="block text-sm font-medium text-gray-700">
-                            Viaje <span class="text-red-500">*</span>
-                        </label>
-                        <div class="mt-1 flex flex-col sm:flex-row gap-3">
-                            <select id="client_voyage_id"
-                                    name="client_voyage_id"
-                                    required
-                                    class="block w-full sm:max-w-xl border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                                <option value="">Seleccione un viaje</option>
-                                @foreach($reportVoyages as $voyage)
-                                    <option value="{{ $voyage->id }}" {{ (string) request('client_voyage_id') === (string) $voyage->id ? 'selected' : '' }}>
-                                        {{ $voyage->voyage_number }} - {{ $voyage->leadVessel->name ?? 'N/A' }}
-                                        ({{ $voyage->bills_of_lading_count }} BLs)
-                                    </option>
-                                @endforeach
-                            </select>
-                            <button type="submit"
-                                    class="inline-flex justify-center items-center px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white text-sm font-medium rounded-md">
-                                Cargar conocimientos
-                            </button>
-                        </div>
-                    </form>
 
                     @if($clientManifestVoyage)
                         @php
@@ -415,6 +398,39 @@
 
     {{-- JAVASCRIPT --}}
     <script>
+        // La elección de formato reutiliza los dos endpoints existentes.
+        (() => {
+            const form = document.getElementById('manifest-report-form');
+            const presentation = document.getElementById('manifest-presentation');
+            const voyage = document.getElementById('voyage_id');
+            const cargo = document.getElementById('manifest-cargo-options');
+            const fileFormat = document.getElementById('format');
+            const status = document.getElementById('status_filter');
+
+            function refreshPresentation() {
+                const isCargo = presentation.value === 'client';
+                document.getElementById('manifest-file-options').hidden = isCargo;
+                document.getElementById('manifest-status-options').hidden = isCargo;
+                fileFormat.disabled = isCargo;
+                status.disabled = isCargo;
+                cargo.hidden = !isCargo || (cargo.dataset.voyageId !== '' && cargo.dataset.voyageId !== voyage.value);
+                document.getElementById('manifest-submit-label').textContent =
+                    isCargo ? 'Cargar conocimientos' : 'Generar Reporte';
+            }
+
+            presentation.addEventListener('change', refreshPresentation);
+            voyage.addEventListener('change', refreshPresentation);
+            form.addEventListener('submit', (event) => {
+                if (presentation.value !== 'client') return;
+                event.preventDefault();
+                const url = new URL(form.dataset.loadUrl, window.location.href);
+                url.searchParams.set('client_voyage_id', voyage.value);
+                window.location.assign(url.toString());
+            });
+            refreshPresentation();
+            updateVoyageDetails(voyage);
+        })();
+
         function updateVoyageDetails(select) {
             const option = select.options[select.selectedIndex];
             const detailsDiv = document.getElementById('voyage-details');
