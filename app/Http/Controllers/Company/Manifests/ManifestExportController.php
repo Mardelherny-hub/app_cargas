@@ -126,7 +126,7 @@ class ManifestExportController extends Controller
             $filename = 'LOGIN_' . $this->safeFilePart($voyage->voyage_number) . '.xml';
 
             return Response::make($xmlContent, 200, [
-                'Content-Type' => 'application/xml; charset=UTF-8',
+                'Content-Type' => 'application/xml; charset=Windows-1252',
                 'Content-Disposition' => 'attachment; filename="' . $filename . '"',
             ]);
         } catch (\Throwable $e) {
