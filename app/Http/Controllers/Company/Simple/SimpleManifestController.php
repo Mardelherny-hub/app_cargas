@@ -1672,13 +1672,17 @@ public function micDtaSend(Request $request, Voyage $voyage)
             }
 
             // Usar el servicio de consulta de estados
-            $statusService = new ArgentinaMicDtaStatusService($company, $user);
+            $statusService = app()->makeWith(ArgentinaMicDtaStatusService::class, ['company' => $company, 'user' => $user]);
             $transactionIds = $transacciones->pluck('id')->toArray();
             
             $resultado = $statusService->consultarEstadoTransacciones($transactionIds);
 
             return response()->json([
-                'success' => true,
+                'success' => $resultado['success'],
+                'error' => $resultado['error'] ?? null,
+                'details' => $resultado['error'] ?? null,
+                'error_code' => $resultado['error_code'] ?? null,
+                'transaction_record_id' => $resultado['consulta_transaction_id'] ?? null,
                 'voyage_number' => $voyage->voyage_number,
                 'transacciones_consultadas' => count($transactionIds),
                 'resultado' => $resultado,
@@ -1715,11 +1719,15 @@ public function micDtaSend(Request $request, Voyage $voyage)
             }
 
             // Usar el servicio para consultar todos los pendientes
-            $statusService = new ArgentinaMicDtaStatusService($company, $user);
+            $statusService = app()->makeWith(ArgentinaMicDtaStatusService::class, ['company' => $company, 'user' => $user]);
             $resultado = $statusService->consultarEstadoTransacciones();
 
             return response()->json([
-                'success' => true,
+                'success' => $resultado['success'],
+                'error' => $resultado['error'] ?? null,
+                'details' => $resultado['error'] ?? null,
+                'error_code' => $resultado['error_code'] ?? null,
+                'transaction_record_id' => $resultado['consulta_transaction_id'] ?? null,
                 'company_name' => $company->legal_name,
                 'resultado' => $resultado,
                 'timestamp' => now()->toISOString(),
@@ -1767,7 +1775,13 @@ public function micDtaSend(Request $request, Voyage $voyage)
             // Obtener historial usando modelos existentes
             $transacciones = WebserviceTransaction::where('voyage_id', $voyage->id)
                 ->where('company_id', $company->id)
-                ->whereIn('webservice_type', ['micdta', 'micdta_status'])
+                ->where(function ($query) {
+                    $query->where('webservice_type', 'micdta')
+                        ->orWhere(function ($query) {
+                            $query->where('webservice_type', 'consulta')
+                                ->where('soap_action', 'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarEstadoMicDta');
+                        });
+                })
                 ->orderBy('created_at', 'desc')
                 ->get();
 
@@ -1778,7 +1792,7 @@ public function micDtaSend(Request $request, Voyage $voyage)
                     'transaction_external_id' => $transaccion->transaction_id,
                     'webservice_type' => $transaccion->webservice_type,
                     'status' => $transaccion->status,
-                    'method' => $transaccion->method_name,
+                    'method' => $transaccion->method_name ?: basename($transaccion->soap_action ?? ''),
                     'sent_at' => $transaccion->sent_at?->format('d/m/Y H:i'),
                     'response_at' => $transaccion->response_at?->format('d/m/Y H:i'),
                     'response_time_ms' => $transaccion->response_time_ms,
@@ -1861,7 +1875,8 @@ public function micDtaSend(Request $request, Voyage $voyage)
             // Obtener la consulta de estado más reciente
             $consultaEstado = WebserviceTransaction::where('voyage_id', $voyage->id)
                 ->where('company_id', $company->id)
-                ->where('webservice_type', 'micdta_status')
+                ->where('webservice_type', 'consulta')
+                ->where('soap_action', 'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarEstadoMicDta')
                 ->latest('created_at')
                 ->first();
 

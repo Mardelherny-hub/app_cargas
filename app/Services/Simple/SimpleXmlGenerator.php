@@ -1485,6 +1485,34 @@ class SimpleXmlGenerator
             $this->getWSAATokens('wgesinformacionanticipada');
     }
 
+    /** Consulta de estado con el mismo TA MIC/DTA usado por los envíos Simple. */
+    public function createConsultarEstadoMicDtaXml(string $externalReference): string
+    {
+        $auth = $this->getWSAATokens('wgesregsintia2');
+        $xml = new \XMLWriter();
+        $xml->openMemory();
+        $xml->startDocument('1.0', 'UTF-8');
+        $xml->startElementNS('soap', 'Envelope', 'http://www.w3.org/2003/05/soap-envelope');
+        $xml->writeAttribute('xmlns:wges', 'Ar.Gob.Afip.Dga.wgesregsintia2');
+        $xml->startElement('soap:Header');
+        $xml->startElement('wges:AuthSoapHd');
+        $xml->writeElement('wges:ticket', $auth['token']);
+        $xml->writeElement('wges:sign', $auth['sign']);
+        $xml->writeElement('wges:cuitRepresentado', $auth['cuit']);
+        $xml->endElement();
+        $xml->endElement();
+        $xml->startElement('soap:Body');
+        $xml->startElement('wges:ConsultarEstadoMicDta');
+        $xml->startElement('wges:consultaEstadoParam');
+        $xml->writeElement('wges:MicDtaId', $externalReference);
+        $xml->writeElement('wges:TipoConsulta', 'ESTADO');
+        $xml->endElement();
+        $xml->endElement();
+        $xml->endElement();
+        $xml->endElement();
+        return $xml->outputMemory();
+    }
+
     /**
      * Obtener tokens WSAA por empresa, servicio y ambiente.
      */

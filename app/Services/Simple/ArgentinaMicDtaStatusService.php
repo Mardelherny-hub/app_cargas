@@ -9,7 +9,6 @@ use App\Models\WebserviceTransaction;
 use App\Models\WebserviceResponse;
 use App\Models\WebserviceLog;
 use App\Services\Simple\BaseWebserviceService;
-use App\Services\Webservice\SoapClientService;
 use App\Services\Simple\SimpleXmlGenerator;
 use Exception;
 use Illuminate\Support\Facades\DB;
@@ -42,8 +41,6 @@ use Carbon\Carbon;
  */
 class ArgentinaMicDtaStatusService extends BaseWebserviceService
 {
-    private SoapClientService $soapClientService;
-    private SimpleXmlGenerator $xmlGenerator;
 
     /**
      * Configuración específica para consultas de estado
@@ -51,7 +48,7 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
     protected function getWebserviceConfig(): array
     {
         return [
-            'webservice_type' => 'micdta_status',
+            'webservice_type' => 'consulta',
             'country' => 'AR',
             'environment' => WebserviceEnvironment::resolve($this->company),
             'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarEstadoMicDta',
@@ -62,7 +59,7 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
 
     protected function getWebserviceType(): string
     {
-        return 'micdta_status';
+        return 'consulta';
     }
 
     protected function getCountry(): string
@@ -73,15 +70,6 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
     protected function getWsdlUrl(): string
     {
         return WebserviceEnvironment::argentinaEndpoint($this->company, 'wgesregsintia2') . '?wsdl';
-    }
-
-    public function __construct(Company $company, User $user, array $config = [])
-    {
-        parent::__construct($company, $user, $config);
-        
-        // Inicializar servicios reutilizando infraestructura existente
-        $this->soapClientService = new SoapClientService($company);
-        $this->xmlGenerator = new SimpleXmlGenerator($company, $this->config);
     }
 
     /**
@@ -117,7 +105,10 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
             
             if ($transacciones->isEmpty()) {
                 return [
-                    'success' => true,
+                    'success' => false,
+                    'consultas_exitosas' => 0,
+                    'consultas_error' => 0,
+                    'error' => 'No hay transacciones MIC/DTA pendientes de consulta',
                     'message' => 'No hay transacciones MIC/DTA pendientes de consulta',
                     'consultas_realizadas' => 0,
                 ];
@@ -160,7 +151,10 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
             ]);
 
             return [
-                'success' => true,
+                'success' => $consultasExitosas > 0 && $consultasError === 0,
+                'error' => collect($resultados)->firstWhere('success', false)['error'] ?? null,
+                'error_code' => collect($resultados)->firstWhere('success', false)['error_code'] ?? null,
+                'consulta_transaction_id' => collect($resultados)->firstWhere('success', false)['consulta_transaction_id'] ?? null,
                 'transacciones_procesadas' => count($transacciones),
                 'consultas_exitosas' => $consultasExitosas,
                 'consultas_error' => $consultasError,
@@ -193,6 +187,7 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
             'transaction_date' => $transaccion->sent_at,
         ]);
 
+        $consultaTransaction = null;
         try {
             // Crear transacción de consulta
             $consultaTransaction = $this->crearTransaccionConsulta($transaccion);
@@ -201,7 +196,7 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
             $xmlConsulta = $this->generarXmlConsulta($transaccion->external_reference);
             
             // Enviar consulta a AFIP
-            $this->soapClient = $this->soapClientService->createClient('micdta', $this->config['environment']);
+            $this->soapClient = $this->createSoapClient();
             $respuestaAfip = $this->enviarConsultaSoap($consultaTransaction, $this->soapClient, $xmlConsulta);
             
             if ($respuestaAfip['success']) {
@@ -226,11 +221,16 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
                     'transaction_id' => $transaccion->id,
                     'external_reference' => $transaccion->external_reference,
                     'error' => $respuestaAfip['error'] ?? 'Error desconocido en consulta AFIP',
+                    'error_code' => $consultaTransaction->error_code,
                     'consulta_transaction_id' => $consultaTransaction->id,
                 ];
             }
 
         } catch (Exception $e) {
+            if ($consultaTransaction) {
+                $consultaTransaction->update(['status' => 'error', 'error_message' => $e->getMessage(),
+                    'error_code' => $consultaTransaction->error_code ?: 'STATUS_QUERY_ERROR']);
+            }
             $this->logOperation('error', 'Error en consulta individual', [
                 'transaction_id' => $transaccion->id,
                 'error' => $e->getMessage(),
@@ -239,6 +239,8 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
             return [
                 'success' => false,
                 'transaction_id' => $transaccion->id,
+                'consulta_transaction_id' => $consultaTransaction?->id,
+                'error_code' => $consultaTransaction?->error_code ?? 'STATUS_QUERY_ERROR',
                 'error' => $e->getMessage(),
             ];
         }
@@ -273,12 +275,11 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
             'user_id' => $this->user->id,
             'voyage_id' => $transaccionOriginal->voyage_id,
             'shipment_id' => $transaccionOriginal->shipment_id,
-            'transaction_id' => 'CONSULTA_' . $transaccionOriginal->transaction_id . '_' . time(),
+            'transaction_id' => 'CONSULTA_' . (string) \Illuminate\Support\Str::uuid(),
             'external_reference' => $transaccionOriginal->external_reference,
-            'webservice_type' => 'micdta_status',
+            'webservice_type' => 'consulta',
             'country' => 'AR',
             'status' => 'pending',
-            'method_name' => 'ConsultarEstadoMicDta',
             'soap_action' => $this->config['soap_action'],
             'webservice_url' => $this->getWsdlUrl(),
             'environment' => $this->config['environment'],
@@ -295,26 +296,7 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
      */
     private function generarXmlConsulta(string $externalReference): string
     {
-        // XML básico para consulta de estado AFIP
-        // Basado en el patrón del sistema existente
-        return '<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:wges="Ar.Gob.Afip.Dga.wgesregsintia2">
-    <soap:Header>
-        <wges:AuthSoapHd>
-            <wges:ticket>TESTING_TOKEN_' . $this->company->id . '_' . time() . '</wges:ticket>
-            <wges:sign>TESTING_SIGN_' . $this->company->tax_id . '_' . time() . '</wges:sign>
-            <wges:cuitRepresentado>' . $this->company->tax_id . '</wges:cuitRepresentado>
-        </wges:AuthSoapHd>
-    </soap:Header>
-    <soap:Body>
-        <wges:ConsultarEstadoMicDta>
-            <wges:consultaEstadoParam>
-                <wges:MicDtaId>' . $externalReference . '</wges:MicDtaId>
-                <wges:TipoConsulta>ESTADO</wges:TipoConsulta>
-            </wges:consultaEstadoParam>
-        </wges:ConsultarEstadoMicDta>
-    </soap:Body>
-</soap:Envelope>';
+        return $this->xmlSerializer->createConsultarEstadoMicDtaXml($externalReference);
     }
 
     /**
@@ -325,10 +307,26 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
         $startTime = microtime(true);
         
         try {
-            $transaction->update(['status' => 'sending', 'sent_at' => now()]);
+            $transaction->update(['status' => 'sending', 'sent_at' => now(), 'request_xml' => $xmlContent]);
 
-            // Enviar usando SoapClientService existente
-            $result = $this->soapClientService->sendRequest($transaction, 'ConsultarEstadoMicDta', ['xmlParam' => $xmlContent]);
+            $response = $soapClient->__doRequest($xmlContent,
+                WebserviceEnvironment::argentinaEndpoint($this->company, 'wgesregsintia2'),
+                $this->config['soap_action'], SOAP_1_2, false);
+            $transaction->update(['response_xml' => $response ?: null]);
+            if (!$response) {
+                throw new Exception('La consulta MIC/DTA no recibió respuesta SOAP.');
+            }
+            $document = new \DOMDocument();
+            if (!@$document->loadXML($response, LIBXML_NONET)) {
+                throw new Exception('La consulta MIC/DTA recibió una respuesta XML inválida.');
+            }
+            $xpath = new \DOMXPath($document);
+            if ($xpath->query('//*[local-name()="Fault"]')->length) {
+                $detail = $xpath->evaluate('string(//*[local-name()="faultstring"] | //*[local-name()="Reason"]/*[local-name()="Text"])');
+                $code = $xpath->evaluate('string(//*[local-name()="faultcode"] | //*[local-name()="Code"]/*[local-name()="Value"])');
+                $transaction->update(['error_code' => mb_substr($code ?: 'SOAP_FAULT', 0, 50)]);
+                throw new Exception($detail ?: 'SOAP Fault en consulta MIC/DTA');
+            }
             
             $endTime = microtime(true);
             $responseTime = round(($endTime - $startTime) * 1000);
@@ -338,19 +336,19 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
                 'response_at' => now(),
                 'response_time_ms' => $responseTime,
                 'request_xml' => $xmlContent,
-                'response_xml' => $result['response_xml'] ?? null,
+                'response_xml' => $response,
             ]);
 
             return [
                 'success' => true,
-                'response_data' => $result['response_xml'] ?? '',
+                'response_data' => $response,
                 'response_time_ms' => $responseTime,
             ];
 
         } catch (Exception $e) {
             $transaction->update([
                 'status' => 'error',
-                'error_count' => ($transaction->error_count ?? 0) + 1,
+                'error_code' => $transaction->error_code ?: 'STATUS_QUERY_ERROR',
                 'error_message' => $e->getMessage(),
             ]);
 
@@ -379,35 +377,19 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
             'estado_normalizado' => 'unknown',
         ];
 
-        try {
-            if (empty($responseXml)) {
-                return $estado;
-            }
-
-            // Parsear XML de respuesta AFIP
-            if (preg_match('/<EstadoMicDta>([^<]+)<\/EstadoMicDta>/', $responseXml, $matches)) {
-                $estado['codigo_estado'] = $matches[1];
-                $estado['estado_normalizado'] = $this->normalizarEstadoAfip($matches[1]);
-            }
-
-            if (preg_match('/<DescripcionEstado>([^<]+)<\/DescripcionEstado>/', $responseXml, $matches)) {
-                $estado['descripcion_estado'] = $matches[1];
-            }
-
-            if (preg_match('/<FechaProcesamiento>([^<]+)<\/FechaProcesamiento>/', $responseXml, $matches)) {
-                $estado['fecha_procesamiento'] = $matches[1];
-            }
-
-            if (preg_match('/<Observaciones>([^<]+)<\/Observaciones>/', $responseXml, $matches)) {
-                $estado['observaciones'] = $matches[1];
-            }
-
-        } catch (Exception $e) {
-            $this->logOperation('warning', 'Error procesando respuesta de estado', [
-                'error' => $e->getMessage(),
-                'response_length' => strlen($responseXml),
-            ]);
+        $document = new \DOMDocument();
+        if (!@$document->loadXML($responseXml, LIBXML_NONET)) {
+            throw new Exception('Respuesta de estado MIC/DTA inválida.');
         }
+        $xpath = new \DOMXPath($document);
+        foreach (['EstadoMicDta' => 'codigo_estado', 'DescripcionEstado' => 'descripcion_estado',
+            'FechaProcesamiento' => 'fecha_procesamiento', 'Observaciones' => 'observaciones'] as $tag => $field) {
+            $estado[$field] = trim($xpath->evaluate('string(//*[local-name()="'.$tag.'"])')) ?: null;
+        }
+        if ($estado['codigo_estado'] === null) {
+            throw new Exception('La respuesta de consulta MIC/DTA no contiene EstadoMicDta.');
+        }
+        $estado['estado_normalizado'] = $this->normalizarEstadoAfip($estado['codigo_estado']);
 
         return $estado;
     }
@@ -418,7 +400,7 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
     private function normalizarEstadoAfip(string $codigoAfip): string
     {
         $mapeoEstados = [
-            'ACEPTADO' => 'approved',
+            'ACEPTADO' => 'success',
             'RECHAZADO' => 'rejected',
             'PROCESANDO' => 'processing',
             'PENDIENTE' => 'pending',
@@ -462,11 +444,11 @@ class ArgentinaMicDtaStatusService extends BaseWebserviceService
     private function registrarRespuestaConsulta(WebserviceTransaction $consultaTransaction, array $data, bool $success): void
     {
         WebserviceResponse::create([
-            'webservice_transaction_id' => $consultaTransaction->id,
-            'response_code' => $success ? '200' : '500',
-            'response_message' => $success ? 'Consulta exitosa' : 'Error en consulta',
-            'response_data' => $data,
-            'is_success' => $success,
+            'transaction_id' => $consultaTransaction->id,
+            'response_type' => $success ? 'success' : 'system_error',
+            'processing_status' => 'completed',
+            'customs_status' => $data['codigo_estado'] ?? null,
+            'customs_metadata' => $data,
             'processed_at' => now(),
         ]);
     }
