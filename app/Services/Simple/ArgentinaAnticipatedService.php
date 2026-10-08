@@ -492,12 +492,15 @@ class ArgentinaAnticipatedService
             });
         }
 
-        $bills = $query->get();
-        if (!$closing) {
-            $bills = $bills
-                ->filter(fn ($bill) => $this->billHasManifestedCargo($bill))
-                ->values();
-        }
+        $scopeBills = $query->get();
+
+        // Los BL compuestos únicamente por contenedores V/C no son Titulo/TituloCierre:
+        // ARCA los recibe en ContenedoresVaciosCorreo. Se excluyen de la validación
+        // de mercaderías tanto en RegistrarTitulosCbc como en CerrarViaje.
+        $bills = $scopeBills
+            ->filter(fn ($bill) => $this->billHasManifestedCargo($bill))
+            ->values();
+
         if ($bills->isEmpty()) {
             $validation['errors'][] = $closing
                 ? 'No hay conocimientos con descarga fuera de Argentina para CerrarViaje'
@@ -709,7 +712,11 @@ class ArgentinaAnticipatedService
                 }
 
                 $lineMarks = trim((string) $item->cargo_marks);
-                if ($lineMarks === '' && $packagingCode !== '05') {
+                if ($lineMarks === '') {
+                    $lineMarks = trim((string) $item->package_numbers);
+                }
+
+                if ($lineMarks === '') {
                     $missingLineMarks++;
                 } elseif (mb_strlen($lineMarks) > 100) {
                     $validation['errors'][] = "Conocimiento {$billLabel}: NumeroBultos supera 100 caracteres";
@@ -761,49 +768,74 @@ class ArgentinaAnticipatedService
             }
         }
 
-        if (!$closing) {
-            $emptyBills = $voyage->billsOfLading()->with([
-                'shipmentItems.containers.containerType',
-            ])->whereHas('dischargePort.country', function ($q) {
-                $q->where('alpha2_code', 'AR');
-            })->get();
+        $seenEmptyContainers = [];
 
-            $seenEmptyContainers = [];
-            foreach ($emptyBills as $emptyBill) {
-                foreach ($emptyBill->shipmentItems as $emptyItem) {
-                    foreach ($emptyItem->containers as $container) {
-                        $condition = $this->anticipatedContainerCondition($container, $emptyItem);
-                        if (!in_array($condition, ['V', 'C'], true)) {
-                            continue;
-                        }
+        foreach ($scopeBills as $emptyBill) {
+            // Si el BL tiene mercadería manifestada, sus contenedores ya fueron
+            // validados dentro de Titulo/TituloCierre. Aquí sólo se valida el
+            // bloque independiente ContenedoresVaciosCorreo.
+            if ($closing && $this->billHasManifestedCargo($emptyBill)) {
+                continue;
+            }
 
-                        $key = trim((string) $container->container_number);
-                        if ($key !== '' && isset($seenEmptyContainers[$key])) {
-                            continue;
-                        }
-                        $seenEmptyContainers[$key] = true;
+            foreach ($emptyBill->shipmentItems as $emptyItem) {
+                foreach ($emptyItem->containers as $container) {
+                    $condition = $this->anticipatedContainerCondition(
+                        $container,
+                        $emptyItem
+                    );
+                    if (!in_array($condition, ['V', 'C'], true)) {
+                        continue;
+                    }
 
-                        $type = trim((string) (
-                            $container->containerType?->iso_code
-                            ?: $container->containerType?->code
-                        ));
-                        $tare = $container->tare_weight_kg;
-                        $gross = $container->current_gross_weight_kg
-                            ?? $emptyItem->pivot?->gross_weight_kg;
-                        $expiry = $container->expiry_date ?: $container->csc_expiry_date;
-                        $acep = trim((string) data_get($container->webservice_data, 'acep'));
-                        $hasConflictingCscData = $expiry && $acep !== '';
+                    $key = trim((string) $container->container_number);
+                    if ($key !== '' && isset($seenEmptyContainers[$key])) {
+                        continue;
+                    }
+                    $seenEmptyContainers[$key] = true;
 
-                        if (
-                            $key === '' || mb_strlen($key) > 20
-                            || mb_strlen($type) !== 4
-                            || $tare === null || !is_numeric($tare)
-                            || $gross === null || !is_numeric($gross)
-                            || abs((float) $tare - round((float) $tare)) > 0.000001
-                            || (float) $tare > (float) $gross
-                            || $hasConflictingCscData
-                        ) {
-                            $invalidContainer++;
+                    $type = trim((string) (
+                        $container->containerType?->iso_code
+                        ?: $container->containerType?->code
+                    ));
+                    $tare = $container->tare_weight_kg;
+                    $gross = $container->current_gross_weight_kg
+                        ?? $emptyItem->pivot?->gross_weight_kg;
+                    $expiry = $container->expiry_date
+                        ?: $container->csc_expiry_date;
+                    $acep = trim((string) data_get(
+                        $container->webservice_data,
+                        'acep'
+                    ));
+                    $hasConflictingCscData = $expiry && $acep !== '';
+
+                    if (
+                        $key === '' || mb_strlen($key) > 20
+                        || mb_strlen($type) !== 4
+                        || $tare === null || !is_numeric($tare)
+                        || $gross === null || !is_numeric($gross)
+                        || abs((float) $tare - round((float) $tare)) > 0.000001
+                        || (float) $tare > (float) $gross
+                        || $hasConflictingCscData
+                    ) {
+                        $invalidContainer++;
+                    }
+
+                    if ($closing) {
+                        $operatorTaxId = preg_replace(
+                            '/\D+/',
+                            '',
+                            (string) (
+                                $container->operatorClient?->tax_id
+                                ?: data_get(
+                                    $container->webservice_data,
+                                    'operator_tax_id'
+                                )
+                            )
+                        );
+
+                        if (strlen($operatorTaxId) !== 11) {
+                            $missingClosingOperator++;
                         }
                     }
                 }

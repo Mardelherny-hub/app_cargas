@@ -3069,10 +3069,35 @@ class SimpleXmlGenerator
             })
             ->get();
 
-        if ($bills->isEmpty()) {
+        $titleBills = $bills
+            ->filter(fn ($bill) => $this->iaBillHasManifestedCargo($bill))
+            ->values();
+
+        if ($titleBills->isEmpty()) {
             throw new Exception(
-                'Información Anticipada: no hay conocimientos con descarga fuera de Argentina para CerrarViaje.'
+                'Información Anticipada: no hay títulos con mercadería y descarga fuera de Argentina para CerrarViaje.'
             );
+        }
+
+        $closingEmptyContainers = collect();
+        foreach ($bills as $bill) {
+            foreach ($bill->shipmentItems as $item) {
+                foreach ($item->containers as $container) {
+                    $condition = $this->iaContainerCondition(
+                        $container,
+                        $item
+                    );
+
+                    if (!in_array($condition, ['V', 'C'], true)) {
+                        continue;
+                    }
+
+                    $closingEmptyContainers->put(
+                        (string) $container->container_number,
+                        compact('container', 'bill', 'item')
+                    );
+                }
+            }
         }
 
         $transactionId ??= 'CV'
@@ -3107,11 +3132,29 @@ class SimpleXmlGenerator
         $w->writeElement('ar:IdentificadorViaje', $identifier);
         $w->startElement('ar:Titulos');
 
-        foreach ($bills as $bill) {
+        foreach ($titleBills as $bill) {
             $this->writeIaTitle($w, $bill, $voyage, true);
         }
 
-        $w->endElement();
+        $w->endElement(); // Titulos
+
+        if ($closingEmptyContainers->isNotEmpty()) {
+            $w->startElement('ar:ContenedoresVaciosCorreo');
+
+            foreach ($closingEmptyContainers as $entry) {
+                $this->writeIaTitleContainer(
+                    $w,
+                    $entry['container'],
+                    $entry['bill'],
+                    $entry['item'],
+                    $voyage,
+                    true
+                );
+            }
+
+            $w->endElement(); // ContenedoresVaciosCorreo
+        }
+
         $w->endElement();
         $w->endElement();
         $w->endElement();
@@ -4086,10 +4129,8 @@ class SimpleXmlGenerator
 
             $description = $this->iaRequired($item->item_description, "Conocimiento {$number}, línea {$line}: DescripcionMercaderia", 80);
             $packageMarks = trim((string) $item->cargo_marks);
-            if ($packageMarks === '' && $packCode === '05') {
-                // Precedente operativo ya aceptado por ARCA para líneas
-                // contenedorizadas sin numeración de bultos declarada.
-                $packageMarks = 'S/N';
+            if ($packageMarks === '') {
+                $packageMarks = trim((string) $item->package_numbers);
             }
             $packageMarks = $this->iaRequired($packageMarks, "Conocimiento {$number}, línea {$line}: NumeroBultos", 100);
 

@@ -183,6 +183,7 @@ class ShipmentItem extends Model
         
         // Package details
         'package_type_description',
+        'package_numbers',
         'package_dimensions',
         'units_per_package',
         'unit_of_measure',

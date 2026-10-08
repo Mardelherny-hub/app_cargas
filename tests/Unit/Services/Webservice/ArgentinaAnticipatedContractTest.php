@@ -293,4 +293,81 @@ XML;
             $source
         );
     }
+
+    public function test_numero_bultos_uses_real_manual_fallback_without_fabricated_value(): void
+    {
+        $generator = $this->source(
+            'app/Services/Simple/SimpleXmlGenerator.php'
+        );
+        $validation = $this->source(
+            'app/Services/Simple/ArgentinaAnticipatedService.php'
+        );
+
+        $this->assertStringContainsString(
+            '$packageMarks = trim((string) $item->package_numbers);',
+            $generator
+        );
+        $this->assertStringContainsString(
+            '$lineMarks = trim((string) $item->package_numbers);',
+            $validation
+        );
+        $this->assertStringNotContainsString(
+            '$packageMarks = \'S/N\';',
+            $generator
+        );
+    }
+
+    public function test_package_numbers_is_mass_assignable_for_manual_completion(): void
+    {
+        $item = new \App\Models\ShipmentItem();
+
+        $this->assertTrue($item->isFillable('package_numbers'));
+
+        $item->fill(['package_numbers' => 'PKG-001']);
+
+        $this->assertSame('PKG-001', $item->package_numbers);
+    }
+
+    public function test_cierre_separates_empty_container_only_bills_from_titles(): void
+    {
+        $generator = $this->source(
+            'app/Services/Simple/SimpleXmlGenerator.php'
+        );
+        $validation = $this->source(
+            'app/Services/Simple/ArgentinaAnticipatedService.php'
+        );
+
+        $this->assertStringContainsString(
+            '->filter(fn ($bill) => $this->iaBillHasManifestedCargo($bill))',
+            $generator
+        );
+        $this->assertStringContainsString(
+            "startElement('ar:ContenedoresVaciosCorreo')",
+            $generator
+        );
+        $this->assertStringContainsString(
+            '->filter(fn ($bill) => $this->billHasManifestedCargo($bill))',
+            $validation
+        );
+    }
+
+    public function test_container_operator_is_rejected_early_without_eleven_digit_tax_id(): void
+    {
+        $controller = $this->source(
+            'app/Http/Controllers/Company/ShipmentItemController.php'
+        );
+
+        $this->assertStringContainsString(
+            "'containers.*.operator_client_id' => [",
+            $controller
+        );
+        $this->assertStringContainsString(
+            'strlen($digits) !== 11',
+            $controller
+        );
+        $this->assertStringContainsString(
+            'El Operador del Contenedor (ATA) debe tener un CUIT de 11 dígitos.',
+            $controller
+        );
+    }
 }
