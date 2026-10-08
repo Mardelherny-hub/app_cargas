@@ -14,9 +14,10 @@ use App\Services\Webservice\ArgentinaTransshipmentService;
 use App\Services\Webservice\ArgentinaManeService;
 use App\Models\BillOfLading;
 use App\Models\VoyageWebserviceStatus;
+use App\Models\VoyageAttachment;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
-use App\Services\Webservice\ParaguayAttachmentService;
+use Illuminate\Support\Facades\Storage;
 use App\Traits\UserHelper;
 use App\Models\Company;
 use Illuminate\Support\Facades\DB;
@@ -1530,10 +1531,12 @@ public function voyageStatuses($voyageId)
             'shipments.billsOfLading'
         ]);
 
-        // Obtener adjuntos existentes (si los hay)
-        $existingAttachments = [];
-        // TODO: Implementar consulta de adjuntos existentes cuando se implemente el almacenamiento
-        
+        $existingAttachments = VoyageAttachment::query()
+            ->where('voyage_id', $voyage->id)
+            ->where('country', 'PY')
+            ->orderByDesc('created_at')
+            ->get();
+
         return view('company.manifests.customs.attachments', [
             'voyage' => $voyage,
             'company' => $company,
@@ -1595,23 +1598,19 @@ public function voyageStatuses($voyageId)
         }
 
         try {
-            // TODO: Implementar tabla/modelo de adjuntos cuando esté listo
-            // Por ahora simular estructura vacía
-            
-            // Estructura esperada por el frontend:
-            $attachments = [];
-            // $attachments = VoyageAttachment::where('voyage_id', $voyage->id)
-            //     ->where('country', 'PY')
-            //     ->orderBy('created_at', 'desc')
-            //     ->get()
-            //     ->map(function($attachment) {
-            //         return [
-            //             'id' => $attachment->id,
-            //             'name' => $attachment->original_name,
-            //             'size' => $this->formatFileSize($attachment->file_size),
-            //             'uploaded_at' => $attachment->created_at->format('Y-m-d H:i'),
-            //         ];
-            //     })->toArray();
+            $attachments = VoyageAttachment::query()
+                ->where('voyage_id', $voyage->id)
+                ->where('country', 'PY')
+                ->orderByDesc('created_at')
+                ->get()
+                ->map(fn (VoyageAttachment $attachment) => [
+                    'id' => $attachment->id,
+                    'name' => $attachment->original_name,
+                    'size' => $attachment->getFormattedSize(),
+                    'uploaded_at' => $attachment->created_at?->format('Y-m-d H:i'),
+                    'sent_to_dna' => (bool) $attachment->sent_to_dna,
+                ])
+                ->values();
 
             return response()->json($attachments);
 
@@ -1633,42 +1632,43 @@ public function voyageStatuses($voyageId)
      */
     public function downloadAttachment($attachmentId)
     {
-        // Verificar permisos
         if (!$this->hasCompanyRole('Cargas')) {
             abort(403, 'No tiene permisos para descargar adjuntos');
         }
 
         try {
-            // TODO: Implementar cuando tengamos el modelo de adjuntos
-            // $attachment = VoyageAttachment::findOrFail($attachmentId);
-            
-            // Verificar que pertenece a la empresa
-            // if (!$this->canAccessCompany($attachment->voyage->company_id)) {
-            //     abort(403, 'No puede acceder a este adjunto');
-            // }
+            $attachment = VoyageAttachment::with('voyage')
+                ->where('country', 'PY')
+                ->findOrFail($attachmentId);
 
-            // Por ahora devolver error amigable
-            return response()->json([
-                'error' => 'Función de descarga pendiente de implementación'
-            ], 501);
+            if (
+                !$attachment->voyage
+                || !$this->canAccessCompany($attachment->voyage->company_id)
+            ) {
+                abort(403, 'No puede acceder a este adjunto');
+            }
 
-            // Implementación futura:
-            // $filePath = storage_path('app/' . $attachment->file_path);
-            // 
-            // if (!file_exists($filePath)) {
-            //     abort(404, 'Archivo no encontrado');
-            // }
-            // 
-            // return response()->download($filePath, $attachment->original_name);
+            if (
+                !$attachment->file_path
+                || !Storage::exists($attachment->file_path)
+            ) {
+                abort(404, 'Archivo no encontrado');
+            }
 
-        } catch (\Exception $e) {
+            return Storage::download(
+                $attachment->file_path,
+                $attachment->original_name
+            );
+        } catch (SymfonyComponentHttpKernelExceptionHttpExceptionInterface $e) {
+            throw $e;
+        } catch (Exception $e) {
             Log::error('Error descargando adjunto', [
                 'attachment_id' => $attachmentId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
-                'error' => 'Error descargando archivo: ' . $e->getMessage()
+                'error' => 'Error descargando archivo: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -1679,50 +1679,60 @@ public function voyageStatuses($voyageId)
      */
     public function deleteAttachment($attachmentId)
     {
-        // Verificar permisos
         if (!$this->hasCompanyRole('Cargas')) {
             return response()->json(['error' => 'No tiene permisos'], 403);
         }
 
         try {
-            // TODO: Implementar cuando tengamos el modelo de adjuntos
-            // $attachment = VoyageAttachment::findOrFail($attachmentId);
-            
-            // Verificar que pertenece a la empresa
-            // if (!$this->canAccessCompany($attachment->voyage->company_id)) {
-            //     return response()->json(['error' => 'No puede eliminar este adjunto'], 403);
-            // }
+            $attachment = VoyageAttachment::with('voyage')
+                ->where('country', 'PY')
+                ->findOrFail($attachmentId);
 
-            // Por ahora devolver error amigable
+            if (
+                !$attachment->voyage
+                || !$this->canAccessCompany($attachment->voyage->company_id)
+            ) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No puede eliminar este adjunto',
+                ], 403);
+            }
+
+            if ($attachment->sent_to_dna) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'No se puede eliminar un documento ya enviado a DNA',
+                ], 422);
+            }
+
+            $filePath = $attachment->file_path;
+
+            DB::transaction(function () use ($attachment) {
+                $attachment->delete();
+            });
+
+            if ($filePath && Storage::exists($filePath)) {
+                Storage::delete($filePath);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Adjunto eliminado correctamente',
+            ]);
+        } catch (IlluminateDatabaseEloquentModelNotFoundException $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Función de eliminación pendiente de implementación'
-            ], 501);
-
-            // Implementación futura:
-            // // Eliminar archivo físico
-            // $filePath = storage_path('app/' . $attachment->file_path);
-            // if (file_exists($filePath)) {
-            //     unlink($filePath);
-            // }
-            // 
-            // // Eliminar registro de BD
-            // $attachment->delete();
-            // 
-            // return response()->json([
-            //     'success' => true,
-            //     'message' => 'Adjunto eliminado correctamente'
-            // ]);
-
-        } catch (\Exception $e) {
+                'error' => 'Adjunto no encontrado',
+            ], 404);
+        } catch (Exception $e) {
             Log::error('Error eliminando adjunto', [
                 'attachment_id' => $attachmentId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'error' => 'Error eliminando archivo: ' . $e->getMessage()
+                'error' => 'Error eliminando archivo: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -1733,93 +1743,86 @@ public function voyageStatuses($voyageId)
      */
     public function uploadAttachments(Request $request, Voyage $voyage)
     {
-        // Verificar permisos
         if (!$this->hasCompanyRole('Cargas')) {
-            return response()->json(['error' => 'No tiene permisos para subir adjuntos'], 403);
+            return response()->json([
+                'error' => 'No tiene permisos para subir adjuntos',
+            ], 403);
         }
 
-        // Verificar empresa
         $company = auth()->user()->getUserCompany();
         if (!$company || !$this->canAccessCompany($voyage->company_id)) {
-            return response()->json(['error' => 'No puede acceder a este viaje'], 403);
+            return response()->json([
+                'error' => 'No puede acceder a este viaje',
+            ], 403);
         }
 
-        // Validación - MÚLTIPLES archivos
         $request->validate([
-            'files' => 'required|array|min:1|max:10', // Hasta 10 archivos
-            'files.*' => 'required|file|mimes:pdf|max:10240' // 10MB por archivo PDF
+            'files' => 'required|array|min:1|max:10',
+            'files.*' => 'required|file|mimes:pdf|max:10240',
         ]);
 
+        $storedPaths = [];
+
         try {
-            // OPCIÓN A: Usar ParaguayAttachmentService existente (mantener compatibilidad)
-            $attachmentService = new ParaguayAttachmentService($company);
-            
-            $result = $attachmentService->uploadDocuments(
-                $voyage, 
-                $request->file('files') ?? [], 
-                auth()->id()
-            );
+            DB::beginTransaction();
 
-            // OPCIÓN B: Implementación directa (cuando tengamos modelo de adjuntos)
-            // $uploadedFiles = [];
-            // $errors = [];
-            // 
-            // foreach ($request->file('files') as $index => $file) {
-            //     try {
-            //         // Generar nombre único
-            //         $fileName = time() . '_' . $index . '_' . $file->getClientOriginalName();
-            //         
-            //         // Guardar archivo
-            //         $filePath = $file->storeAs('attachments/paraguay/' . $voyage->id, $fileName);
-            //         
-            //         // Crear registro en BD
-            //         $attachment = VoyageAttachment::create([
-            //             'voyage_id' => $voyage->id,
-            //             'country' => 'PY',
-            //             'webservice_type' => 'paraguay_customs',
-            //             'original_name' => $file->getClientOriginalName(),
-            //             'file_name' => $fileName,
-            //             'file_path' => $filePath,
-            //             'file_size' => $file->getSize(),
-            //             'mime_type' => $file->getMimeType(),
-            //             'uploaded_by' => auth()->id(),
-            //         ]);
-            //         
-            //         $uploadedFiles[] = [
-            //             'id' => $attachment->id,
-            //             'name' => $attachment->original_name,
-            //             'size' => $this->formatFileSize($attachment->file_size),
-            //         ];
-            //         
-            //     } catch (\Exception $e) {
-            //         $errors[] = 'Error subiendo ' . $file->getClientOriginalName() . ': ' . $e->getMessage();
-            //     }
-            // }
-            // 
-            // return response()->json([
-            //     'success' => count($uploadedFiles) > 0,
-            //     'uploaded_files' => $uploadedFiles,
-            //     'errors' => $errors,
-            //     'total_uploaded' => count($uploadedFiles),
-            //     'total_errors' => count($errors),
-            // ]);
+            $uploadedFiles = [];
 
-            return response()->json($result);
+            foreach ($request->file('files', []) as $file) {
+                $filePath = $file->store("attachments/paraguay/{$voyage->id}");
+                $storedPaths[] = $filePath;
 
-        } catch (\Exception $e) {
-            // Log del error usando el sistema existente del controlador
+                $attachment = VoyageAttachment::create([
+                    'voyage_id' => $voyage->id,
+                    'bill_of_lading_id' => null,
+                    'original_name' => $file->getClientOriginalName(),
+                    'file_name' => basename($filePath),
+                    'file_path' => $filePath,
+                    'file_size' => (int) $file->getSize(),
+                    'mime_type' => (string) $file->getMimeType(),
+                    'document_type' => null,
+                    'document_number' => null,
+                    'country' => 'PY',
+                    'uploaded_by' => auth()->id(),
+                    'sent_to_dna' => false,
+                ]);
+
+                $uploadedFiles[] = [
+                    'id' => $attachment->id,
+                    'name' => $attachment->original_name,
+                    'size' => $attachment->getFormattedSize(),
+                    'sent_to_dna' => false,
+                ];
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'uploaded_files' => $uploadedFiles,
+                'total_uploaded' => count($uploadedFiles),
+                'message' => 'Archivos subidos correctamente. No fueron enviados a DNA.',
+            ]);
+        } catch (Exception $e) {
+            DB::rollBack();
+
+            foreach ($storedPaths as $filePath) {
+                if (Storage::exists($filePath)) {
+                    Storage::delete($filePath);
+                }
+            }
+
             Log::error('Error subiendo adjuntos Paraguay múltiples', [
                 'voyage_id' => $voyage->id,
                 'company_id' => $company->id,
                 'user_id' => auth()->id(),
                 'files_count' => count($request->file('files') ?? []),
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'success' => false,
-                'error' => 'Error interno: ' . $e->getMessage()
+                'error' => 'Error interno: ' . $e->getMessage(),
             ], 500);
         }
     }

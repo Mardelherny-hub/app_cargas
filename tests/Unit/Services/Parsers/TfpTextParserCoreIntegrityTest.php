@@ -274,4 +274,132 @@ class TfpTextParserCoreIntegrityTest extends TestCase
         );
     }
 
+    public function test_compat_extracts_tariff_position_only_from_explicit_tfp_labels(): void
+    {
+        $parser = app(TfpTextParserCompat::class);
+        $ref = new ReflectionMethod(
+            TfpTextParserCompat::class,
+            'extractTfpTariffPosition'
+        );
+        $ref->setAccessible(true);
+
+        $this->assertSame(
+            '2930.90.39',
+            $ref->invoke($parser, 'NCM: 2930.90.39')
+        );
+
+        $this->assertSame(
+            '281122',
+            $ref->invoke($parser, 'HS CODE: 281122')
+        );
+
+        $this->assertSame(
+            '6104',
+            $ref->invoke($parser, 'HS CODES: 6104, 6204, 6109')
+        );
+
+        $this->assertSame(
+            '3923',
+            $ref->invoke(
+                $parser,
+                "NCM\nDESCRIPTION\n3923\nBOTELLA C/TAPA"
+            )
+        );
+
+        $this->assertNull(
+            $ref->invoke($parser, 'Invoice 281122 without tariff label')
+        );
+    }
+
+    public function test_compat_maps_v470_40rf_to_existing_40rh_catalog_code(): void
+    {
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/TfpTextParserCompat.php')
+        );
+
+        $this->assertStringContainsString(
+            "'40RF' => '40RH'",
+            $source
+        );
+    }
+
+    public function test_compat_extracts_only_explicit_tfp_cargo_marks(): void
+    {
+        $parser = app(TfpTextParserCompat::class);
+        $ref = new ReflectionMethod(
+            TfpTextParserCompat::class,
+            'extractTfpCargoMarks'
+        );
+        $ref->setAccessible(true);
+
+        $this->assertSame(
+            'SEAL: A1834076',
+            $ref->invoke(
+                $parser,
+                'MARKS AND NUMBERS: SEAL: A1834076'
+            )
+        );
+
+        $this->assertSame(
+            'CARTONES YAGUARETE',
+            $ref->invoke(
+                $parser,
+                "SHIPPING MARKS:\nCARTONES YAGUARETE\n4800000445"
+            )
+        );
+
+        $this->assertSame(
+            'ORDER 084/26',
+            $ref->invoke(
+                $parser,
+                "MARKS:\nORDER 084/26\nCUSTOMER PO 24.4 23"
+            )
+        );
+
+        $this->assertSame(
+            'N/M',
+            $ref->invoke(
+                $parser,
+                "WIRE ROD\nN/M\nFREIGHT PREPAID"
+            )
+        );
+
+        $this->assertNull(
+            $ref->invoke(
+                $parser,
+                'WIRE ROD 12 ROLLS WITHOUT EXPLICIT MARKS'
+            )
+        );
+    }
+
+    public function test_tfp_preserves_parent_loading_port_for_desc_master_identifier(): void
+    {
+        $header = $this->invoke('parseHeader', [
+            "BLNUMERO: /*ROS505*/\n"
+            . "BLMARITIMONUMERO: /*266597428*/\n"
+            . "CODPUERTOORIGEN: /*MYKLA*/\n"
+            . "CODPUERTOCARGA: /*ARBAI*/\n"
+            . "CODPUERTODESCARGA: /*PYSEF*/\n",
+        ]);
+
+        $this->assertSame('MYKLA', $header['cod_puerto_origen']);
+
+        $source = file_get_contents(
+            base_path('app/Services/Parsers/TfpTextParser.php')
+        );
+
+        $this->assertStringContainsString(
+            "'master_loading_port_code' =>",
+            $source
+        );
+        $this->assertStringContainsString(
+            '$masterLoadingPortCode = $sourceMasterLoadingPort !== \'\'',
+            $source
+        );
+        $this->assertStringContainsString(
+            ': strtoupper(trim((string) $loadingPort->code));',
+            $source
+        );
+    }
+
 }

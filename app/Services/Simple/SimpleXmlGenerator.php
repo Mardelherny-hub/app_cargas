@@ -95,26 +95,78 @@ class SimpleXmlGenerator
                 throw new \Exception("El shipment {$shipment->shipment_number} no tiene Bills of Lading");
             }
 
+            foreach ($billsOfLading as $bill) {
+                $conditions = $bill->shipmentItems
+                    ->flatMap(fn ($item) => $item->containers)
+                    ->map(fn ($container) =>
+                        strtoupper(trim((string) $container->condition))
+                    );
+
+                $hasEmpty = $conditions->contains('V');
+                $hasLoaded = $conditions->contains(
+                    fn ($condition) => $condition !== 'V'
+                );
+
+                if ($hasEmpty && $hasLoaded) {
+                    throw new \Exception(
+                        "RegistrarTitEnvios: BL {$bill->bill_number} mezcla contenedores cargados y vacíos; no existe una regla implementada que permita separarlos sin inventar el título de vacíos."
+                    );
+                }
+            }
+
+            $cargoBills = $billsOfLading
+                ->filter(fn ($bill) => $this->iaBillHasManifestedCargo($bill))
+                ->values();
+            $emptyBills = $billsOfLading
+                ->reject(fn ($bill) => $this->iaBillHasManifestedCargo($bill))
+                ->values();
+
             $wsaa = $this->getWSAATokens();
             
-            // Códigos de puertos y aduanas
-            $codAduOrigen = $this->getPortCustomsCode($voyage->originPort?->code ?? 'ARBUE');
-            //$codAduDest = $this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYASU');
-            $codAduDest = str_pad($this->getPortCustomsCode($voyage->destinationPort?->code ?? 'PYASU'), 3, '0', STR_PAD_LEFT);
-            $codPaisOrigen = $voyage->originPort?->country?->iso2_code ?? 'AR';
-            $codPaisDest = $voyage->destinationPort?->country?->iso2_code ?? 'PY';
-            // Buscar lugar operativo vinculado al puerto de origen
-            $operativeLocationOrigen = \App\Models\AfipOperativeLocation::where('port_id', $voyage->originPort?->id)
-                ->where('is_active', true)
-                ->first();
-            $codLugOperOrigen = $operativeLocationOrigen?->location_code ?? '001';
-            // Buscar lugar operativo vinculado al puerto de destino
-            $operativeLocationDest = \App\Models\AfipOperativeLocation::where('port_id', $voyage->destinationPort?->id)
-                ->where('is_active', true)
-                ->first();
-            $codLugOperDest = $operativeLocationDest?->location_code ?? '001';
-            $codCiuOrigen = $voyage->originPort?->code ?? 'ARBUE';
-            $codCiuDest = $voyage->destinationPort?->code ?? 'PYASU';
+            if (!$voyage || !$voyage->originPort || !$voyage->destinationPort) {
+                throw new \Exception(
+                    'RegistrarTitEnvios requiere puertos de origen y destino reales.'
+                );
+            }
+
+            $codCiuOrigen = strtoupper(trim((string) $voyage->originPort->code));
+            $codCiuDest = strtoupper(trim((string) $voyage->destinationPort->code));
+            if (mb_strlen($codCiuOrigen) !== 5 || mb_strlen($codCiuDest) !== 5) {
+                throw new \Exception(
+                    'RegistrarTitEnvios requiere códigos UN/LOCODE de 5 caracteres.'
+                );
+            }
+
+            $codAduOrigen = $this->getPortCustomsCode($codCiuOrigen);
+            $codAduDest = $this->getPortCustomsCode($codCiuDest);
+
+            $codPaisDest = strtoupper(trim((string) (
+                $voyage->destinationPort->country?->alpha2_code
+                ?: $voyage->destinationPort->country?->iso2_code
+            )));
+            if (!preg_match('/^[A-Z]{2}$/', $codPaisDest)) {
+                throw new \Exception(
+                    'RegistrarTitEnvios requiere país de destino ISO alfa-2.'
+                );
+            }
+
+            $codLugOperOrigen = trim((string) (
+                \App\Models\AfipOperativeLocation::where(
+                    'port_id',
+                    $voyage->originPort->id
+                )
+                    ->where('is_active', true)
+                    ->value('location_code')
+            ));
+
+            $codLugOperDest = trim((string) (
+                \App\Models\AfipOperativeLocation::where(
+                    'port_id',
+                    $voyage->destinationPort->id
+                )
+                    ->where('is_active', true)
+                    ->value('location_code')
+            ));
 
             // Crear XMLWriter
             $w = new \XMLWriter();
@@ -131,40 +183,121 @@ class SimpleXmlGenerator
                 $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
 
                 // === AUTENTICACIÓN ===
+                $companyTaxId = preg_replace(
+                    '/[^0-9]/',
+                    '',
+                    (string) $this->company->tax_id
+                );
+                if ($companyTaxId === '' || strlen($companyTaxId) > 14) {
+                    throw new \Exception(
+                        'RegistrarTitEnvios: CuitEmpresaConectada ausente o inválido.'
+                    );
+                }
+
+                $token = trim((string) ($wsaa['token'] ?? ''));
+                $sign = trim((string) ($wsaa['sign'] ?? ''));
+                if ($token === '' || $sign === '') {
+                    throw new \Exception(
+                        'RegistrarTitEnvios: credenciales WSAA incompletas.'
+                    );
+                }
+
                 $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    //$w->writeElement('CuitEmpresaConectada', preg_replace('/[^0-9]/', '', $this->company->tax_id));
-                    $w->writeElement('CuitEmpresaConectada', (string)$this->company->tax_id);
-                    $w->writeElement('TipoAgente', 'TRSP'); // CORREGIDO: TRSP no ATA
+                    $w->writeElement('Token', $token);
+                    $w->writeElement('Sign', $sign);
+                    $w->writeElement('CuitEmpresaConectada', $companyTaxId);
+                    $w->writeElement('TipoAgente', 'TRSP');
                     $w->writeElement('Rol', 'TRSP');
                 $w->endElement();
 
                 // === PARÁMETROS PRINCIPALES ===
-                $w->startElement('argRegistrarTitEnviosParam');
-                    $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
+                $transactionId = trim($transactionId);
+                if ($transactionId === '' || mb_strlen($transactionId) > 20) {
+                    throw new \Exception(
+                        'RegistrarTitEnvios: idTransaccion debe contener hasta 20 caracteres.'
+                    );
+                }
 
-                    // === TÍTULOS DE TRANSPORTE CON ENVÍOS ===
-                    $w->startElement('titulosTransEnvios');
-                    
+                $w->startElement('argRegistrarTitEnviosParam');
+                    $w->writeElement('idTransaccion', $transactionId);
+
                     $envioIndex = 1;
                     $allContainers = collect();
                     $emptyContainers = collect();
 
-                    foreach ($billsOfLading as $bol) {
-                        // Códigos AFIP desde el BL (prioridad) o fallback a voyage
-                        //$bolCodAduOrigen = $bol->origin_customs_code ?: $codAduOrigen;
-                        $bolCodAduOrigen = $codAduOrigen; // usar el mapeo del puerto (getPortCustomsCode) haste que se aclare el problema de los codigos
-                        $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
-                        $bolCodAduDest = str_pad($bol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
-                        $bolCodLugOperDest = str_pad($bol->operational_discharge_code ?: $codLugOperDest, 3, '0', STR_PAD_LEFT);
-                        
+                    // === TÍTULOS DE TRANSPORTE CON ENVÍOS ===
+                    if ($cargoBills->isNotEmpty()) {
+                        $w->startElement('titulosTransEnvios');
+
+                    foreach ($cargoBills as $bol) {
+                        $billNumber = trim((string) $bol->bill_number);
+                        if ($billNumber === '' || mb_strlen($billNumber) > 36) {
+                            throw new \Exception(
+                                'RegistrarTitEnvios: idTitTrans ausente o mayor a 36 caracteres.'
+                            );
+                        }
+
+                        $bolCodAduOrigen = trim((string) (
+                            $bol->origin_customs_code ?: $codAduOrigen
+                        ));
+                        $bolCodAduDest = trim((string) (
+                            $bol->discharge_customs_code ?: $codAduDest
+                        ));
+                        if (
+                            $bolCodAduOrigen === ''
+                            || mb_strlen($bolCodAduOrigen) > 3
+                        ) {
+                            throw new \Exception(
+                                "RegistrarTitEnvios: BL {$billNumber} codAdu de origen ausente o inválido."
+                            );
+                        }
+                        if (
+                            $bolCodAduDest === ''
+                            || mb_strlen($bolCodAduDest) > 9
+                        ) {
+                            throw new \Exception(
+                                "RegistrarTitEnvios: BL {$billNumber} codAdu de destino ausente o inválido."
+                            );
+                        }
+
+                        $bolCodLugOperOrigen = trim((string) (
+                            $bol->origin_operative_code ?: $codLugOperOrigen
+                        ));
+                        if (
+                            $bolCodLugOperOrigen === ''
+                            || mb_strlen($bolCodLugOperOrigen) > 5
+                        ) {
+                            throw new \Exception(
+                                "RegistrarTitEnvios: BL {$billNumber} codLugOper de origen ausente o inválido."
+                            );
+                        }
+
+                        $bolCodLugOperDest = trim((string) (
+                            $bol->operational_discharge_code ?: $codLugOperDest
+                        ));
+                        if (mb_strlen($bolCodLugOperDest) > 9) {
+                            throw new \Exception(
+                                "RegistrarTitEnvios: BL {$billNumber} codLugOper de destino supera 9 caracteres."
+                            );
+                        }
+
                         $w->startElement('TitTransEnvio');
-                            
-                            // Datos básicos del título
-                            $w->writeElement('codViaTrans', '8'); // Hidrovía
-                            $w->writeElement('idTitTrans', $bol->bill_number);
-                            $w->writeElement('obsDeclaAduInter', $bol->cargo_description ?? 'CARGA GENERAL');
+
+                            $w->writeElement('codViaTrans', '8');
+                            $w->writeElement('idTitTrans', $billNumber);
+
+                            $observation = trim((string) $bol->cargo_description);
+                            if (mb_strlen($observation) > 500) {
+                                throw new \Exception(
+                                    "RegistrarTitEnvios: BL {$billNumber} obsDeclaAduInter supera 500 caracteres."
+                                );
+                            }
+                            if ($observation !== '') {
+                                $w->writeElement(
+                                    'obsDeclaAduInter',
+                                    $observation
+                                );
+                            }
                             
                             // === REMITENTE (shipper) ===
                             $this->writeRemitente($w, $bol);
@@ -201,109 +334,219 @@ class SimpleXmlGenerator
                                     // === DESTINACIONES ===
                                     $w->startElement('destinaciones');
                                     
-                                    // Verificar que BL tenga id_decla
-                                    if (empty($bol->permiso_embarque)) {
-                                        throw new Exception("BL {$bol->bill_number} no tiene Permiso de Embarque. Campo obligatorio para AFIP.");
+                                    $idDecla = trim((string) $bol->id_decla);
+                                    if ($idDecla === '' || mb_strlen($idDecla) > 16) {
+                                        throw new \Exception(
+                                            "RegistrarTitEnvios: BL {$billNumber} no tiene idDecla real de hasta 16 caracteres."
+                                        );
                                     }
-                                    
-                                    $w->startElement('Destinacion');
-                                        $w->writeElement('idDecla', substr($bol->permiso_embarque, 0, 16));
-                                        $w->writeElement('montoFob', '0');
-                                        $w->writeElement('montoFlete', '0');
-                                        $w->writeElement('montoSeg', '0');
-                                        $w->writeElement('codDivisaFob', '');
-                                        $w->writeElement('codDivisaFle', '');
-                                        $w->writeElement('codDivisaSeg', '');
-                                        
-                                        // Items de la destinación
-                                        $w->startElement('items');
-                                        $itemIndex = 1;
-                                        foreach ($bol->shipmentItems as $item) {
-                                            $w->startElement('Item');
-                                                $w->writeElement('nroItem', (string)$itemIndex);
-                                                $w->writeElement('peso', number_format($item->gross_weight_kg ?? 0, 0, '', ''));
-                                            $w->endElement();
-                                            $itemIndex++;
-                                        }
-                                        if ($bol->shipmentItems->isEmpty()) {
-                                            // Al menos un item por defecto
-                                            $w->startElement('Item');
-                                                $w->writeElement('nroItem', '1');
-                                                $w->writeElement('peso', number_format($bol->gross_weight_kg ?? 1000, 0, '', ''));
-                                            $w->endElement();
-                                        }
-                                        $w->endElement(); // items
-                                        
-                                        // === BULTOS ===
-                                        $w->startElement('bultos');
-                                        foreach ($bol->shipmentItems as $item) {
-                                            // Obtener contenedores del item
-                                            $itemContainers = $item->containers ?? collect();
-                                            
-                                            if ($itemContainers->isEmpty()) {
-                                                // Bulto sin contenedor (carga suelta)
-                                                $w->startElement('Bulto');
-                                                    $w->writeElement('cantBultos', (string)($item->package_quantity ?? 1));
-                                                    $w->writeElement('cantBultosTotFrac', (string)($item->package_quantity ?? 1));
-                                                    $w->writeElement('pesoBruto', number_format($item->gross_weight_kg ?? 0, 0, '', ''));
-                                                    $w->writeElement('pesoBrutoTotFrac', number_format($item->gross_weight_kg ?? 0, 0, '', ''));
-                                                    $codEmbalaje = $item->packagingType?->argentina_ws_code ?? 'BG';
-                                                    $w->writeElement('codTipEmbalaje', (strlen($codEmbalaje) === 2) ? $codEmbalaje : 'BG');
-                                                    $w->writeElement('descMercaderia', substr($item->item_description ?? 'MERCADERIA', 0, 100));
-                                                    $w->writeElement('marcaNro', !empty($item->cargo_marks) ? $item->cargo_marks : 'S/M');
-                                                    $w->writeElement('indCargSuelt', 'S');
-                                                $w->endElement();
-                                            } else {
-                                                // Bultos con contenedores
-                                                foreach ($itemContainers as $container) {
-                                                    $pivot = $container->pivot ?? null;
-                                                    $pesoContainer = $pivot?->gross_weight_kg ?? $item->gross_weight_kg ?? 0;
-                                                    // Cuando hay contenedor, cantBultos debe ser 0 según AFIP
-                                                    // Cuando hay contenedor: cantBultos=0, cantBultosTotFrac=total de contenedores
-                                                    $totalContainersInItem = $itemContainers->count();
 
-                                                    $w->startElement('Bulto');
-                                                        $w->writeElement('cantBultos', '0');
-                                                        $w->writeElement('cantBultosTotFrac', (string)$totalContainersInItem);                                                        $w->writeElement('pesoBruto', number_format($pesoContainer, 0, '', ''));
-                                                        $w->writeElement('pesoBrutoTotFrac', number_format($pesoContainer, 0, '', ''));
-                                                        //$codEmbalaje = $item->packagingType?->argentina_ws_code ?? 'CN';
-                                                        // TEMPORAL: ZW hardcodeado para contenedores - pruebas AFIP
-                                                        $codEmbalaje = 'ZT';
-                                                        $w->writeElement('codTipEmbalaje', (strlen($codEmbalaje) === 2) ? $codEmbalaje : 'CN');
-                                                        $w->writeElement('descMercaderia', substr($item->item_description ?? 'MERCADERIA EN CONTENEDOR', 0, 100));
-                                                        $w->writeElement('marcaNro', !empty($item->cargo_marks) ? $item->cargo_marks : 'S/M');
-                                                        $w->writeElement('indCargSuelt', 'N');
-                                                        $w->writeElement('idContenedor', $container->container_number);
-                                                    $w->endElement();
-                                                    
-                                                    // Registrar contenedor para sección global
-                                                    if ($container->condition !== 'V') {
-                                                        $allContainers->push($container);
-                                                    } else {
-                                                        $emptyContainers->push($container);
-                                                    }
-                                                }
-                                            }
+                                    if ($bol->is_fractional) {
+                                        throw new \Exception(
+                                            "RegistrarTitEnvios: BL {$billNumber} es fraccionado y faltan totales por tipo de embalaje para transmitirlo sin inventar datos."
+                                        );
+                                    }
+
+                                    if ($bol->shipmentItems->isEmpty()) {
+                                        throw new \Exception(
+                                            "RegistrarTitEnvios: BL {$billNumber} no tiene ítems reales para la destinación."
+                                        );
+                                    }
+
+                                    $montoFob = $this->micDtaDecimal(
+                                        $bol->declared_value,
+                                        "RegistrarTitEnvios: BL {$billNumber} montoFob"
+                                    );
+                                    $montoFlete = $this->micDtaDecimal(
+                                        $bol->freight_amount,
+                                        "RegistrarTitEnvios: BL {$billNumber} montoFlete"
+                                    );
+                                    $montoSeguro = $this->micDtaDecimal(
+                                        $bol->insurance_amount,
+                                        "RegistrarTitEnvios: BL {$billNumber} montoSeg"
+                                    );
+
+                                    $w->startElement('Destinacion');
+                                    $w->writeElement('idDecla', $idDecla);
+                                    $w->writeElement('montoFob', $montoFob);
+                                    $w->writeElement('montoFlete', $montoFlete);
+                                    $w->writeElement('montoSeg', $montoSeguro);
+
+                                    $currency = strtoupper(trim((string) $bol->currency_code));
+                                    if ($currency !== '') {
+                                        if (mb_strlen($currency) !== 3) {
+                                            throw new \Exception(
+                                                "RegistrarTitEnvios: BL {$billNumber} currency_code debe tener 3 caracteres."
+                                            );
                                         }
-                                        $w->endElement(); // bultos
+                                        $w->writeElement('codDivisaFob', $currency);
+                                        $w->writeElement('codDivisaFle', $currency);
+                                        $w->writeElement('codDivisaSeg', $currency);
+                                    }
+
+                                    // Ítems reales de la destinación.
+                                    $w->startElement('items');
+                                    foreach ($bol->shipmentItems as $item) {
+                                        $line = $item->line_number;
+                                        if (
+                                            $line === null
+                                            || !is_numeric($line)
+                                            || (int) $line < 1
+                                            || (int) $line > 9999
+                                        ) {
+                                            throw new \Exception(
+                                                "RegistrarTitEnvios: BL {$billNumber} tiene nroItem inválido."
+                                            );
+                                        }
+                                        if (
+                                            $item->gross_weight_kg === null
+                                            || !is_numeric($item->gross_weight_kg)
+                                            || (float) $item->gross_weight_kg < 0
+                                        ) {
+                                            throw new \Exception(
+                                                "RegistrarTitEnvios: BL {$billNumber}, línea {$line}: peso inválido."
+                                            );
+                                        }
+
+                                        $w->startElement('Item');
+                                        $w->writeElement('nroItem', (string) (int) $line);
+                                        $w->writeElement(
+                                            'peso',
+                                            number_format(
+                                                (float) $item->gross_weight_kg,
+                                                4,
+                                                '.',
+                                                ''
+                                            )
+                                        );
+
+                                        if ($bol->is_transit_transshipment) {
+                                            $ncm = trim((string) $item->tariff_position);
+                                            if ($ncm === '' || mb_strlen($ncm) > 10) {
+                                                throw new \Exception(
+                                                    "RegistrarTitEnvios: BL {$billNumber}, línea {$line}: indNCM es obligatorio para transbordo y debe tener hasta 10 caracteres."
+                                                );
+                                            }
+                                            $w->writeElement('indNCM', $ncm);
+                                        }
+
+                                        $imo = trim((string) $item->imdg_class);
+                                        if ($item->is_dangerous_goods) {
+                                            if ($imo === '' || mb_strlen($imo) > 3) {
+                                                throw new \Exception(
+                                                    "RegistrarTitEnvios: BL {$billNumber}, línea {$line}: codIMO es obligatorio para mercadería peligrosa."
+                                                );
+                                            }
+                                            $w->writeElement('codIMO', $imo);
+                                        } elseif ($imo !== '' && mb_strlen($imo) <= 3) {
+                                            $w->writeElement('codIMO', $imo);
+                                        }
+
+                                        $w->endElement(); // Item
+                                    }
+                                    $w->endElement(); // items
+
+                                    // Factura comercial: sólo si existe un número real adjunto.
+                                    $invoiceDocuments = \App\Models\VoyageAttachment::where(
+                                            'bill_of_lading_id',
+                                            $bol->id
+                                        )
+                                        ->get()
+                                        ->filter(fn ($attachment) =>
+                                            $attachment->getDocumentTypeCode() === '380'
+                                        );
+
+                                    if ($invoiceDocuments->isNotEmpty()) {
+                                        $w->startElement('docAnexos');
+                                        foreach ($invoiceDocuments as $attachment) {
+                                            $documentNumber = trim((string) $attachment->document_number);
+                                            if (
+                                                $documentNumber === ''
+                                                || mb_strlen($documentNumber) > 39
+                                            ) {
+                                                throw new \Exception(
+                                                    "RegistrarTitEnvios: BL {$billNumber} tiene factura comercial adjunta sin número válido."
+                                                );
+                                            }
+                                            $w->startElement('DocAnexo');
+                                            $w->writeElement('codTipDoc', '380');
+                                            $w->writeElement('documento', $documentNumber);
+                                            $w->endElement();
+                                        }
+                                        $w->endElement(); // docAnexos
+                                    }
+
+                                    // Bultos reales.
+                                    $w->startElement('bultos');
+                                    foreach ($bol->shipmentItems as $item) {
+                                        $itemContainers = $item->containers;
+
+                                        if ($itemContainers->isEmpty()) {
+                                            $this->writeMicDtaBulto(
+                                                $w,
+                                                $item,
+                                                null,
+                                                $billNumber,
+                                                false
+                                            );
+                                            continue;
+                                        }
+
+                                        foreach ($itemContainers as $container) {
+                                            if (
+                                                strtoupper(trim((string) $container->condition)) === 'V'
+                                            ) {
+                                                throw new \Exception(
+                                                    "RegistrarTitEnvios: BL {$billNumber} contiene un vacío dentro de un título con mercadería."
+                                                );
+                                            }
+
+                                            $this->writeMicDtaBulto(
+                                                $w,
+                                                $item,
+                                                $container,
+                                                $billNumber,
+                                                false
+                                            );
+                                            $allContainers->push($container);
+                                        }
+                                    }
+                                    $w->endElement(); // bultos
                                         
                                     $w->endElement(); // Destinacion
                                     $w->endElement(); // destinaciones
                                     
-                                    // Campos obligatorios del Envio
+                                    // No fraccionado: la única fracción también es la última.
                                     $w->writeElement('indUltFra', 'S');
-                                    $w->writeElement('idFiscalATAMIC', preg_replace('/[^0-9]/', '', $this->company->tax_id));
-                                    
-                                    // Lugar operativo origen
+
+                                    $ataTaxId = preg_replace(
+                                        '/[^0-9]/',
+                                        '',
+                                        (string) $this->company->tax_id
+                                    );
+                                    if ($ataTaxId === '' || strlen($ataTaxId) > 14) {
+                                        throw new \Exception(
+                                            'RegistrarTitEnvios: idFiscalATAMIC ausente o inválido.'
+                                        );
+                                    }
+                                    $w->writeElement('idFiscalATAMIC', $ataTaxId);
+
                                     $w->startElement('lugOperOrigen');
-                                        $w->writeElement('codLugOper', $bolCodLugOperOrigen);
-                                        $w->writeElement('codCiu', $codCiuOrigen);
+                                    $w->writeElement(
+                                        'codLugOper',
+                                        $bolCodLugOperOrigen
+                                    );
+                                    $w->writeElement('codCiu', $codCiuOrigen);
                                     $w->endElement();
 
-                                    // Lugar operativo destino
                                     $w->startElement('lugOperDestino');
-                                        $w->writeElement('codLugOper', $bolCodLugOperDest);
-                                        $w->writeElement('codCiu', $codCiuDest);
+                                    if ($bolCodLugOperDest !== '') {
+                                        $w->writeElement(
+                                            'codLugOper',
+                                            $bolCodLugOperDest
+                                        );
+                                    }
+                                    $w->writeElement('codCiu', $codCiuDest);
                                     $w->endElement();
                                     
                                     // idEnvio AL FINAL (importante!)
@@ -317,47 +560,133 @@ class SimpleXmlGenerator
                     }
                     
                     $w->endElement(); // titulosTransEnvios
+                    }
 
-                    // === TÍTULOS CONTENEDORES VACÍOS (solo si hay) ===
-                    if ($emptyContainers->isNotEmpty()) {
+                    // === TÍTULOS DE CONTENEDORES VACÍOS ===
+                    if ($emptyBills->isNotEmpty()) {
                         $w->startElement('titulosTransContVacios');
+
+                        foreach ($emptyBills as $emptyBill) {
+                            $emptyBillNumber = trim((string) $emptyBill->bill_number);
+                            if (
+                                $emptyBillNumber === ''
+                                || mb_strlen($emptyBillNumber) > 36
+                            ) {
+                                throw new \Exception(
+                                    'RegistrarTitEnvios: idTitTrans de contenedores vacíos ausente o mayor a 36 caracteres.'
+                                );
+                            }
+
+                            $billEmptyContainers = $emptyBill->shipmentItems
+                                ->flatMap(fn ($item) => $item->containers)
+                                ->filter(fn ($container) =>
+                                    strtoupper(trim((string) $container->condition)) === 'V'
+                                )
+                                ->unique('container_number')
+                                ->values();
+
+                            if ($billEmptyContainers->isEmpty()) {
+                                throw new \Exception(
+                                    "RegistrarTitEnvios: BL {$emptyBillNumber} fue clasificado como vacío pero no contiene contenedores vacíos."
+                                );
+                            }
+
+                            $emptyOriginCustoms = trim((string) (
+                                $emptyBill->origin_customs_code
+                                ?: $codAduOrigen
+                            ));
+                            $emptyOriginOperative = trim((string) (
+                                $emptyBill->origin_operative_code
+                                ?: $codLugOperOrigen
+                            ));
+                            $emptyDestinationCustoms = trim((string) (
+                                $emptyBill->discharge_customs_code
+                                ?: $codAduDest
+                            ));
+                            $emptyDestinationOperative = trim((string) (
+                                $emptyBill->operational_discharge_code
+                                ?: $codLugOperDest
+                            ));
+
+                            if (
+                                $emptyOriginCustoms === ''
+                                || mb_strlen($emptyOriginCustoms) > 3
+                                || $emptyOriginOperative === ''
+                                || mb_strlen($emptyOriginOperative) > 5
+                            ) {
+                                throw new \Exception(
+                                    "RegistrarTitEnvios: BL {$emptyBillNumber} no tiene origen aduanero/operativo válido para contenedores vacíos."
+                                );
+                            }
+                            if (
+                                $emptyDestinationCustoms === ''
+                                || mb_strlen($emptyDestinationCustoms) > 9
+                                || mb_strlen($emptyDestinationOperative) > 9
+                            ) {
+                                throw new \Exception(
+                                    "RegistrarTitEnvios: BL {$emptyBillNumber} no tiene destino aduanero válido para contenedores vacíos."
+                                );
+                            }
+
                             $w->startElement('TitTransContVacio');
-                                $w->writeElement('codViaTrans', '8');
-                                $w->writeElement('idTitTrans', 'VACIOS-' . $transactionId);
-                                
-                                $w->startElement('idContenedores');
-                                foreach ($emptyContainers as $ec) {
-                                    $w->writeElement('idCont', $ec->container_number);
+                            $w->writeElement('codViaTrans', '8');
+                            $w->writeElement('idTitTrans', $emptyBillNumber);
+
+                            $w->startElement('idContenedores');
+                            foreach ($billEmptyContainers as $emptyContainer) {
+                                $number = trim((string) $emptyContainer->container_number);
+                                if ($number === '' || mb_strlen($number) > 16) {
+                                    throw new \Exception(
+                                        "RegistrarTitEnvios: BL {$emptyBillNumber} contiene un identificador de contenedor vacío inválido."
+                                    );
                                 }
-                                $w->endElement();
-                                
-                                // Remitente simplificado para vacíos
-                                $firstBol = $billsOfLading->first();
-                                $this->writeRemitente($w, $firstBol);
-                                $this->writeConsignatario($w, $firstBol);
-                                $this->writeDestinatario($w, $firstBol);
+                                $w->writeElement('idCont', $number);
+                                $emptyContainers->push($emptyContainer);
+                            }
+                            $w->endElement();
 
-                                // Códigos AFIP desde el primer BL
-                                $vaciosCodAduOrigen = $firstBol->origin_customs_code ?: $codAduOrigen;
-                                $vaciosCodLugOperOrigen = $firstBol->origin_operative_code ?: $codLugOperOrigen;
-                                $vaciosCodAduDest = str_pad($firstBol->discharge_customs_code ?: $codAduDest, 3, '0', STR_PAD_LEFT);
-                                $vaciosCodLugOperDest = str_pad($firstBol->operational_discharge_code ?: $codLugOperDest, 3, '0', STR_PAD_LEFT);
+                            $this->writeRemitente($w, $emptyBill);
+                            $this->writeConsignatario($w, $emptyBill);
+                            $this->writeDestinatario($w, $emptyBill);
 
-                                $w->startElement('origen');
-                                    $w->writeElement('codAdu', $vaciosCodAduOrigen);
-                                    $w->writeElement('codLugOper', $vaciosCodLugOperOrigen);
-                                    $w->writeElement('codCiu', $codCiuOrigen);
-                                $w->endElement();
+                            $w->startElement('origen');
+                            $w->writeElement('codAdu', $emptyOriginCustoms);
+                            $w->writeElement(
+                                'codLugOper',
+                                $emptyOriginOperative
+                            );
+                            $w->writeElement('codCiu', $codCiuOrigen);
+                            $w->endElement();
 
-                                $w->startElement('destino');
-                                    $w->writeElement('codPais', $codPaisDest);
-                                    $w->writeElement('codAdu', $vaciosCodAduDest);
-                                    $w->writeElement('codLugOper', $vaciosCodLugOperDest);
-                                    $w->writeElement('codCiu', $codCiuDest);
-                                $w->endElement();
-                                
-                                $w->writeElement('idFiscalATAMIC', preg_replace('/[^0-9]/', '', $this->company->tax_id));
+                            $w->startElement('destino');
+                            $w->writeElement('codPais', $codPaisDest);
+                            $w->writeElement(
+                                'codAdu',
+                                $emptyDestinationCustoms
+                            );
+                            if ($emptyDestinationOperative !== '') {
+                                $w->writeElement(
+                                    'codLugOper',
+                                    $emptyDestinationOperative
+                                );
+                            }
+                            $w->writeElement('codCiu', $codCiuDest);
+                            $w->endElement();
+
+                            $ataTaxId = preg_replace(
+                                '/[^0-9]/',
+                                '',
+                                (string) $this->company->tax_id
+                            );
+                            if ($ataTaxId === '' || strlen($ataTaxId) > 14) {
+                                throw new \Exception(
+                                    'RegistrarTitEnvios: idFiscalATAMIC ausente o inválido.'
+                                );
+                            }
+                            $w->writeElement('idFiscalATAMIC', $ataTaxId);
                             $w->endElement(); // TitTransContVacio
+                        }
+
                         $w->endElement(); // titulosTransContVacios
                     }
 
@@ -367,25 +696,11 @@ class SimpleXmlGenerator
                     if ($allContainersUnique->isNotEmpty()) {
                         $w->startElement('contenedores');
                         foreach ($allContainersUnique as $container) {
-                            $w->startElement('Contenedor');
-                                $w->writeElement('id', $container->container_number);
-                                
-                                // Código de medida ISO
-                                $codMedida = $container->containerType?->iso_code ?? '22G1';
-                                $w->writeElement('codMedida', $codMedida);
-                                
-                                // Condición AFIP: H=house(casa a casa), P=pier(muelle a muelle)
-                                $condicion = $container->container_condition ?: 'H';
-                                $w->writeElement('condicion', $condicion);
-                                
-                                // Precintos
-                                $precinto = $container->shipper_seal ?? $container->carrier_seal ?? $container->customs_seal;
-                                if ($precinto) {
-                                    $w->startElement('precintos');
-                                        $w->writeElement('precinto', $precinto);
-                                    $w->endElement();
-                                }
-                            $w->endElement();
+                            $this->writeMicDtaContainer(
+                                $w,
+                                $container,
+                                'RegistrarTitEnvios'
+                            );
                         }
                         $w->endElement(); // contenedores
                     }
@@ -409,169 +724,442 @@ class SimpleXmlGenerator
     }
 
     /**
-     * Helper: Escribir sección Remitente
-     * Usa dirección específica del BL si existe, sino fallback al cliente
+     * Resolver datos de una parte del BL sin fabricar domicilio o razón social.
+     */
+    private function micDtaPartyData(
+        BillOfLading $bol,
+        string $role,
+        $client
+    ): array {
+        $specific = $bol->specificContacts()
+            ->with('contactData')
+            ->where('role', $role)
+            ->where('use_specific_data', true)
+            ->first();
+
+        $contact = $specific?->contactData ?: $client?->primaryContact;
+
+        $pick = static function ($specificValue, $contactValue): string {
+            $specificValue = trim((string) $specificValue);
+            if ($specificValue !== '') {
+                return $specificValue;
+            }
+
+            return trim((string) $contactValue);
+        };
+
+        return [
+            'name' => $pick(
+                $specific?->specific_company_name,
+                $client?->legal_name ?: $client?->commercial_name
+            ),
+            'address_line_1' => $pick(
+                $specific?->specific_address_line_1,
+                $contact?->address_line_1
+            ),
+            'address_line_2' => $pick(
+                $specific?->specific_address_line_2,
+                $contact?->address_line_2
+            ),
+            'city' => $pick(
+                $specific?->specific_city,
+                $contact?->city
+            ),
+            'state' => $pick(
+                $specific?->specific_state_province,
+                $contact?->state_province
+            ),
+            'postal_code' => $pick(
+                $specific?->specific_postal_code,
+                $contact?->postal_code
+            ),
+            'tax_id' => trim((string) $client?->tax_id),
+            'country' => strtoupper(trim((string) (
+                $client?->country?->alpha2_code
+                ?: $client?->country?->iso2_code
+            ))),
+        ];
+    }
+
+    /**
+     * Dirección MIC/DTA: nombreCalle es obligatorio; el resto es opcional.
+     */
+    private function writeMicDtaAddress(
+        \XMLWriter $w,
+        array $data,
+        string $context
+    ): void {
+        $limits = [
+            'address_line_2' => 50,
+            'city' => 50,
+            'postal_code' => 8,
+            'state' => 50,
+            'address_line_1' => 150,
+        ];
+
+        foreach ($limits as $field => $max) {
+            if (mb_strlen((string) ($data[$field] ?? '')) > $max) {
+                throw new \Exception(
+                    "RegistrarTitEnvios: {$context} {$field} supera {$max} caracteres."
+                );
+            }
+        }
+
+        if (trim((string) ($data['address_line_1'] ?? '')) === '') {
+            throw new \Exception(
+                "RegistrarTitEnvios: {$context} no tiene nombreCalle/domicilio real."
+            );
+        }
+
+        $w->startElement('domicilio');
+        if ($data['address_line_2'] !== '') {
+            $w->writeElement('barrio', $data['address_line_2']);
+        }
+        if ($data['city'] !== '') {
+            $w->writeElement('ciudad', $data['city']);
+        }
+        if ($data['postal_code'] !== '') {
+            $w->writeElement('codPostal', $data['postal_code']);
+        }
+        if ($data['state'] !== '') {
+            $w->writeElement('estado', $data['state']);
+        }
+        $w->writeElement('nombreCalle', $data['address_line_1']);
+        $w->endElement();
+    }
+
+    /**
+     * Helper: Escribir sección Remitente con datos reales.
      */
     private function writeRemitente(\XMLWriter $w, BillOfLading $bol): void
     {
         $shipper = $bol->shipper;
-        $codPais = $shipper?->country?->iso2_code ?? 'AR';
-        
-        // Verificar si hay dirección específica para este BL
-        $specific = $bol->specificContacts()->where('role', 'shipper')->where('use_specific_data', true)->first();
-        
+        if (!$shipper) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} sin remitente asociado."
+            );
+        }
+
+        $data = $this->micDtaPartyData($bol, 'shipper', $shipper);
+        if (!preg_match('/^[A-Z]{2}$/', $data['country'])) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} remitente sin país ISO alfa-2."
+            );
+        }
+        if ($data['tax_id'] === '' || mb_strlen($data['tax_id']) > 14) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} remitente sin idFiscal válido."
+            );
+        }
+        if ($data['name'] !== '' && mb_strlen($data['name']) > 50) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} nombre del remitente supera 50 caracteres."
+            );
+        }
+        if ($data['country'] !== 'AR' && $data['name'] === '') {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} remitente extranjero sin razón social."
+            );
+        }
+
         $w->startElement('remitente');
-            $w->writeElement('codPais', $codPais);
-            
-            // Nombre: específico o del cliente
-            $nombre = ($specific && $specific->specific_company_name) 
-                ? $specific->specific_company_name 
-                : ($shipper?->legal_name ?? $shipper?->name ?? 'REMITENTE');
-            $w->writeElement('nomRazSoc', substr($nombre, 0, 50));
-            
-            $w->startElement('domicilio');
-                if ($specific) {
-                    // Usar datos específicos del BL
-                    $w->writeElement('barrio', substr($specific->specific_address_line_2 ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('ciudad', substr($specific->specific_city ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('codPostal', substr($specific->specific_postal_code ?? 'x', 0, 8) ?: 'x');
-                    $w->writeElement('estado', substr($specific->specific_state_province ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('nombreCalle', substr($specific->specific_address_line_1 ?? 'x', 0, 150) ?: 'x');
-                } else {
-                    // Fallback: datos del cliente
-                    $w->writeElement('barrio', substr($shipper?->district ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('ciudad', substr($shipper?->city ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('codPostal', substr($shipper?->postal_code ?? 'x', 0, 8) ?: 'x');
-                    $w->writeElement('estado', substr($shipper?->state ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('nombreCalle', substr($shipper?->address ?? 'x', 0, 150) ?: 'x');
-                }
-            $w->endElement();
-            
-            $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $shipper?->tax_id ?? $this->company->tax_id));
-            
-            // tipDocIdent y nroDocIdent solo para extranjeros
-            if ($codPais !== 'AR') {
-                $w->writeElement('tipDocIdent', 'CUIT');
-                $w->writeElement('nroDocIdent', preg_replace('/[^0-9]/', '', $shipper?->tax_id ?? ''));
-            }
+        $w->writeElement('codPais', $data['country']);
+        if ($data['name'] !== '') {
+            $w->writeElement('nomRazSoc', $data['name']);
+        }
+
+        if ($data['country'] !== 'AR') {
+            $this->writeMicDtaAddress($w, $data, "BL {$bol->bill_number} remitente");
+        } elseif ($data['address_line_1'] !== '') {
+            $this->writeMicDtaAddress($w, $data, "BL {$bol->bill_number} remitente");
+        }
+
+        $w->writeElement('idFiscal', $data['tax_id']);
         $w->endElement();
     }
 
     /**
-     * Helper: Escribir sección Consignatario
-     * Usa dirección específica del BL si existe, sino fallback al cliente
+     * Helper: Escribir sección Consignatario con datos reales.
      */
     private function writeConsignatario(\XMLWriter $w, BillOfLading $bol): void
     {
         $consignee = $bol->consignee;
-        
-        // Verificar si hay dirección específica para este BL
-        $specific = $bol->specificContacts()->where('role', 'consignee')->where('use_specific_data', true)->first();
-        
+        if (!$consignee) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} sin consignatario asociado."
+            );
+        }
+
+        $data = $this->micDtaPartyData($bol, 'consignee', $consignee);
+        if ($data['name'] === '' || mb_strlen($data['name']) > 50) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} consignatario sin razón social válida."
+            );
+        }
+        if ($data['tax_id'] === '' || mb_strlen($data['tax_id']) > 14) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} consignatario sin idFiscal válido."
+            );
+        }
+
         $w->startElement('consignatario');
-            // Nombre: específico o del cliente
-            $nombre = ($specific && $specific->specific_company_name) 
-                ? $specific->specific_company_name 
-                : ($consignee?->legal_name ?? $consignee?->name ?? 'CONSIGNATARIO');
-            $w->writeElement('nomRazSoc', substr($nombre, 0, 50));
-            
-            $w->startElement('domicilio');
-                if ($specific) {
-                    // Usar datos específicos del BL
-                    $w->writeElement('barrio', substr($specific->specific_address_line_2 ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('ciudad', substr($specific->specific_city ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('codPostal', substr($specific->specific_postal_code ?? 'x', 0, 8) ?: 'x');
-                    $w->writeElement('estado', substr($specific->specific_state_province ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('nombreCalle', substr($specific->specific_address_line_1 ?? 'x', 0, 150) ?: 'x');
-                } else {
-                    // Fallback: datos del cliente
-                    $w->writeElement('barrio', substr($consignee?->district ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('ciudad', substr($consignee?->city ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('codPostal', substr($consignee?->postal_code ?? 'x', 0, 8) ?: 'x');
-                    $w->writeElement('estado', substr($consignee?->state ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('nombreCalle', substr($consignee?->address ?? 'x', 0, 150) ?: 'x');
-                }
-            $w->endElement();
-            
-            $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $consignee?->tax_id ?? ''));
+        $w->writeElement('nomRazSoc', $data['name']);
+        $this->writeMicDtaAddress($w, $data, "BL {$bol->bill_number} consignatario");
+        $w->writeElement('idFiscal', $data['tax_id']);
         $w->endElement();
     }
 
     /**
-     * Helper: Escribir sección Destinatario
-     * Usa dirección específica del consignee del BL si existe, sino fallback al cliente
-     * (Destinatario normalmente es igual al consignatario)
+     * El modelo actual no distingue otro cliente destinatario: usa el
+     * consignatario, pero sin fabricar nombre o domicilio.
      */
     private function writeDestinatario(\XMLWriter $w, BillOfLading $bol): void
     {
         $consignee = $bol->consignee;
-        
-        // Destinatario usa los mismos datos específicos del consignee
-        $specific = $bol->specificContacts()->where('role', 'consignee')->where('use_specific_data', true)->first();
-        
+        if (!$consignee) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} sin destinatario/consignatario."
+            );
+        }
+
+        $data = $this->micDtaPartyData($bol, 'consignee', $consignee);
+        if ($data['name'] === '' || mb_strlen($data['name']) > 50) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} destinatario sin razón social válida."
+            );
+        }
+
         $w->startElement('destinatario');
-            // Nombre: específico o del cliente
-            $nombre = ($specific && $specific->specific_company_name) 
-                ? $specific->specific_company_name 
-                : ($consignee?->legal_name ?? $consignee?->name ?? 'DESTINATARIO');
-            $w->writeElement('nomRazSoc', substr($nombre, 0, 50));
-            
-            $w->startElement('domicilio');
-                if ($specific) {
-                    $w->writeElement('barrio', substr($specific->specific_address_line_2 ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('ciudad', substr($specific->specific_city ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('codPostal', substr($specific->specific_postal_code ?? 'x', 0, 8) ?: 'x');
-                    $w->writeElement('estado', substr($specific->specific_state_province ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('nombreCalle', substr($specific->specific_address_line_1 ?? 'x', 0, 150) ?: 'x');
-                } else {
-                    $w->writeElement('barrio', substr($consignee?->district ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('ciudad', substr($consignee?->city ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('codPostal', substr($consignee?->postal_code ?? 'x', 0, 8) ?: 'x');
-                    $w->writeElement('estado', substr($consignee?->state ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('nombreCalle', substr($consignee?->address ?? 'x', 0, 150) ?: 'x');
-                }
-            $w->endElement();
+        $w->writeElement('nomRazSoc', $data['name']);
+        $this->writeMicDtaAddress($w, $data, "BL {$bol->bill_number} destinatario");
         $w->endElement();
     }
 
     /**
-     * Helper: Escribir sección Notificado
-     * Usa dirección específica del BL si existe, sino fallback al cliente
+     * Helper: Escribir Notificado. La aplicación ya define notifyParty y,
+     * cuando no existe, reutiliza el consignatario como relación real.
      */
     private function writeNotificado(\XMLWriter $w, BillOfLading $bol): void
     {
-        $notify = $bol->notifyParty ?? $bol->consignee;
-        
-        // Verificar si hay dirección específica para notify_party en este BL
-        $specific = $bol->specificContacts()->where('role', 'notify_party')->where('use_specific_data', true)->first();
-        
+        $notify = $bol->notifyParty ?: $bol->consignee;
+        if (!$notify) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} sin notificado asociado."
+            );
+        }
+
+        $role = $bol->notifyParty ? 'notify_party' : 'consignee';
+        $data = $this->micDtaPartyData($bol, $role, $notify);
+        if ($data['name'] === '' || mb_strlen($data['name']) > 50) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} notificado sin razón social válida."
+            );
+        }
+        if ($data['tax_id'] !== '' && mb_strlen($data['tax_id']) > 14) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$bol->bill_number} idFiscal del notificado supera 14 caracteres."
+            );
+        }
+
         $w->startElement('notificado');
-            // Nombre: específico o del cliente
-            $nombre = ($specific && $specific->specific_company_name) 
-                ? $specific->specific_company_name 
-                : ($notify?->legal_name ?? $notify?->name ?? 'A QUIEN CORRESPONDA');
-            $w->writeElement('nomRazSoc', substr($nombre, 0, 50));
-            
-            $w->startElement('domicilio');
-                if ($specific) {
-                    $w->writeElement('barrio', substr($specific->specific_address_line_2 ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('ciudad', substr($specific->specific_city ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('codPostal', substr($specific->specific_postal_code ?? 'x', 0, 8) ?: 'x');
-                    $w->writeElement('estado', substr($specific->specific_state_province ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('nombreCalle', substr($specific->specific_address_line_1 ?? 'x', 0, 150) ?: 'x');
-                } else {
-                    $w->writeElement('barrio', substr($notify?->district ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('ciudad', substr($notify?->city ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('codPostal', substr($notify?->postal_code ?? 'x', 0, 8) ?: 'x');
-                    $w->writeElement('estado', substr($notify?->state ?? 'x', 0, 50) ?: 'x');
-                    $w->writeElement('nombreCalle', substr($notify?->address ?? 'x', 0, 150) ?: 'x');
-                }
-            $w->endElement();
-            
-            $w->writeElement('idFiscal', preg_replace('/[^0-9]/', '', $notify?->tax_id ?? ''));
+        $w->writeElement('nomRazSoc', $data['name']);
+        $this->writeMicDtaAddress($w, $data, "BL {$bol->bill_number} notificado");
+        if ($data['tax_id'] !== '') {
+            $w->writeElement('idFiscal', $data['tax_id']);
+        }
         $w->endElement();
     }
-    
+
+    private function micDtaDecimal(
+        $value,
+        string $label,
+        int $scale = 2
+    ): string {
+        if ($value === null || $value === '' || !is_numeric($value)) {
+            throw new \Exception("{$label} es obligatorio y debe ser numérico.");
+        }
+
+        $numeric = (float) $value;
+        if ($numeric < 0) {
+            throw new \Exception("{$label} no puede ser negativo.");
+        }
+
+        return number_format($numeric, $scale, '.', '');
+    }
+
+    private function micDtaPackagingCode($item, string $billNumber): string
+    {
+        $candidates = [
+            trim((string) $item->packaging_code),
+            trim((string) $item->packagingType?->argentina_ws_code),
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (mb_strlen($candidate) === 2) {
+                return $candidate;
+            }
+        }
+
+        throw new \Exception(
+            "RegistrarTitEnvios: BL {$billNumber}, línea {$item->line_number}: falta codTipEmbalaje EDIFACT de 2 caracteres."
+        );
+    }
+
+    private function writeMicDtaBulto(
+        \XMLWriter $w,
+        $item,
+        $container,
+        string $billNumber,
+        bool $isFractional
+    ): void {
+        if ($isFractional) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$billNumber} es fraccionado y la aplicación no posee totales por tipo de embalaje para informar la fracción sin inventar datos."
+            );
+        }
+
+        $description = trim((string) $item->item_description);
+        if ($description === '' || mb_strlen($description) > 500) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$billNumber}, línea {$item->line_number}: descMercaderia ausente o mayor a 500 caracteres."
+            );
+        }
+
+        $packagingCode = $this->micDtaPackagingCode($item, $billNumber);
+
+        if ($container) {
+            $quantity = $container->pivot?->package_quantity;
+            $weight = $container->pivot?->gross_weight_kg;
+            $containerNumber = trim((string) $container->container_number);
+
+            if ($quantity === null || !is_numeric($quantity) || (int) $quantity < 0) {
+                throw new \Exception(
+                    "RegistrarTitEnvios: BL {$billNumber}, contenedor {$containerNumber}: cantBultos inválida."
+                );
+            }
+            if ($weight === null || !is_numeric($weight) || (float) $weight < 0) {
+                throw new \Exception(
+                    "RegistrarTitEnvios: BL {$billNumber}, contenedor {$containerNumber}: pesoBruto inválido."
+                );
+            }
+            if ($containerNumber === '' || mb_strlen($containerNumber) > 16) {
+                throw new \Exception(
+                    "RegistrarTitEnvios: BL {$billNumber}: idContenedor ausente o mayor a 16 caracteres."
+                );
+            }
+
+            $quantity = (int) $quantity;
+        } else {
+            $quantity = $item->package_quantity;
+            $weight = $item->gross_weight_kg;
+
+            if ($quantity === null || !is_numeric($quantity) || (int) $quantity < 1) {
+                throw new \Exception(
+                    "RegistrarTitEnvios: BL {$billNumber}, línea {$item->line_number}: cantBultos inválida."
+                );
+            }
+            if ($weight === null || !is_numeric($weight) || (float) $weight < 0) {
+                throw new \Exception(
+                    "RegistrarTitEnvios: BL {$billNumber}, línea {$item->line_number}: pesoBruto inválido."
+                );
+            }
+
+            $quantity = (int) $quantity;
+        }
+
+        $weight = number_format((float) $weight, 4, '.', '');
+        $marks = trim((string) $item->cargo_marks);
+        if (mb_strlen($marks) > 100) {
+            throw new \Exception(
+                "RegistrarTitEnvios: BL {$billNumber}, línea {$item->line_number}: marcaNro supera 100 caracteres."
+            );
+        }
+
+        $w->startElement('Bulto');
+        $w->writeElement('cantBultos', (string) $quantity);
+        $w->writeElement('cantBultosTotFrac', (string) $quantity);
+        $w->writeElement('pesoBruto', $weight);
+        $w->writeElement('pesoBrutoTotFrac', $weight);
+        $w->writeElement('codTipEmbalaje', $packagingCode);
+        $w->writeElement('descMercaderia', $description);
+        if ($marks !== '') {
+            $w->writeElement('marcaNro', $marks);
+        }
+        $w->writeElement('indCargSuelt', $container ? 'N' : 'S');
+        if ($container) {
+            $w->writeElement('idContenedor', $containerNumber);
+        }
+        $w->endElement();
+    }
+
+    private function writeMicDtaContainer(
+        \XMLWriter $w,
+        $container,
+        string $context
+    ): void {
+        $number = trim((string) $container->container_number);
+        $measure = trim((string) (
+            $container->argentina_container_code
+            ?: $container->containerType?->iso_code
+        ));
+        $condition = strtoupper(trim((string) $container->container_condition));
+
+        if ($number === '' || mb_strlen($number) > 16) {
+            throw new \Exception(
+                "{$context}: número de contenedor ausente o mayor a 16 caracteres."
+            );
+        }
+        if (mb_strlen($measure) !== 4) {
+            throw new \Exception(
+                "{$context}: codMedida ISO 6346 ausente o inválido para {$number}."
+            );
+        }
+        if (!in_array($condition, ['H', 'P'], true)) {
+            throw new \Exception(
+                "{$context}: condición H/P ausente o inválida para {$number}."
+            );
+        }
+
+        $rawSeals = array_filter([
+            trim((string) $container->shipper_seal),
+            trim((string) $container->carrier_seal),
+            trim((string) $container->customs_seal),
+        ]);
+        $seals = [];
+        foreach ($rawSeals as $rawSeal) {
+            foreach (preg_split('/[\\s,;]+/', $rawSeal) ?: [] as $seal) {
+                $seal = trim($seal);
+                if ($seal !== '') {
+                    $seals[$seal] = $seal;
+                }
+            }
+        }
+
+        if ($seals === []) {
+            throw new \Exception(
+                "{$context}: el contenedor {$number} no tiene precinto real."
+            );
+        }
+        foreach ($seals as $seal) {
+            if (mb_strlen($seal) > 15) {
+                throw new \Exception(
+                    "{$context}: precinto {$seal} supera 15 caracteres."
+                );
+            }
+        }
+
+        $w->startElement('Contenedor');
+        $w->writeElement('id', $number);
+        $w->writeElement('codMedida', $measure);
+        $w->writeElement('condicion', $condition);
+        $w->startElement('precintos');
+        foreach ($seals as $seal) {
+            $w->writeElement('precinto', $seal);
+        }
+        $w->endElement();
+        $w->endElement();
+    }
+
     /**
      * PASO 2: RegistrarEnvios - Agregar envíos a un Título YA REGISTRADO
      * 
@@ -586,337 +1174,364 @@ class SimpleXmlGenerator
      * @return string XML completo según especificación AFIP
      * @throws Exception Si faltan datos obligatorios
      */
-    public function createRegistrarEnviosXml(Shipment $shipment, string $idTitTrans, string $transactionId): string
-    {
+    public function createRegistrarEnviosXml(
+        Shipment $shipment,
+        string $idTitTrans,
+        string $transactionId
+    ): string {
         try {
-            \Log::info("=== GENERANDO XML RegistrarEnvios ===", [
-                'shipment_id' => $shipment->id,
-                'id_tit_trans' => $idTitTrans,
-                'transaction_id' => $transactionId,
-            ]);
+            $idTitTrans = trim($idTitTrans);
+            $transactionId = trim($transactionId);
 
-            // Cargar relaciones necesarias
-            $voyage = $shipment->voyage()->with(['originPort', 'destinationPort'])->first();
-            $billsOfLading = $shipment->billsOfLading()
-                ->with(['shipmentItems.containers', 'shipmentItems.packagingType'])
-                ->get();
-
-            if ($billsOfLading->isEmpty()) {
-                throw new Exception("Shipment {$shipment->id} no tiene Bills of Lading para generar envíos.");
+            if ($idTitTrans === '' || mb_strlen($idTitTrans) > 36) {
+                throw new \Exception(
+                    'RegistrarEnvios: idTitTrans es obligatorio y admite hasta 36 caracteres.'
+                );
+            }
+            if ($transactionId === '' || mb_strlen($transactionId) > 20) {
+                throw new \Exception(
+                    'RegistrarEnvios: idTransaccion es obligatorio y admite hasta 20 caracteres.'
+                );
             }
 
-            // Obtener tokens WSAA
+            $voyage = $shipment->voyage()
+                ->with(['originPort', 'destinationPort'])
+                ->first();
+
+            if (!$voyage || !$voyage->originPort || !$voyage->destinationPort) {
+                throw new \Exception(
+                    'RegistrarEnvios requiere puertos de origen y destino reales.'
+                );
+            }
+
+            $codCiuOrigen = strtoupper(trim((string) $voyage->originPort->code));
+            $codCiuDest = strtoupper(trim((string) $voyage->destinationPort->code));
+            if (mb_strlen($codCiuOrigen) !== 5 || mb_strlen($codCiuDest) !== 5) {
+                throw new \Exception(
+                    'RegistrarEnvios requiere códigos UN/LOCODE de 5 caracteres.'
+                );
+            }
+
+            $bills = $shipment->billsOfLading()
+                ->with([
+                    'shipmentItems.containers.containerType',
+                    'shipmentItems.packagingType',
+                ])
+                ->get();
+
+            $bill = $bills->first(
+                fn ($candidate) =>
+                    trim((string) $candidate->bill_number) === $idTitTrans
+            );
+
+            if (!$bill) {
+                throw new \Exception(
+                    "RegistrarEnvios: el título {$idTitTrans} no pertenece al shipment {$shipment->shipment_number}."
+                );
+            }
+
+            if ($bill->is_fractional) {
+                throw new \Exception(
+                    "RegistrarEnvios: BL {$idTitTrans} es fraccionado y la aplicación no posee el dato que identifica inequívocamente la última fracción."
+                );
+            }
+            if ($bill->shipmentItems->isEmpty()) {
+                throw new \Exception(
+                    "RegistrarEnvios: BL {$idTitTrans} no tiene ítems reales."
+                );
+            }
+
+            $idDecla = trim((string) $bill->id_decla);
+            if ($idDecla === '' || mb_strlen($idDecla) > 16) {
+                throw new \Exception(
+                    "RegistrarEnvios: BL {$idTitTrans} no tiene idDecla real de hasta 16 caracteres."
+                );
+            }
+
+            $montoFob = $this->micDtaDecimal(
+                $bill->declared_value,
+                "RegistrarEnvios: BL {$idTitTrans} montoFob"
+            );
+            $montoFlete = $this->micDtaDecimal(
+                $bill->freight_amount,
+                "RegistrarEnvios: BL {$idTitTrans} montoFlete"
+            );
+            $montoSeguro = $this->micDtaDecimal(
+                $bill->insurance_amount,
+                "RegistrarEnvios: BL {$idTitTrans} montoSeg"
+            );
+
+            $originOperative = trim((string) (
+                $bill->origin_operative_code
+                ?: \App\Models\AfipOperativeLocation::where(
+                    'port_id',
+                    $voyage->originPort->id
+                )
+                    ->where('is_active', true)
+                    ->value('location_code')
+            ));
+            if ($originOperative === '' || mb_strlen($originOperative) > 5) {
+                throw new \Exception(
+                    "RegistrarEnvios: BL {$idTitTrans} no tiene codLugOper de origen válido."
+                );
+            }
+
+            $destinationOperative = trim((string) (
+                $bill->operational_discharge_code
+                ?: \App\Models\AfipOperativeLocation::where(
+                    'port_id',
+                    $voyage->destinationPort->id
+                )
+                    ->where('is_active', true)
+                    ->value('location_code')
+            ));
+            if (mb_strlen($destinationOperative) > 9) {
+                throw new \Exception(
+                    "RegistrarEnvios: BL {$idTitTrans} codLugOper de destino supera 9 caracteres."
+                );
+            }
+
+            $ataTaxId = preg_replace(
+                '/[^0-9]/',
+                '',
+                (string) $this->company->tax_id
+            );
+            if ($ataTaxId === '' || strlen($ataTaxId) > 14) {
+                throw new \Exception(
+                    'RegistrarEnvios: idFiscalATAMIC ausente o inválido.'
+                );
+            }
+
             $wsaa = $this->getWSAATokens();
-
-            // Códigos de lugares operativos desde puertos
-            // Buscar lugar operativo vinculado al puerto de origen
-            $operativeLocationOrigen = \App\Models\AfipOperativeLocation::where('port_id', $voyage->originPort?->id)
-                ->where('is_active', true)
-                ->first();
-            $codLugOperOrigen = $operativeLocationOrigen?->location_code ?? '001';
-            $codCiuOrigen = $voyage->originPort?->code ?? 'ARBUE';
-            // Buscar lugar operativo vinculado al puerto de destino
-            $operativeLocationDest = \App\Models\AfipOperativeLocation::where('port_id', $voyage->destinationPort?->id)
-                ->where('is_active', true)
-                ->first();
-            $codLugOperDest = $operativeLocationDest?->location_code ?? '001';
-            $codCiuDest = $voyage->destinationPort?->code ?? 'PYASU';
-
-            // Crear XMLWriter
             $w = new \XMLWriter();
             $w->openMemory();
             $w->startDocument('1.0', 'UTF-8');
-
-            // Envelope SOAP (mismo estilo que RegistrarTitEnvios exitoso)
-            $w->startElementNs('SOAP-ENV', 'Envelope', 'http://schemas.xmlsoap.org/soap/envelope/');
-            $w->writeAttribute('xmlns:xsd', 'http://www.w3.org/2001/XMLSchema');
-            $w->writeAttribute('xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+            $w->startElementNs(
+                'SOAP-ENV',
+                'Envelope',
+                'http://schemas.xmlsoap.org/soap/envelope/'
+            );
+            $w->writeAttribute(
+                'xmlns:xsd',
+                'http://www.w3.org/2001/XMLSchema'
+            );
+            $w->writeAttribute(
+                'xmlns:xsi',
+                'http://www.w3.org/2001/XMLSchema-instance'
+            );
 
             $w->startElementNs('SOAP-ENV', 'Body', null);
-                $w->startElement('RegistrarEnvios');
-                $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
+            $w->startElement('RegistrarEnvios');
+            $w->writeAttribute('xmlns', self::AFIP_NAMESPACE);
 
-                // === AUTENTICACIÓN (igual que RegistrarTitEnvios) ===
-                $w->startElement('argWSAutenticacionEmpresa');
-                    $w->writeElement('Token', $wsaa['token']);
-                    $w->writeElement('Sign', $wsaa['sign']);
-                    $w->writeElement('CuitEmpresaConectada', preg_replace('/[^0-9]/', '', $this->company->tax_id));
-                    $w->writeElement('TipoAgente', 'TRSP');
-                    $w->writeElement('Rol', 'TRSP');
+            $w->startElement('argWSAutenticacionEmpresa');
+            $w->writeElement('Token', trim((string) $wsaa['token']));
+            $w->writeElement('Sign', trim((string) $wsaa['sign']));
+            $w->writeElement('CuitEmpresaConectada', $ataTaxId);
+            $w->writeElement('TipoAgente', 'TRSP');
+            $w->writeElement('Rol', 'TRSP');
+            $w->endElement();
+
+            $w->startElement('argRegistrarEnviosParam');
+            $w->writeElement('idTransaccion', $transactionId);
+            $w->writeElement('idTitTrans', $idTitTrans);
+
+            $w->startElement('envios');
+            $w->startElement('Envio');
+            $w->startElement('destinaciones');
+            $w->startElement('Destinacion');
+            $w->writeElement('idDecla', $idDecla);
+            $w->writeElement('montoFob', $montoFob);
+            $w->writeElement('montoFlete', $montoFlete);
+            $w->writeElement('montoSeg', $montoSeguro);
+
+            $currency = strtoupper(trim((string) $bill->currency_code));
+            if ($currency !== '') {
+                if (mb_strlen($currency) !== 3) {
+                    throw new \Exception(
+                        "RegistrarEnvios: BL {$idTitTrans} currency_code debe tener 3 caracteres."
+                    );
+                }
+                $w->writeElement('codDivisaFob', $currency);
+                $w->writeElement('codDivisaFle', $currency);
+                $w->writeElement('codDivisaSeg', $currency);
+            }
+
+            $w->startElement('items');
+            foreach ($bill->shipmentItems as $item) {
+                $line = $item->line_number;
+                if (
+                    $line === null
+                    || !is_numeric($line)
+                    || (int) $line < 1
+                    || (int) $line > 9999
+                ) {
+                    throw new \Exception(
+                        "RegistrarEnvios: BL {$idTitTrans} tiene nroItem inválido."
+                    );
+                }
+                if (
+                    $item->gross_weight_kg === null
+                    || !is_numeric($item->gross_weight_kg)
+                    || (float) $item->gross_weight_kg < 0
+                ) {
+                    throw new \Exception(
+                        "RegistrarEnvios: BL {$idTitTrans}, línea {$line}: peso inválido."
+                    );
+                }
+
+                $w->startElement('Item');
+                $w->writeElement('nroItem', (string) (int) $line);
+                $w->writeElement(
+                    'peso',
+                    number_format(
+                        (float) $item->gross_weight_kg,
+                        4,
+                        '.',
+                        ''
+                    )
+                );
+
+                if ($bill->is_transit_transshipment) {
+                    $ncm = trim((string) $item->tariff_position);
+                    if ($ncm === '' || mb_strlen($ncm) > 10) {
+                        throw new \Exception(
+                            "RegistrarEnvios: BL {$idTitTrans}, línea {$line}: indNCM es obligatorio para transbordo."
+                        );
+                    }
+                    $w->writeElement('indNCM', $ncm);
+                }
+
+                $imo = trim((string) $item->imdg_class);
+                if ($item->is_dangerous_goods) {
+                    if ($imo === '' || mb_strlen($imo) > 3) {
+                        throw new \Exception(
+                            "RegistrarEnvios: BL {$idTitTrans}, línea {$line}: codIMO es obligatorio para mercadería peligrosa."
+                        );
+                    }
+                    $w->writeElement('codIMO', $imo);
+                } elseif ($imo !== '' && mb_strlen($imo) <= 3) {
+                    $w->writeElement('codIMO', $imo);
+                }
+
                 $w->endElement();
+            }
+            $w->endElement(); // items
 
-                // === PARÁMETROS REGISTRAR ENVIOS ===
-                $w->startElement('argRegistrarEnviosParam');
-                    
-                    // idTransaccion - máximo 15 caracteres
-                    $w->writeElement('idTransaccion', substr($transactionId, 0, 15));
-                    
-                    // idTitTrans - ID del título YA REGISTRADO (obligatorio)
-                    $w->writeElement('idTitTrans', $idTitTrans);
+            $invoiceDocuments = \App\Models\VoyageAttachment::where(
+                    'bill_of_lading_id',
+                    $bill->id
+                )
+                ->get()
+                ->filter(fn ($attachment) =>
+                    $attachment->getDocumentTypeCode() === '380'
+                );
 
-                    // === ENVÍOS ===
-                    $w->startElement('envios');
-                    
-                    $envioIndex = 1;
-                    $allContainers = collect();
-
-                   foreach ($billsOfLading as $bol) {
-                        // Códigos AFIP desde el BL (prioridad) o fallback
-                        $bolCodLugOperOrigen = $bol->origin_operative_code ?: $codLugOperOrigen;
-                        //$bolCodLugOperDest = $bol->operational_discharge_code ?: $codLugOperDest;
-                        $bolCodLugOperDest = str_pad($bol->operational_discharge_code ?: $codLugOperDest, 3, '0', STR_PAD_LEFT);
-                        
-                        // Validar campo obligatorio id_decla
-                        if (empty($bol->permiso_embarque)) {
-                            throw new \Exception("BL {$bol->bill_number} no tiene Permiso de Embarque. Campo obligatorio para AFIP.");
-                        }
-
-                        $w->startElement('Envio');
-
-                            // === DESTINACIONES ===
-                            $w->startElement('destinaciones');
-                                $w->startElement('Destinacion');
-                                    
-                                    // idDecla - Obligatorio C(16)
-                                    $w->writeElement('idDecla', $bol->id_decla);
-                                    
-                                    // Montos - Obligatorios N(18,2) - Cliente usa 0
-                                    $w->writeElement('montoFob', '0');
-                                    $w->writeElement('montoFlete', '0');
-                                    $w->writeElement('montoSeg', '0');
-                                    
-                                    // Códigos divisa - Cliente los envía vacíos
-                                    $w->writeElement('codDivisaFob', '');
-                                    $w->writeElement('codDivisaFle', '');
-                                    $w->writeElement('codDivisaSeg', '');
-
-                                    // === ITEMS ===
-                                    $w->startElement('items');
-                                    
-                                    if ($bol->shipmentItems->isNotEmpty()) {
-                                        $itemIndex = 1;
-                                        foreach ($bol->shipmentItems as $item) {
-                                            $w->startElement('Item');
-                                                // nroItem - Obligatorio C(4)
-                                                $w->writeElement('nroItem', (string)$itemIndex);
-                                                // peso - Obligatorio N(12,4)
-                                                $peso = $item->gross_weight_kg ?? 0;
-                                                $w->writeElement('peso', number_format($peso, 4, '.', ''));
-                                            $w->endElement(); // Item
-                                            $itemIndex++;
-                                        }
-                                    } else {
-                                        // Al menos un item con datos del BL
-                                        $w->startElement('Item');
-                                            $w->writeElement('nroItem', '1');
-                                            $peso = $bol->gross_weight_kg ?? 1;
-                                            $w->writeElement('peso', number_format($peso, 4, '.', ''));
-                                        $w->endElement();
-                                    }
-                                    
-                                    $w->endElement(); // items
-
-                                    // === BULTOS (orden exacto del cliente) ===
-                                    $w->startElement('bultos');
-                                    
-                                    if ($bol->shipmentItems->isNotEmpty()) {
-                                        foreach ($bol->shipmentItems as $item) {
-                                            $itemContainers = $item->containers ?? collect();
-                                            
-                                            if ($itemContainers->isEmpty()) {
-                                                // Bulto SIN contenedor (carga suelta)
-                                                $this->writeBultoElement($w, $item, null);
-                                            } else {
-                                                // Bulto CON contenedor(es)
-                                                foreach ($itemContainers as $container) {
-                                                    $this->writeBultoElement($w, $item, $container);
-                                                    $allContainers->push($container);
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        // Bulto por defecto desde BL
-                                        $this->writeBultoFromBol($w, $bol);
-                                    }
-                                    
-                                    $w->endElement(); // bultos
-
-                                $w->endElement(); // Destinacion
-                            $w->endElement(); // destinaciones
-
-                            // === CAMPOS OBLIGATORIOS DEL ENVÍO ===
-                            
-                            // indUltFra - Obligatorio C(1) - S/N
-                            $w->writeElement('indUltFra', 'S');
-                            
-                            // idFiscalATAMIC - Obligatorio C(14)
-                            $w->writeElement('idFiscalATAMIC', preg_replace('/[^0-9]/', '', $this->company->tax_id));
-                            
-                            // lugOperOrigen - Obligatorio
-                            $w->startElement('lugOperOrigen');
-                                $w->writeElement('codLugOper', $bolCodLugOperOrigen);
-                                $w->writeElement('codCiu', $codCiuOrigen);
-                            $w->endElement();
-
-                            // lugOperDestino - Obligatorio
-                            $w->startElement('lugOperDestino');
-                                $w->writeElement('codLugOper', $bolCodLugOperDest);
-                                $w->writeElement('codCiu', $codCiuDest);
-                            $w->endElement();
-                            
-                            // idEnvio - Obligatorio N(3) - AL FINAL
-                            $w->writeElement('idEnvio', (string)$envioIndex);
-
-                        $w->endElement(); // Envio
-                        $envioIndex++;
+            if ($invoiceDocuments->isNotEmpty()) {
+                $w->startElement('docAnexos');
+                foreach ($invoiceDocuments as $attachment) {
+                    $documentNumber = trim((string) $attachment->document_number);
+                    if (
+                        $documentNumber === ''
+                        || mb_strlen($documentNumber) > 39
+                    ) {
+                        throw new \Exception(
+                            "RegistrarEnvios: BL {$idTitTrans} tiene factura comercial sin número válido."
+                        );
                     }
-                    
-                    $w->endElement(); // envios
+                    $w->startElement('DocAnexo');
+                    $w->writeElement('codTipDoc', '380');
+                    $w->writeElement('documento', $documentNumber);
+                    $w->endElement();
+                }
+                $w->endElement();
+            }
 
-                    // === CONTENEDORES (opcional, al final si hay) ===
-                    $uniqueContainers = $allContainers->unique('id');
-                    if ($uniqueContainers->isNotEmpty()) {
-                        $w->startElement('contenedores');
-                        foreach ($uniqueContainers as $container) {
-                            $this->writeContenedorElement($w, $container);
-                        }
-                        $w->endElement(); // contenedores
+            $allContainers = collect();
+            $w->startElement('bultos');
+            foreach ($bill->shipmentItems as $item) {
+                if ($item->containers->isEmpty()) {
+                    $this->writeMicDtaBulto(
+                        $w,
+                        $item,
+                        null,
+                        $idTitTrans,
+                        false
+                    );
+                    continue;
+                }
+
+                foreach ($item->containers as $container) {
+                    if (
+                        strtoupper(trim((string) $container->condition)) === 'V'
+                    ) {
+                        throw new \Exception(
+                            "RegistrarEnvios: BL {$idTitTrans} contiene un contenedor vacío; debe tratarse como título de contenedor vacío."
+                        );
                     }
 
-                $w->endElement(); // argRegistrarEnviosParam
-                $w->endElement(); // RegistrarEnvios
+                    $this->writeMicDtaBulto(
+                        $w,
+                        $item,
+                        $container,
+                        $idTitTrans,
+                        false
+                    );
+                    $allContainers->push($container);
+                }
+            }
+            $w->endElement(); // bultos
+            $w->endElement(); // Destinacion
+            $w->endElement(); // destinaciones
+
+            $w->writeElement('indUltFra', 'S');
+            $w->writeElement('idFiscalATAMIC', $ataTaxId);
+
+            $w->startElement('lugOperOrigen');
+            $w->writeElement('codLugOper', $originOperative);
+            $w->writeElement('codCiu', $codCiuOrigen);
+            $w->endElement();
+
+            $w->startElement('lugOperDestino');
+            if ($destinationOperative !== '') {
+                $w->writeElement('codLugOper', $destinationOperative);
+            }
+            $w->writeElement('codCiu', $codCiuDest);
+            $w->endElement();
+
+            $w->writeElement('idEnvio', '1');
+            $w->endElement(); // Envio
+            $w->endElement(); // envios
+
+            $uniqueContainers = $allContainers
+                ->unique('container_number')
+                ->values();
+            if ($uniqueContainers->isNotEmpty()) {
+                $w->startElement('contenedores');
+                foreach ($uniqueContainers as $container) {
+                    $this->writeMicDtaContainer(
+                        $w,
+                        $container,
+                        'RegistrarEnvios'
+                    );
+                }
+                $w->endElement();
+            }
+
+            $w->endElement(); // argRegistrarEnviosParam
+            $w->endElement(); // RegistrarEnvios
             $w->endElement(); // Body
             $w->endElement(); // Envelope
-
             $w->endDocument();
-            
-            $xmlContent = $w->outputMemory();
-            
-            \Log::info("XML RegistrarEnvios generado correctamente", [
-                'bls_count' => $billsOfLading->count(),
-                'containers_count' => $uniqueContainers->count(),
-                'xml_length' => strlen($xmlContent),
-            ]);
-            
-            return $xmlContent;
+
+            return $w->outputMemory();
 
         } catch (Exception $e) {
-            \Log::error('Error en createRegistrarEnviosXml: ' . $e->getMessage());
+            \Log::error(
+                'Error en createRegistrarEnviosXml: ' . $e->getMessage()
+            );
             throw $e;
         }
-    }
-
-    /**
-     * Helper: Escribir elemento Bulto con orden exacto del cliente
-     * 
-     * Orden: cantBultos → cantBultosTotFrac → pesoBruto → pesoBrutoTotFrac →
-     *        codTipEmbalaje → descMercaderia → marcaNro → indCargSuelt → idContenedor
-     */
-    private function writeBultoElement(\XMLWriter $w, \App\Models\ShipmentItem $item, ?\App\Models\Container $container = null): void
-    {
-        $pivot = $container?->pivot ?? null;
-        
-        // Obtener valores de pivot si existe, sino del item
-        $pesoBruto = $pivot?->gross_weight_kg ?? $item->gross_weight_kg ?? 0;
-
-        // Cuando hay contenedor, cantBultos = 0 según AFIP
-        // Cuando es carga suelta, usar la cantidad real
-        $cantBultos = $container ? 0 : ($pivot?->package_quantity ?? $item->package_quantity ?? 1);
-
-        // Asegurar mínimos solo para carga suelta
-        if (!$container) {
-            $cantBultos = max(1, (int)$cantBultos);
-        }
-        $pesoBruto = max(0, (float)$pesoBruto);
-
-        $w->startElement('Bulto');
-            
-            // cantBultos - Obligatorio N(9)
-            $w->writeElement('cantBultos', (string)$cantBultos);
-            
-            // cantBultosTotFrac - Obligatorio N(9) - mismo valor si no fraccionado
-            $w->writeElement('cantBultosTotFrac', (string)$cantBultos);
-            
-            // pesoBruto - Obligatorio N(14,4)
-            $w->writeElement('pesoBruto', number_format($pesoBruto, 4, '.', ''));
-            
-            // pesoBrutoTotFrac - Obligatorio N(14,4) - mismo valor si no fraccionado
-            $w->writeElement('pesoBrutoTotFrac', number_format($pesoBruto, 4, '.', ''));
-            
-            // codTipEmbalaje - Obligatorio C(2) - EDIFACT 7065
-            // TEMPORAL: ZW hardcodeado para pruebas AFIP - TODO: implementar lógica completa
-            $codEmbalaje = $container ? 'ZW' : ($item->packagingType?->argentina_ws_code ?? 'BG');
-            $w->writeElement('codTipEmbalaje', $codEmbalaje);
-            
-            // descMercaderia - Obligatorio C(500)
-            $descripcion = $item->item_description ?? 'MERCADERIA GENERAL';
-            $w->writeElement('descMercaderia', substr($descripcion, 0, 500));
-            
-            // marcaNro - Opcional C(100) - Cliente usa "S/M"
-            $marcas = $item->cargo_marks ?? 'S/M';
-            $w->writeElement('marcaNro', substr($marcas, 0, 100));
-            
-            // indCargSuelt - Obligatorio C(1) - S/N
-            $indCargSuelt = $container ? 'N' : 'S';
-            $w->writeElement('indCargSuelt', $indCargSuelt);
-            
-            // idContenedor - Opcional C(16) - solo si hay contenedor
-            if ($container && !empty($container->container_number)) {
-                $w->writeElement('idContenedor', $container->container_number);
-            }
-
-        $w->endElement(); // Bulto
-    }
-
-    /**
-     * Helper: Escribir Bulto desde BillOfLading (cuando no hay items)
-     */
-    private function writeBultoFromBol(\XMLWriter $w, \App\Models\BillOfLading $bol): void
-    {
-        // Detectar si es carga containerizada
-        $isContainerized = $bol->primaryCargoType?->packaging_type === 'containerized';
-        $cantBultos = $isContainerized ? 0 : max(1, (int)($bol->total_packages ?? 1));
-        $pesoBruto = max(0, (float)($bol->gross_weight_kg ?? 0));
-
-        $w->startElement('Bulto');
-            $w->writeElement('cantBultos', (string)$cantBultos);
-            $w->writeElement('cantBultosTotFrac', (string)$cantBultos);
-            $w->writeElement('pesoBruto', number_format($pesoBruto, 4, '.', ''));
-            $w->writeElement('pesoBrutoTotFrac', number_format($pesoBruto, 4, '.', ''));
-            $w->writeElement('codTipEmbalaje', $bol->primaryPackagingType?->argentina_ws_code ?? 'CN');
-            $w->writeElement('descMercaderia', substr($bol->cargo_description ?? 'MERCADERIA GENERAL', 0, 500));
-            $w->writeElement('marcaNro', substr($bol->cargo_marks ?? 'S/M', 0, 100));
-            $w->writeElement('indCargSuelt', 'S');
-        $w->endElement();
-    }
-
-    /**
-     * Helper: Escribir elemento Contenedor
-     */
-    private function writeContenedorElement(\XMLWriter $w, \App\Models\Container $container): void
-    {
-        $w->startElement('Contenedor');
-            
-            // id - número del contenedor
-            $w->writeElement('id', $container->container_number);
-            
-            // codMedida - código ISO del contenedor (ej: 22G1, 42G1)
-            $codMedida = $container->argentina_container_code ?? $container->container_type ?? '22G1';
-            $w->writeElement('codMedida', $codMedida);
-            
-            // condicion AFIP: H=house(casa a casa), P=pier(muelle a muelle)
-            $condicion = $container->container_condition ?: 'H';
-            $w->writeElement('condicion', $condicion);
-            
-            // precintos - opcional
-            $precinto = $container->shipper_seal ?? $container->carrier_seal ?? $container->customs_seal;
-            if ($precinto) {
-                $w->startElement('precintos');
-                    $w->writeElement('precinto', $precinto);
-                $w->endElement();
-            }
-
-        $w->endElement(); // Contenedor
     }
 
     /**
@@ -960,7 +1575,7 @@ class SimpleXmlGenerator
             if (!$vessel) {
                 throw new \Exception('Voyage debe tener embarcación asignada');
             }
-            $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
+            $tipEmb = $this->mapVesselType($vessel->vesselType?->code);
             if (!$captain && $tipEmb !== 'BAR') {
                 throw new \Exception('Voyage debe tener capitán asignado');
             }
@@ -1011,7 +1626,7 @@ class SimpleXmlGenerator
                         $this->writeTransportistaElement($w);
                         
                         // === propVehiculo (obligatorio) ===
-                        $this->writePropVehiculoElement($w);
+                        $this->writePropVehiculoElement($w, $vessel);
                         
                         // === Determinar si este shipment va en lastre ===
                         $esLastre = false;
@@ -1031,7 +1646,7 @@ class SimpleXmlGenerator
                         $w->writeElement('indEnLastre', $esLastre ? 'S' : 'N');
                         
                         // === conductores (datos del capitán - NO enviar para barcazas) ===
-                        $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
+                        $tipEmb = $this->mapVesselType($vessel->vesselType?->code);
                         if ($tipEmb !== 'BAR') {
                             $this->writeConductoresElement($w, $captain);
                         }
@@ -1039,13 +1654,27 @@ class SimpleXmlGenerator
                         // === Secciones de carga: OMITIR si va en lastre (AFIP error 27171) ===
                         if (!$esLastre) {
                             // === cargasSueltasIdTrack (TRACKs de carga suelta) ===
-                            $this->writeCargasSueltasIdTrack($w, $voyage);
+                            $this->writeCargasSueltasIdTrack(
+                                $w,
+                                $voyage,
+                                $tracks,
+                                $shipment
+                            );
                             
                             // === titTransContVaciosIdTrack (TRACKs de contenedores vacíos) ===
-                            $this->writeTitTransContVaciosIdTrack($w, $tracks);
+                            $this->writeTitTransContVaciosIdTrack(
+                                $w,
+                                $voyage,
+                                $tracks,
+                                $shipment
+                            );
                             
                             // === contenedoresConCarga (IDs de contenedores con carga) ===
-                            $this->writeContenedoresConCarga($w, $voyage);
+                            $this->writeContenedoresConCarga(
+                                $w,
+                                $voyage,
+                                $shipment
+                            );
                         }
                         
                         // === rutasInf (ruta informática obligatoria) ===
@@ -1053,10 +1682,19 @@ class SimpleXmlGenerator
                         $firstBol = $shipment?->billsOfLading->first()
                                 ?? $voyage->shipments->first()?->billsOfLading->first() 
                                 ?? $voyage->billsOfLading->first();
-                        $codLugOperOrigen = $firstBol?->origin_operative_code ?: '10073';
-                        $codLugOperDest = str_pad($firstBol?->operational_discharge_code ?: '001', 3, '0', STR_PAD_LEFT);
+                        $codLugOperOrigen = trim((string) (
+                            $firstBol?->origin_operative_code
+                        ));
+                        $codLugOperDest = trim((string) (
+                            $firstBol?->operational_discharge_code
+                        ));
 
-                        $this->writeRutasInf($w, $voyage, $codLugOperOrigen, $codLugOperDest);
+                        $this->writeRutasInf(
+                            $w,
+                            $voyage,
+                            $codLugOperOrigen !== '' ? $codLugOperOrigen : null,
+                            $codLugOperDest !== '' ? $codLugOperDest : null
+                        );
                         
                         // === embarcacion (obligatorio) ===
                         $this->writeEmbarcacionElement($w, $vessel, $voyage);
@@ -1090,26 +1728,42 @@ class SimpleXmlGenerator
      */
     private function writeTransportistaElement(\XMLWriter $w): void
     {
+        $name = trim((string) ($this->company->legal_name ?? $this->company->name));
+        $address = trim((string) $this->company->address);
+        $country = strtoupper(trim((string) $this->company->country));
+        $taxId = preg_replace('/[^0-9]/', '', (string) $this->company->tax_id);
+
+        if ($name === '' || mb_strlen($name) > 50) {
+            throw new \Exception('RegistrarMicDta: nombre del transportista ausente o mayor a 50 caracteres.');
+        }
+        if ($address === '' || mb_strlen($address) > 150) {
+            throw new \Exception('RegistrarMicDta: domicilio del transportista ausente o mayor a 150 caracteres.');
+        }
+        if (!preg_match('/^[A-Z]{2}$/', $country)) {
+            throw new \Exception('RegistrarMicDta: codPais del transportista debe ser ISO alfa-2.');
+        }
+        if ($taxId === '' || strlen($taxId) > 14) {
+            throw new \Exception('RegistrarMicDta: idFiscal del transportista ausente o mayor a 14 dígitos.');
+        }
+
         $w->startElement('transportista');
-            // nombre (obligatorio, C50)
-            $w->writeElement('nombre', substr(htmlspecialchars($this->company->legal_name ?? $this->company->name), 0, 50));
-            
-            // domicilio (obligatorio - estructura completa requerida por AFIP)
+            $w->writeElement('nombre', $name);
+
             $w->startElement('domicilio');
-                $w->writeElement('ciudad', substr($this->company->city ?? 'S/D', 0, 50));
-                $w->writeElement('codPostal', substr($this->company->postal_code ?? '0000', 0, 8));
-                $w->writeElement('estado', substr($this->company->state ?? 'BUENOS AIRES', 0, 50));
-                $w->writeElement('nombreCalle', substr($this->company->address ?? 'S/D', 0, 150));
+                if (trim((string) $this->company->city) !== '') {
+                    $w->writeElement('ciudad', mb_substr(trim((string) $this->company->city), 0, 50));
+                }
+                if (trim((string) $this->company->postal_code) !== '') {
+                    $w->writeElement('codPostal', mb_substr(trim((string) $this->company->postal_code), 0, 8));
+                }
+                if (trim((string) $this->company->state) !== '') {
+                    $w->writeElement('estado', mb_substr(trim((string) $this->company->state), 0, 50));
+                }
+                $w->writeElement('nombreCalle', $address);
             $w->endElement();
-            
-            // codPais (obligatorio, C2 - ISO 3166-1 Alfa 2)
-            $w->writeElement('codPais', 'AR');
-            
-            // idFiscal (obligatorio, C14 - CUIT)
-            $cuit = preg_replace('/[^0-9]/', '', $this->company->tax_id);
-            $w->writeElement('idFiscal', $cuit);
-            
-            // tipTrans (obligatorio, C1 - R=Regular, O=Ocasional)
+
+            $w->writeElement('codPais', $country);
+            $w->writeElement('idFiscal', $taxId);
             $w->writeElement('tipTrans', 'R');
         $w->endElement();
     }
@@ -1117,26 +1771,64 @@ class SimpleXmlGenerator
     /**
      * Escribe elemento PropVehiculo según AFIP
      */
-    private function writePropVehiculoElement(\XMLWriter $w): void
+    private function writePropVehiculoElement(\XMLWriter $w, $vessel): void
     {
+        $owner = $vessel?->owner;
+        if (!$owner) {
+            throw new \Exception(
+                'RegistrarMicDta: la embarcación no tiene propietario asociado.'
+            );
+        }
+
+        $owner->loadMissing('country');
+
+        $name = trim((string) ($owner->legal_name ?: $owner->commercial_name));
+        $address = trim((string) $owner->address);
+        $country = strtoupper(trim((string) $owner->country?->alpha2_code));
+        $taxId = preg_replace('/[^0-9]/', '', (string) $owner->tax_id);
+
+        if ($name === '' || mb_strlen($name) > 50) {
+            throw new \Exception(
+                'RegistrarMicDta: nombre del propietario de la embarcación ausente o mayor a 50 caracteres.'
+            );
+        }
+        if ($address === '' || mb_strlen($address) > 150) {
+            throw new \Exception(
+                'RegistrarMicDta: domicilio del propietario de la embarcación ausente o mayor a 150 caracteres.'
+            );
+        }
+        if (!preg_match('/^[A-Z]{2}$/', $country)) {
+            throw new \Exception(
+                'RegistrarMicDta: codPais del propietario de la embarcación debe ser ISO alfa-2.'
+            );
+        }
+        if ($taxId === '' || strlen($taxId) > 14) {
+            throw new \Exception(
+                'RegistrarMicDta: idFiscal del propietario de la embarcación ausente o mayor a 14 dígitos.'
+            );
+        }
+
         $w->startElement('propVehiculo');
-            // nombre (obligatorio, C50)
-            $w->writeElement('nombre', substr(htmlspecialchars($this->company->legal_name ?? $this->company->name), 0, 50));
-            
-            // domicilio (obligatorio - estructura completa requerida por AFIP)
+            $w->writeElement('nombre', $name);
+
             $w->startElement('domicilio');
-                $w->writeElement('ciudad', substr($this->company->city ?? 'S/D', 0, 50));
-                $w->writeElement('codPostal', substr($this->company->postal_code ?? '0000', 0, 8));
-                $w->writeElement('estado', substr($this->company->state ?? 'BUENOS AIRES', 0, 50));
-                $w->writeElement('nombreCalle', substr($this->company->address ?? 'S/D', 0, 150));
+                if (trim((string) $owner->city) !== '') {
+                    $w->writeElement(
+                        'ciudad',
+                        mb_substr(trim((string) $owner->city), 0, 50)
+                    );
+                }
+                if (trim((string) $owner->postal_code) !== '') {
+                    $w->writeElement(
+                        'codPostal',
+                        mb_substr(trim((string) $owner->postal_code), 0, 8)
+                    );
+                }
+                $w->writeElement('nombreCalle', $address);
             $w->endElement();
-            
-            // codPais (obligatorio, C2)
-            $w->writeElement('codPais', 'AR');
-            
-            // idFiscal (obligatorio, C14)
-            $cuit = preg_replace('/[^0-9]/', '', $this->company->tax_id);
-            $w->writeElement('idFiscal', $cuit);
+
+            $w->writeElement('codPais', $country);
+            $w->writeElement('idFiscal', $taxId);
         $w->endElement();
     }
 
@@ -1145,19 +1837,37 @@ class SimpleXmlGenerator
      */
     private function writeConductoresElement(\XMLWriter $w, $captain): void
     {
+        $nombre = trim((string) (
+            $captain?->full_name
+            ?: trim(
+                (string) $captain?->first_name
+                . ' '
+                . (string) $captain?->last_name
+            )
+        ));
+        if ($nombre === '' || mb_strlen($nombre) > 150) {
+            throw new \Exception(
+                'RegistrarMicDta: nombre del capitán ausente o mayor a 150 caracteres.'
+            );
+        }
+
+        $tipDoc = $this->mapDocumentType($captain?->document_type);
+        $nroDoc = preg_replace(
+            '/[^0-9A-Za-z]/',
+            '',
+            (string) $captain?->document_number
+        );
+        if ($nroDoc === '' || strlen($nroDoc) > 16) {
+            throw new \Exception(
+                'RegistrarMicDta: documento del capitán ausente o mayor a 16 caracteres.'
+            );
+        }
+
         $w->startElement('conductores');
             $w->startElement('Conductor');
-                // nombre (obligatorio, C150)
-                $nombre = $captain->full_name ?? trim($captain->first_name . ' ' . $captain->last_name);
-                $w->writeElement('nombre', substr(htmlspecialchars($nombre), 0, 150));
-                
-                // tipDocIdent (obligatorio, C3) - DNI, PAS, CI, etc.
-                $tipDoc = $this->mapDocumentType($captain->document_type ?? 'DNI');
+                $w->writeElement('nombre', $nombre);
                 $w->writeElement('tipDocIdent', $tipDoc);
-                
-                // nroDocIdent (obligatorio, C16)
-                $nroDoc = preg_replace('/[^0-9A-Za-z]/', '', $captain->document_number ?? '');
-                $w->writeElement('nroDocIdent', substr($nroDoc, 0, 16));
+                $w->writeElement('nroDocIdent', $nroDoc);
             $w->endElement();
         $w->endElement();
     }
@@ -1167,13 +1877,17 @@ class SimpleXmlGenerator
      */
     private function mapDocumentType(?string $type): string
     {
-        return match(strtoupper($type ?? 'DNI')) {
+        $normalized = strtoupper(trim((string) $type));
+
+        return match($normalized) {
             'DNI' => 'DNI',
             'PASSPORT', 'PASAPORTE', 'PAS' => 'PAS',
             'CI', 'CEDULA' => 'CI',
             'LE', 'LIBRETA' => 'LE',
             'LC' => 'LC',
-            default => 'DNI'
+            default => throw new \Exception(
+                "RegistrarMicDta: tipo de documento del capitán '{$normalized}' no soportado."
+            ),
         };
     }
 
@@ -1197,122 +1911,138 @@ class SimpleXmlGenerator
      * @param \XMLWriter $w
      * @param Voyage $voyage Para detectar si hay carga suelta real
      */
-    private function writeCargasSueltasIdTrack(\XMLWriter $w, Voyage $voyage): void
-    {
-        // Obtener items SIN contenedor (carga suelta real)
-        $itemsSinContenedor = $voyage->shipments()
-            ->with('billsOfLading.shipmentItems.containers')
-            ->get()
-            ->flatMap(fn($s) => $s->billsOfLading)
-            ->flatMap(fn($bl) => $bl->shipmentItems)
-            ->filter(fn($item) => $item->containers->isEmpty());
-        
-        // Solo escribir el elemento si hay items sin contenedor
-        // AFIP no acepta el elemento vacío
+    private function writeCargasSueltasIdTrack(
+        \XMLWriter $w,
+        Voyage $voyage,
+        array $tracks,
+        ?\App\Models\Shipment $shipment = null
+    ): void {
+        $shipments = $shipment
+            ? collect([$shipment->loadMissing('billsOfLading.shipmentItems.containers')])
+            : $voyage->shipments()
+                ->with('billsOfLading.shipmentItems.containers')
+                ->get();
+
+        $itemsSinContenedor = $shipments
+            ->flatMap(fn ($currentShipment) => $currentShipment->billsOfLading)
+            ->flatMap(fn ($bill) => $bill->shipmentItems)
+            ->filter(fn ($item) => $item->containers->isEmpty());
+
         if ($itemsSinContenedor->isEmpty()) {
-            \Log::info('cargasSueltasIdTrack OMITIDO - todos los items tienen contenedor', [
-                'voyage_id' => $voyage->id,
-            ]);
-            return; // No escribir nada
+            return;
         }
-        
-        // Hay carga suelta, generar IDs únicos
+
+        $trackIds = $tracks['carga_suelta']
+            ?? $tracks['cargas_sueltas']
+            ?? [];
+
+        $trackIds = collect(is_array($trackIds) ? $trackIds : [])
+            ->map(fn ($track) => trim((string) $track))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($trackIds->isEmpty()) {
+            throw new \Exception(
+                'RegistrarMicDta: hay carga suelta pero no se informaron TRACKs reales de RegistrarEnvios.'
+            );
+        }
+
         $w->startElement('cargasSueltasIdTrack');
-        
-        $year = date('Y');
-        $country = 'AR';
-        $usedIds = [];
-        
-        foreach ($itemsSinContenedor as $index => $item) {
-            // Generar ID único por item de carga suelta
-            // Formato AFIP: YYYYAR99999999X (16 chars)
-            $sequence = str_pad($index + 1, 8, '0', STR_PAD_LEFT);
-            $baseId = $year . $country . $sequence;
-            
-            // Calcular dígito verificador simple
-            $checkDigit = $this->calculateTrackCheckDigit($baseId);
-            $uniqueId = $baseId . $checkDigit;
-            
-            // Evitar duplicados dentro del mismo envío
-            if (!in_array($uniqueId, $usedIds)) {
-                $w->writeElement('cargaSueltaIdTrack', $uniqueId);
-                $usedIds[] = $uniqueId;
-            }
+        foreach ($trackIds as $trackId) {
+            $w->writeElement('cargaSueltaIdTrack', $trackId);
         }
-        
         $w->endElement();
-        
-        \Log::info('cargasSueltasIdTrack generados para carga suelta', [
-            'voyage_id' => $voyage->id,
-            'items_sin_contenedor' => $itemsSinContenedor->count(),
-            'ids_generados' => $usedIds,
-        ]);
     }
     
     /**
-     * Calcula dígito verificador para Track ID (formato AFIP)
-     */
-    private function calculateTrackCheckDigit(string $baseId): string
-    {
-        $sum = 0;
-        for ($i = 0; $i < strlen($baseId); $i++) {
-            $char = $baseId[$i];
-            if (is_numeric($char)) {
-                $sum += (int)$char;
-            } else {
-                $sum += ord($char) - 64; // A=1, B=2, etc.
-            }
-        }
-        $remainder = $sum % 36;
-        
-        // Devolver letra si >= 10, sino número
-        if ($remainder >= 10) {
-            return chr(55 + $remainder); // 10=A, 11=B, etc.
-        }
-        return (string)$remainder;
-    }
-
-    /**
      * Escribe TRACKs de títulos de contenedores vacíos
      */
-    private function writeTitTransContVaciosIdTrack(\XMLWriter $w, array $tracks): void
-    {
-        $tracksContVacios = $tracks['cont_vacios'] ?? $tracks['contenedores_vacios'] ?? [];
-        
-        // Solo escribir el elemento si hay contenedores vacíos
-        if (!empty($tracksContVacios) && is_array($tracksContVacios)) {
-            $w->startElement('titTransContVaciosIdTrack');
-            foreach ($tracksContVacios as $trackId) {
-                if (is_string($trackId) || is_numeric($trackId)) {
-                    $w->writeElement('titTransContVacioIdTrack', (string)$trackId);
-                }
-            }
-            $w->endElement();
+    private function writeTitTransContVaciosIdTrack(
+        \XMLWriter $w,
+        Voyage $voyage,
+        array $tracks,
+        ?\App\Models\Shipment $shipment = null
+    ): void {
+        $shipments = $shipment
+            ? collect([$shipment->loadMissing('billsOfLading.shipmentItems.containers')])
+            : $voyage->shipments()
+                ->with('billsOfLading.shipmentItems.containers')
+                ->get();
+
+        $hasEmptyContainers = $shipments
+            ->flatMap(fn ($currentShipment) => $currentShipment->billsOfLading)
+            ->flatMap(fn ($bill) => $bill->shipmentItems)
+            ->flatMap(fn ($item) => $item->containers)
+            ->contains(fn ($container) =>
+                strtoupper(trim((string) $container->condition)) === 'V'
+            );
+
+        if (!$hasEmptyContainers) {
+            return;
         }
+
+        $trackIds = $tracks['cont_vacios']
+            ?? $tracks['contenedores_vacios']
+            ?? [];
+
+        $trackIds = collect(is_array($trackIds) ? $trackIds : [])
+            ->map(fn ($track) => trim((string) $track))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($trackIds->isEmpty()) {
+            throw new \Exception(
+                'RegistrarMicDta: hay contenedores vacíos pero no se informaron TRACKs reales de títulos de contenedores vacíos.'
+            );
+        }
+
+        $w->startElement('titTransContVaciosIdTrack');
+        foreach ($trackIds as $trackId) {
+            $w->writeElement('titTransContVacioIdTrack', $trackId);
+        }
+        $w->endElement();
     }
     /**
      * Escribe IDs de contenedores con carga
      */
-    private function writeContenedoresConCarga(\XMLWriter $w, Voyage $voyage): void
-    {
-        $w->startElement('contenedoresConCarga');
-        
-        // Obtener contenedores del voyage
-        $containers = $voyage->shipments()
-            ->with('billsOfLading.shipmentItems.containers')
-            ->get()
-            ->flatMap(fn($s) => $s->billsOfLading)
-            ->flatMap(fn($bl) => $bl->shipmentItems)
-            ->flatMap(fn($item) => $item->containers ?? collect())
-            ->filter(fn($c) => $c->condition !== 'V') // Solo contenedores con carga (no vacíos)
-            ->unique('container_number');
-        
-        foreach ($containers as $container) {
-            if (!empty($container->container_number)) {
-                $w->writeElement('idCont', substr($container->container_number, 0, 16));
-            }
+    private function writeContenedoresConCarga(
+        \XMLWriter $w,
+        Voyage $voyage,
+        ?\App\Models\Shipment $shipment = null
+    ): void {
+        $shipments = $shipment
+            ? collect([$shipment->loadMissing('billsOfLading.shipmentItems.containers')])
+            : $voyage->shipments()
+                ->with('billsOfLading.shipmentItems.containers')
+                ->get();
+
+        $containers = $shipments
+            ->flatMap(fn ($currentShipment) => $currentShipment->billsOfLading)
+            ->flatMap(fn ($bill) => $bill->shipmentItems)
+            ->flatMap(fn ($item) => $item->containers)
+            ->filter(fn ($container) =>
+                strtoupper(trim((string) $container->condition)) !== 'V'
+            )
+            ->unique('container_number')
+            ->values();
+
+        if ($containers->isEmpty()) {
+            return;
         }
-        
+
+        $w->startElement('contenedoresConCarga');
+        foreach ($containers as $container) {
+            $number = trim((string) $container->container_number);
+            if ($number === '' || mb_strlen($number) > 16) {
+                throw new \Exception(
+                    'RegistrarMicDta: identificador de contenedor con carga ausente o mayor a 16 caracteres.'
+                );
+            }
+
+            $w->writeElement('idCont', $number);
+        }
         $w->endElement();
     }
 
@@ -1320,139 +2050,243 @@ class SimpleXmlGenerator
      * Escribe Ruta Informática según WSDL AFIP
      * ORDEN CORRECTO según XSD: idRefUniTrs, descRutItinerarios, plazo, eventosProg
      */
-    private function writeRutasInf(\XMLWriter $w, Voyage $voyage, string $codLugOperOrigen = '10073', string $codLugOperDest = '001'): void
-    {
+    private function writeRutasInf(
+        \XMLWriter $w,
+        Voyage $voyage,
+        ?string $codLugOperOrigen = null,
+        ?string $codLugOperDest = null
+    ): void {
+        $voyageNumber = trim((string) $voyage->voyage_number);
+        $origin = $voyage->originPort;
+        $destination = $voyage->destinationPort;
+
+        if ($voyageNumber === '') {
+            throw new \Exception('RegistrarMicDta: número de viaje ausente para rutasInf.');
+        }
+        if (!$origin || !$destination) {
+            throw new \Exception('RegistrarMicDta: puertos de origen y destino son obligatorios para rutasInf.');
+        }
+        if (!$voyage->departure_date || !$voyage->estimated_arrival_date) {
+            throw new \Exception('RegistrarMicDta: fechas de partida y arribo son obligatorias para rutasInf.');
+        }
+        if ($voyage->estimated_arrival_date->lt($voyage->departure_date)) {
+            throw new \Exception('RegistrarMicDta: FechaArribo no puede ser anterior a FechaInicioViaje.');
+        }
+
+        $originName = trim((string) $origin->name);
+        $destinationName = trim((string) $destination->name);
+        $originCode = trim((string) $origin->code);
+        $destinationCode = trim((string) $destination->code);
+
+        if ($originName === '' || $destinationName === '') {
+            throw new \Exception('RegistrarMicDta: nombres de puertos ausentes para rutasInf.');
+        }
+
+        $descripcion = sprintf(
+            'Viaje %s: %s (%s) a %s (%s)',
+            $voyageNumber,
+            $originName,
+            $originCode,
+            $destinationName,
+            $destinationCode
+        );
+
+        $plazo = (int) max(
+            1,
+            floor($voyage->departure_date->diffInDays($voyage->estimated_arrival_date))
+        );
+        if ($plazo > 999) {
+            throw new \Exception('RegistrarMicDta: plazo de ruta supera 999 días.');
+        }
+
         $w->startElement('rutasInf');
             $w->startElement('RutInf');
-                
-                // 1. idRefUniTrs - vacío según XML exitoso Roberto
+
+                // Referencia unívoca opcional: el XML exitoso existente la envía vacía.
                 $w->startElement('idRefUniTrs');
                     $w->writeElement('idRefUniTr', '');
                 $w->endElement();
-                
-                // 2. descRutItinerarios (C500)
-                $descripcion = sprintf(
-                    'Viaje %s: %s (%s) a %s (%s)',
-                    $voyage->voyage_number,
-                    $voyage->originPort->name ?? 'ORIGEN',
-                    $voyage->originPort->code ?? 'XXX',
-                    $voyage->destinationPort->name ?? 'DESTINO',
-                    $voyage->destinationPort->code ?? 'XXX'
+
+                $w->writeElement(
+                    'descRutItinerarios',
+                    mb_substr($descripcion, 0, 500)
                 );
-                $w->writeElement('descRutItinerarios', substr($descripcion, 0, 500));
-                
-                // 3. plazo (N3 - días de viaje)
-                $plazo = 1;
-                if ($voyage->departure_date && $voyage->estimated_arrival_date) {
-                    $plazo = (int) max(1, floor($voyage->departure_date->diffInDays($voyage->estimated_arrival_date)));
-                }
-                $w->writeElement('plazo', (string)min($plazo, 999));
-                
-                // 4. eventosProg (mínimo PATAI y FITAI)
-                // Obtener códigos AFIP desde el primer BL del shipment
+                $w->writeElement('plazo', (string) $plazo);
+
                 $w->startElement('eventosProg');
-                    $this->writeEventoProg($w, $voyage->originPort, $voyage->departure_date, 'PATAI', 1, $codLugOperOrigen);
-                    $this->writeEventoProg($w, $voyage->destinationPort, $voyage->estimated_arrival_date, 'FITAI', 2, $codLugOperDest);
+                    $this->writeEventoProg(
+                        $w,
+                        $origin,
+                        $voyage->departure_date,
+                        'PATAI',
+                        1,
+                        $codLugOperOrigen
+                    );
+                    $this->writeEventoProg(
+                        $w,
+                        $destination,
+                        $voyage->estimated_arrival_date,
+                        'FITAI',
+                        2,
+                        $codLugOperDest
+                    );
                 $w->endElement();
-                
-            $w->endElement(); // RutInf
-        $w->endElement(); // rutasInf
+
+            $w->endElement();
+        $w->endElement();
     }
 
     /**
      * Escribe un EventoProg individual
      */
-    private function writeEventoProg(\XMLWriter $w, $port, $fecha, string $tipoEvento, int $orden, ?string $codLugOper = null): void
-    {
+    private function writeEventoProg(
+        \XMLWriter $w,
+        $port,
+        $fecha,
+        string $tipoEvento,
+        int $orden,
+        ?string $codLugOper = null
+    ): void {
+        $tipoEvento = strtoupper(trim($tipoEvento));
+        if (!in_array($tipoEvento, ['PATAI', 'EPTAI', 'FITAI'], true)) {
+            throw new \Exception(
+                "RegistrarMicDta: tipo de evento {$tipoEvento} inválido."
+            );
+        }
+        if ($orden < 1 || $orden > 99) {
+            throw new \Exception('RegistrarMicDta: orden de evento fuera de rango.');
+        }
+
+        $codPais = strtoupper(trim((string) (
+            $port?->country?->alpha2_code
+            ?: $port?->country?->iso2_code
+        )));
+        if (!preg_match('/^[A-Z]{2}$/', $codPais)) {
+            throw new \Exception(
+                'RegistrarMicDta: codPais del evento debe ser ISO alfa-2.'
+            );
+        }
+
         $w->startElement('EventoProg');
-            
-            // codPais (obligatorio, C2)
-            $codPais = $port->country->iso2_code ?? $port->country->alpha2_code ?? 'AR';
-            $w->writeElement('codPais', strtoupper($codPais));
-            
-            // codAdu (obligatorio excepto EPTAI, C9)
-            if ($tipoEvento !== 'EPTAI') {
-                $codAdu = $this->getPortCustomsCode($port->code ?? '');
-                $w->writeElement('codAdu', $codAdu);
+        $w->writeElement('codPais', $codPais);
+
+        if ($tipoEvento !== 'EPTAI') {
+            $portCode = strtoupper(trim((string) $port?->code));
+            if (mb_strlen($portCode) !== 5) {
+                throw new \Exception(
+                    'RegistrarMicDta: codCiu del evento debe tener 5 caracteres.'
+                );
             }
-            
-            // codCiu (obligatorio excepto EPTAI, C5 - UN/LOCODE)
-            if ($tipoEvento !== 'EPTAI') {
-                $w->writeElement('codCiu', substr($port->code ?? 'XXXXX', 0, 5));
+            if (!$fecha) {
+                throw new \Exception(
+                    "RegistrarMicDta: fecha obligatoria para evento {$tipoEvento}."
+                );
             }
-            
-            // codLugOper (obligatorio excepto EPTAI, C9)
-            if ($tipoEvento !== 'EPTAI') {
-                // Para países extranjeros (no AR), usar 001 según tabla AFIP exterior
-                if (strtoupper($codPais) !== 'AR') {
-                    $w->writeElement('codLugOper', '001');
-                } else {
-                    // Buscar lugar operativo vinculado al puerto
-                    $operativeLocation = \App\Models\AfipOperativeLocation::where('port_id', $port->id)
+
+            $w->writeElement(
+                'codAdu',
+                $this->getPortCustomsCode($portCode)
+            );
+            $w->writeElement('codCiu', $portCode);
+
+            $resolvedOperative = trim((string) $codLugOper);
+            if ($resolvedOperative === '' && $codPais === 'AR') {
+                $resolvedOperative = trim((string) (
+                    \App\Models\AfipOperativeLocation::where(
+                        'port_id',
+                        $port->id
+                    )
                         ->where('is_active', true)
-                        ->first();
-                    $codLugOper = $operativeLocation?->location_code ?? '001';
-                    $w->writeElement('codLugOper', $codLugOper);
-                }
+                        ->value('location_code')
+                ));
             }
-            
-            // fecha (obligatorio excepto EPTAI, formato YYYYMMDDHHMMSS + zona horaria)
-            // Ejemplo AFIP: 20080417000000-03
-            // fecha formato AFIP: YYYYMMDD000000-03 (C17 - horas en ceros + zona horaria)
-            if ($tipoEvento !== 'EPTAI' && $fecha) {
-                $fechaFormateada = $fecha->format('Ymd') . '000000-03';
-                $w->writeElement('fecha', $fechaFormateada);
+
+            if ($resolvedOperative === '' && $codPais !== 'AR') {
+                // Regla existente de la aplicación para eventos en exterior.
+                $resolvedOperative = '001';
             }
-            
-            // id (obligatorio, C5 - PATAI/EPTAI/FITAI)
-            $w->writeElement('id', $tipoEvento);
-            
-            // orden (obligatorio, N2)
-            $w->writeElement('orden', (string)$orden);
-            
+
+            if (
+                $resolvedOperative === ''
+                || mb_strlen($resolvedOperative) > 9
+            ) {
+                throw new \Exception(
+                    "RegistrarMicDta: codLugOper ausente o inválido para {$portCode}."
+                );
+            }
+
+            $w->writeElement('codLugOper', $resolvedOperative);
+            $w->writeElement(
+                'fecha',
+                $fecha->format('Ymd') . '000000-03'
+            );
+        }
+
+        $w->writeElement('id', $tipoEvento);
+        $w->writeElement('orden', (string) $orden);
         $w->endElement();
     }
 
     /**
      * Escribe elemento Embarcación según AFIP
      */
-    private function writeEmbarcacionElement(\XMLWriter $w, $vessel, Voyage $voyage): void
-    {
+    private function writeEmbarcacionElement(
+        \XMLWriter $w,
+        $vessel,
+        Voyage $voyage
+    ): void {
+        $codPais = strtoupper(trim((string) (
+            $vessel?->flagCountry?->alpha2_code
+            ?: $vessel?->flagCountry?->iso2_code
+        )));
+        $registration = trim((string) $vessel?->registration_number);
+        $name = trim((string) $vessel?->name);
+
+        if (!preg_match('/^[A-Z]{2}$/', $codPais)) {
+            throw new \Exception(
+                'RegistrarMicDta: país de bandera de la embarcación ausente o inválido.'
+            );
+        }
+        if ($registration === '' || mb_strlen($registration) > 10) {
+            throw new \Exception(
+                'RegistrarMicDta: matrícula de la embarcación ausente o mayor a 10 caracteres.'
+            );
+        }
+        if ($name === '' || mb_strlen($name) > 50) {
+            throw new \Exception(
+                'RegistrarMicDta: nombre de la embarcación ausente o mayor a 50 caracteres.'
+            );
+        }
+
+        $esConvoy = $voyage->shipments->count() > 1;
+        $tipEmb = $this->mapVesselType($vessel?->vesselType?->code);
+        if ($esConvoy && $tipEmb === 'BUM') {
+            $tipEmb = 'EMP';
+        }
+
+        $integraConvoy = $esConvoy ? 'S' : 'N';
+
         $w->startElement('embarcacion');
-            
-            // codPais (obligatorio, C2 - país de bandera)
-            $codPais = $vessel->flagCountry->alpha2_code ?? 'AR';
-            $w->writeElement('codPais', strtoupper($codPais));
-            
-            // id (obligatorio, C10 - matrícula)
-            $w->writeElement('id', substr($vessel->registration_number ?? 'SIN_REG', 0, 10));
-            
-            // nombre (obligatorio, C50)
-            $w->writeElement('nombre', substr(htmlspecialchars($vessel->name ?? 'SIN_NOMBRE'), 0, 50));
-            
-            // Determinar si es convoy (más de 1 embarcación en el viaje)
-            $esConvoy = $voyage->shipments->count() > 1;
-            
-            // tipEmb (obligatorio, C3 - EMP/REM/BUM/BAR)
-            // Contextual: autopropulsado (BUM) como cabecera de convoy → EMP ante AFIP
-            $tipEmb = $this->mapVesselType($vessel->vesselType->code ?? 'BAR');
-            if ($esConvoy && $tipEmb === 'BUM') {
-                $tipEmb = 'EMP';
+        $w->writeElement('codPais', $codPais);
+        $w->writeElement('id', $registration);
+        $w->writeElement('nombre', $name);
+        $w->writeElement('tipEmb', $tipEmb);
+        $w->writeElement('indIntegraConvoy', $integraConvoy);
+
+        if ($integraConvoy === 'S' && $tipEmb === 'BAR') {
+            $ataTaxId = preg_replace(
+                '/[^0-9]/',
+                '',
+                (string) $this->company->tax_id
+            );
+            if ($ataTaxId === '' || strlen($ataTaxId) > 14) {
+                throw new \Exception(
+                    'RegistrarMicDta: idFiscalATARemol ausente o inválido.'
+                );
             }
-            $w->writeElement('tipEmb', $tipEmb);
-            
-            // indIntegraConvoy (obligatorio, S/N)
-            // AFIP: Si el viaje tiene más de 1 embarcación, TODOS integran convoy (S)
-            // Solo autopropulsados que viajan SOLOS llevan indIntegraConvoy=N
-            $integraConvoy = $esConvoy ? 'S' : 'N';
-            $w->writeElement('indIntegraConvoy', $integraConvoy);
-            
-            // idFiscalATARemol (SOLO si integra convoy - CUIT del ATA remolcador)
-            // AFIP: "Si indIntegraConvoy=N, no debe ser informado"
-            if ($integraConvoy === 'S' && $tipEmb === 'BAR') {
-                $w->writeElement('idFiscalATARemol', preg_replace('/[^0-9]/', '', $this->company->tax_id));
-            }
-            
+            $w->writeElement('idFiscalATARemol', $ataTaxId);
+        }
+
         $w->endElement();
     }
 
@@ -1461,12 +2295,25 @@ class SimpleXmlGenerator
      */
     private function mapVesselType(?string $code): string
     {
-        return match(strtoupper($code ?? 'BAR')) {
-            'EMP', 'EMPUJE', 'EMPUJADOR' => 'EMP',
-            'REM', 'REMOLCADOR' => 'REM',
-            'BUM', 'BUQUE', 'BUQUE_MOTOR', 'SELF_CARGO_001' => 'BUM',
-            'BAR', 'BARCAZA' => 'BAR',
-            default => 'BAR'
+        $normalized = strtoupper(trim((string) $code));
+
+        return match($normalized) {
+            'EMP', 'EMPUJE', 'EMPUJADOR',
+            'PUSHER_STD_001', 'PUSHER_HEAVY_001' => 'EMP',
+
+            'REM', 'REMOLCADOR',
+            'TUG_HARBOR_001', 'TUG_RIVER_001' => 'REM',
+
+            'BUM', 'BUQUE', 'BUQUE_MOTOR',
+            'SELF_CARGO_001' => 'BUM',
+
+            'BAR', 'BARCAZA',
+            'BARGE_STD_001', 'BARGE_BULK_001',
+            'BARGE_TANK_001', 'BARGE_MULTI_001' => 'BAR',
+
+            default => throw new \Exception(
+                "RegistrarMicDta: tipo de embarcación '{$normalized}' no soportado."
+            ),
         };
     }
 
@@ -4431,8 +5278,9 @@ class SimpleXmlGenerator
             return $port->afip_code;
         }
         
-        // Default
-        return '033';
+        throw new \Exception(
+            "RegistrarMicDta: no se pudo determinar codAdu para el puerto {$portCode}."
+        );
     }
 
     /**

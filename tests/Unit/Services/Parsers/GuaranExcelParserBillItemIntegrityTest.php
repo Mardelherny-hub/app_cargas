@@ -187,6 +187,18 @@ class GuaranExcelParserBillItemIntegrityTest extends TestCase
         );
     }
 
+    public function test_guaran_bills_are_marked_as_transit_transshipment(): void
+    {
+        $source = file_get_contents(
+            app_path('Services/Parsers/GuaranExcelParser.php')
+        );
+
+        $this->assertStringContainsString(
+            "'is_transit_transshipment' => 'S'",
+            $source
+        );
+    }
+
     public function test_parser_no_longer_has_origin_country_inference_helper(): void
     {
         $this->assertFalse(

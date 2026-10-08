@@ -120,6 +120,83 @@ class TfpTextParserCompat extends TfpTextParser
         );
     }
 
+    /**
+     * Recupera marcas sólo cuando el propio TFP las identifica explícitamente.
+     * También conserva N/M cuando viene como línea propia ("no marks").
+     */
+    protected function extractTfpCargoMarks(?string $text): ?string
+    {
+        $text = (string) $text;
+
+        if (preg_match(
+            '/(?:Marks?\s*(?:and|&)\s*(?:Numbers?|Nos?)|Shipping\s+Marks?|Marks?)'
+            . '[ \t]*:[ \t]*(?:\R[ \t]*)?([^\r\n]+)/i',
+            $text,
+            $matches
+        )) {
+            $marks = trim((string) $matches[1]);
+
+            return $marks !== '' ? $marks : null;
+        }
+
+        if (preg_match('/^\s*(N\/M)\s*$/mi', $text, $matches)) {
+            return strtoupper($matches[1]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Recupera la posición arancelaria sólo de etiquetas explícitas del TFP.
+     * V.470 trae CODARMONIZADO vacío, pero declara NCM y HS CODE en la
+     * descripción de mercadería. No se interpreta ningún número sin etiqueta.
+     */
+    protected function extractTfpTariffPosition(?string $text): ?string
+    {
+        $text = (string) $text;
+
+        /*
+         * La posición AFIP conserva el código que trae la fuente. No se usa
+         * normalizeNcm() aquí porque esa regla histórica reduce commodity_code
+         * a 4+2 dígitos y perdería detalle válido (ej. 2930.90.39).
+         *
+         * El margen de texto entre etiqueta y código cubre variantes reales
+         * como "HS CODE/NCM:151190" y "NCM\nDESCRIPTION\n3923" sin tomar
+         * números que no estén precedidos por una etiqueta arancelaria.
+         */
+        if (!preg_match(
+            '/(?:\bN\.?C\.?M\.?\b|\bHS\s*[- ]?CODES?\b)'
+            . '[^0-9]{0,24}'
+            . '([0-9]{4,15}(?:\.[0-9]{1,4})*)/i',
+            $text,
+            $matches
+        )) {
+            return null;
+        }
+
+        return $this->normalizeTfpTariffPosition($matches[1]);
+    }
+
+    protected function normalizeTfpTariffPosition(?string $raw): ?string
+    {
+        $raw = trim((string) $raw);
+
+        if (!preg_match(
+            '/([0-9]{4,15}(?:\.[0-9]{1,4})*)/',
+            $raw,
+            $matches
+        )) {
+            return null;
+        }
+
+        $value = trim($matches[1]);
+        if (mb_strlen($value) > 16) {
+            return null;
+        }
+
+        return $value;
+    }
+
     protected function createShipmentItem(
         BillOfLading $bill,
         array $data,
@@ -150,15 +227,22 @@ class TfpTextParserCompat extends TfpTextParser
         );
 
         if (
-            !$isEmptyContainerItem
-            && (
-                $packagesRaw === ''
-                || !is_numeric($packagesRaw)
-                || (float) $packagesRaw <= 0
-            )
+            $packagesRaw === ''
+            || !is_numeric($packagesRaw)
+            || (float) $packagesRaw < 0
         ) {
             throw new Exception(
                 'TFP: cantidad de bultos ausente o inválida.'
+            );
+        }
+
+        if (
+            !$hasContainers
+            && !$isEmptyContainerItem
+            && (float) $packagesRaw === 0.0
+        ) {
+            throw new Exception(
+                'TFP: cantidad de bultos debe ser mayor a cero para carga suelta.'
             );
         }
 
@@ -182,12 +266,26 @@ class TfpTextParserCompat extends TfpTextParser
             ? 0.0
             : floatval($grossRaw);
 
+        $cargoMarks = $this->extractTfpCargoMarks($description);
+
+        $tariffPosition = !empty($data['cod_armonizado'])
+            ? $this->normalizeTfpTariffPosition(
+                $data['cod_armonizado']
+            )
+            : $this->extractTfpTariffPosition(
+                $data['naturaleza_mercaderia'] ?? null
+            );
+        $commodityCode = $tariffPosition !== null
+            ? $this->normalizeNcm($tariffPosition)
+            : null;
+
         return ShipmentItem::create([
             'bill_of_lading_id' => $bill->id,
             'line_number' => $lineNumber,
             'item_description' => $description,
             'package_quantity' => $packageQuantity,
             'gross_weight_kg' => $grossWeight,
+            'cargo_marks' => $cargoMarks,
             'net_weight_kg' => null,
             'volume_m3' => isset($data['volumen_total'])
                 && trim((string) $data['volumen_total']) !== ''
@@ -215,12 +313,11 @@ class TfpTextParserCompat extends TfpTextParser
             'package_type_description' => trim(
                 (string) ($data['tipo_embalaje'] ?? '')
             ) ?: null,
-            'commodity_code' => !empty($data['cod_armonizado'])
-                ? $this->normalizeNcm($data['cod_armonizado'])
-                : $this->extractNcmFromText(
-                    $data['naturaleza_mercaderia'] ?? null
-                ),
-            'tariff_position' => null,
+            // commodity_code mantiene la regla histórica TFP
+            // acordada (4+2). tariff_position conserva el código fuente con
+            // su detalle porque alimenta el campo AFIP y admite puntos.
+            'commodity_code' => $commodityCode,
+            'tariff_position' => $tariffPosition,
             'imdg_class' => ($data['imdg'] ?? null) !== null
                 && trim((string) $data['imdg']) !== ''
                     ? trim((string) $data['imdg'])
@@ -241,35 +338,32 @@ class TfpTextParserCompat extends TfpTextParser
         $code = strtoupper(trim($code));
 
         /*
-         * BM ROSA V.468 trae 40OT real. El catálogo base de la aplicación no
-         * define 40OT, pero el criterio histórico ya usado por Guaran para un
-         * tipo comercial sin catálogo específico es conservar el tamaño y usar
-         * el tipo general de ese tamaño. Por eso 40OT cae a 40GP, nunca a 20GP.
-         *
-         * Si el catálogo del entorno sí incorporó 40OT, se conserva exacto.
+         * Si el catálogo real ya conoce el código informado por TFP, se conserva
+         * exactamente. Esto cubre códigos operativos existentes como 20TN,
+         * 40RH y 40OT sin mantener aliases duplicados en el parser.
          */
-        if ($code === '40OT') {
-            $exactOpenTop = ContainerType::where('code', '40OT')
-                ->where('active', true)
-                ->first();
+        $exact = ContainerType::where('code', $code)
+            ->where('active', true)
+            ->first();
 
-            if ($exactOpenTop) {
-                return $exactOpenTop;
-            }
-
-            $this->stats['warnings'][] =
-                "Tipo contenedor '40OT' mapeado a '40GP' por catálogo sin 40OT.";
-
-            $code = '40GP';
+        if ($exact) {
+            return $exact;
         }
 
+        /*
+         * Alias confirmados del formato TFP:
+         * - DV representa el contenedor general del mismo tamaño.
+         * - 40RF aparece en BM ROSA V.470-N y la propia descripción de ambos
+         *   casos declara "40 REEF 9'6". En el catálogo de la aplicación esa
+         *   unidad corresponde a 40RH (reefer High Cube, ISO 45R1).
+         * - 40OT sólo cae a 40GP en entornos históricos donde el catálogo todavía
+         *   no incorporó el Open Top específico.
+         */
         $mapping = [
             '20DV' => '20GP',
             '40DV' => '40GP',
-            '20GP' => '20GP',
-            '40GP' => '40GP',
-            '40HC' => '40HC',
-            '40RH' => '40RH',
+            '40RF' => '40RH',
+            '40OT' => '40GP',
         ];
 
         if (!isset($mapping[$code])) {

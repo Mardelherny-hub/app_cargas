@@ -165,28 +165,51 @@ class SimpleManifestController extends Controller
             
             // 6. PROCESAR RESULTADO Y RESPONDER
             if ($result['success']) {
+                $micDtaIds = array_values(array_filter(
+                    (array) ($result['micdta_ids'] ?? [])
+                ));
+
                 return [
                     'success' => true,
-                    'message' => $method . ' ejecutado exitosamente',
+                    'message' => $result['message']
+                        ?? ($method . ' ejecutado exitosamente'),
+                    'transaction_id' => $result['transaction_id'] ?? null,
+                    'external_reference' => $result['external_reference'] ?? null,
+                    'shipments_processed' => $result['shipments_processed'] ?? null,
+                    'tracks_generated' => $result['tracks_generated'] ?? null,
+                    'tracks_by_shipment' => $result['tracks_by_shipment'] ?? null,
+                    'tracks' => $result['tracks'] ?? null,
+                    'success_details' => $result['success_details'] ?? null,
+                    'has_warning' => $result['has_warning'] ?? false,
+                    'warning_message' => $result['warning_message'] ?? null,
+                    'warning_messages' => $result['warning_messages'] ?? [],
+                    'afip_messages' => $result['afip_messages'] ?? null,
+                    'mic_dta_id' => $result['mic_dta_id']
+                        ?? ($micDtaIds[0] ?? null),
+                    'micdta_ids' => $micDtaIds,
                     'data' => [
                         'transaction_id' => $result['transaction_id'] ?? null,
                         'external_reference' => $result['external_reference'] ?? null,
                         'method' => $method,
                         'timestamp' => now()->toISOString(),
                         'tracks_generated' => $result['tracks_generated'] ?? 0,
-                        'response_data' => $result['response_data'] ?? null
-                    ]
-                ];
-            } else {
-                return [
-                    'success' => false,
-                    'error' => 'Error ejecutando ' . $method,
-                    'details' => $result['error_message'] ?? 'Error desconocido',
-                    'error_code' => $result['error_code'] ?? 'METHOD_EXECUTION_FAILED',
-                    'transaction_id' => $result['transaction_id'] ?? null,
-                    'transaction_record_id' => $result['transaction_record_id'] ?? null
+                        'response_data' => $result['response_data'] ?? null,
+                    ],
                 ];
             }
+
+            return [
+                'success' => false,
+                'error' => 'Error ejecutando ' . $method,
+                'details' => $result['error_message'] ?? 'Error desconocido',
+                'error_code' => $result['error_code']
+                    ?? 'METHOD_EXECUTION_FAILED',
+                'transaction_id' => $result['transaction_id'] ?? null,
+                'transaction_record_id' => $result['transaction_record_id'] ?? null,
+                'validation_errors' => $result['validation_errors'] ?? [],
+                'warnings' => $result['warnings'] ?? [],
+                'afip_messages' => $result['afip_messages'] ?? null,
+            ];
 
         } catch (Exception $e) {
             // LOG CRÍTICO DE ERROR
@@ -1213,12 +1236,19 @@ public function micDtaSend(Request $request, Voyage $voyage)
 
         // 5. PROCESAR RESULTADO
         if ($result['success']) {
+            $micDtaIds = array_values(array_filter(
+                (array) ($result['micdta_ids'] ?? [])
+            ));
+
             return response()->json([
                 'success' => true,
-                'message' => 'MIC/DTA enviado exitosamente',
+                'message' => $result['message']
+                    ?? 'MIC/DTA enviado exitosamente',
                 'data' => [
                     'transaction_id' => $result['transaction_id'] ?? null,
-                    'mic_dta_id' => $result['mic_dta_id'] ?? null,
+                    'mic_dta_id' => $result['mic_dta_id']
+                        ?? ($micDtaIds[0] ?? null),
+                    'mic_dta_ids' => $micDtaIds,
                     'tracks_generated' => $result['tracks_saved'] ?? 0,
                     'timestamp' => now()->toISOString(),
                 ],

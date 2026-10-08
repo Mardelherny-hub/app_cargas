@@ -29,6 +29,12 @@ if ($user) {
                 PDF
             </a>
             @if(in_array('Cargas', $companyRoles))
+                <a href="{{ route('company.bills-of-lading.attachments', $billOfLading) }}"
+                   class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                    Adjuntos
+                </a>
+            @endif
+            @if(in_array('Cargas', $companyRoles))
                 @if($billOfLading->canBeDeleted())
                     <form action="{{ route('company.bills-of-lading.destroy', $billOfLading) }}" 
                           method="POST" 

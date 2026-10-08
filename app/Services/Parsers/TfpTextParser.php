@@ -181,18 +181,57 @@ class TfpTextParser implements ManifestParserInterface
                                 ]
                             );
                         }
+
+                        // CONDICION H/P del TFP es contexto aduanero de la línea,
+                        // no estado físico del activo. Una vez armadas las
+                        // asociaciones, se copia a la línea sólo cuando todos sus
+                        // contenedores fuente coinciden. Si difieren, se deja sin
+                        // completar para que la validación obligue a resolverlo.
+                        foreach ($billItems as $billItem) {
+                            $itemModel = $billItem['model'];
+                            $conditions = $itemModel->containers()
+                                ->get()
+                                ->pluck('container_condition')
+                                ->map(fn ($value) => strtoupper(trim((string) $value)))
+                                ->filter(fn ($value) => in_array($value, ['H', 'P'], true))
+                                ->unique()
+                                ->values();
+
+                            if ($conditions->count() === 1) {
+                                $itemModel->update([
+                                    'container_condition' => $conditions->first(),
+                                ]);
+                            }
+                        }
                     }
 
-                    // Consignar en el BL la descripción y la posición arancelaria
-                    // tomadas del primer ítem (en TFP hay un ítem por BL).
+                    // Consignar en el BL los datos reales recuperados de sus
+                    // líneas. Las marcas sólo se propagan si alguna línea las
+                    // declaró explícitamente; no se fabrica un valor alternativo.
                     if (!empty($billItems)) {
                         $bill->recalculateItemStats();
                         $firstItem = $billItems[0]['model'];
+                        $cargoMarks = null;
+
+                        foreach ($billItems as $billItem) {
+                            $candidate = trim(
+                                (string) $billItem['model']->cargo_marks
+                            );
+                            if ($candidate !== '') {
+                                $cargoMarks = $candidate;
+                                break;
+                            }
+                        }
+
                         $bill->update([
-                            'cargo_description' => $firstItem->item_description ?: $bill->cargo_description,
-                            'commodity_code'    => $firstItem->commodity_code ?: null,
-                            'tariff_position'   => null,
-                            'net_weight_kg'     => null,
+                            'cargo_description' =>
+                                $firstItem->item_description
+                                ?: $bill->cargo_description,
+                            'cargo_marks' => $cargoMarks,
+                            'commodity_code' =>
+                                $firstItem->commodity_code ?: null,
+                            'tariff_position' => null,
+                            'net_weight_kg' => null,
                         ]);
                     }
                 }
@@ -297,6 +336,7 @@ class TfpTextParser implements ManifestParserInterface
             'notificatario_domicilio' => 'NOTIFICATARIODOMICILIO:',
             'notificatario_ruc' => 'NOTIFICATARIORUC:',
             'medio_transp' => 'MEDIOTRANSP:',
+            'cod_puerto_origen' => 'CODPUERTOORIGEN:',
             'cod_puerto_carga' => 'CODPUERTOCARGA:',
             'puerto_carga' => 'PUERTOCARGA:',
             'cod_puerto_descarga' => 'CODPUERTODESCARGA:',
@@ -672,9 +712,33 @@ protected function extractValue(string $scope, string $label): ?string
             }
         }
 
+        $masterBillNumber = trim(
+            (string) ($data['bl_maritimo_numero'] ?? '')
+        );
+
+        /*
+         * ATA-DESC identifica el título madre con su puerto de embarque.
+         * Algunos TFP lo informan expresamente en CODPUERTOORIGEN; otros
+         * (caso real TXT BUE FEEDBACK / INNOVADOR) no traen ese campo y el
+         * único puerto de embarque declarado es CODPUERTOCARGA.
+         *
+         * En ese segundo caso se usa el puerto de carga YA resuelto por el
+         * catálogo (por ejemplo PYSEF -> PYPSE), nunca el alias crudo ni un
+         * puerto inventado.
+         */
+        $sourceMasterLoadingPort = strtoupper(trim(
+            (string) ($data['cod_puerto_origen'] ?? '')
+        ));
+        $masterLoadingPortCode = $sourceMasterLoadingPort !== ''
+            ? $sourceMasterLoadingPort
+            : strtoupper(trim((string) $loadingPort->code));
+
         $bill = BillOfLading::create([
             'shipment_id' => $shipment->id,
             'bill_number' => $data['bl_numero'],
+            'master_bill_number' => $masterBillNumber !== ''
+                ? $masterBillNumber
+                : null,
             'bill_date' => null,
             'loading_date' => null,
             'shipper_id' => $shipper->id,
@@ -682,6 +746,27 @@ protected function extractValue(string $scope, string $label): ?string
             'notify_party_id' => $notify?->id,
             'loading_port_id' => $loadingPort->id,
             'discharge_port_id' => $dischargePort->id,
+            // ATA-DESC requiere el código AFIP de país de destino (PAY_PAIS).
+            // El TFP aporta el puerto estructurado; el país se toma del catálogo
+            // asociado a ese puerto, no de texto libre ni de un default.
+            'destination_country_code' =>
+                $dischargePort->country?->codigo_afip,
+            // ATA-DESC identifica el título madre con puerto de embarque
+            // (5) + número de conocimiento (hasta 18). BLMARITIMONUMERO
+            // conserva el número; CODPUERTOORIGEN conserva el puerto real del
+            // documento madre. Se guarda separado en el JSON ya existente para
+            // no alterar la semántica de master_bill_number.
+            'webservice_data' => (
+                $masterBillNumber !== ''
+                && $masterLoadingPortCode !== ''
+            ) ? [
+                'argentina' => [
+                    'desconsolidated' => [
+                        'master_loading_port_code' =>
+                            $masterLoadingPortCode,
+                    ],
+                ],
+            ] : null,
             // Prioridad: campo TRB de la cabecera; si no viene, el OBS de los
             // contenedores (ver arriba). Este archivo lo trae solo en OBS.
             'permiso_embarque' => !empty($data['trb']) ? $data['trb'] : $permisoEmbarque,

@@ -19,10 +19,39 @@ class VoyageTransferService
     {
         $company = $user->getUserCompany();
 
-        return $user->hasRole('company-admin')
-            && $user->can('voyages.transfer')
-            && $company && $company->active
-            && (int) $company->id === (int) $voyage->company_id;
+        if (
+            !$user->can('voyages.transfer')
+            || !$company
+            || !$company->active
+            || (int) $company->id !== (int) $voyage->company_id
+        ) {
+            return false;
+        }
+
+        if ($user->hasRole('company-admin')) {
+            return true;
+        }
+
+        /*
+         * El permiso operativo "Transferir Cargas" (operators.can_transfer)
+         * debe habilitar la operación real de transferencia del viaje.
+         * Los operadores mantienen además su regla normal de alcance:
+         * sólo pueden operar viajes creados por ellos dentro de una empresa
+         * con rol Cargas.
+         */
+        if (
+            $user->hasRole('user')
+            && $user->isOperator()
+            && $user->userable
+            && $user->userable->active
+            && $user->userable->canTransferBetweenCompanies()
+            && $company->hasRole('Cargas')
+            && (int) $voyage->created_by_user_id === (int) $user->id
+        ) {
+            return true;
+        }
+
+        return false;
     }
 
     public function hasTransmission(Voyage $voyage): bool

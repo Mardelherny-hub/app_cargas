@@ -3,8 +3,10 @@
 namespace Tests\Unit\Services\Webservice;
 
 use App\Models\BillOfLading;
+use App\Models\Client;
 use App\Models\Company;
 use App\Models\Container;
+use App\Models\Country;
 use App\Models\Port;
 use App\Models\ShipmentItem;
 use App\Models\Voyage;
@@ -128,8 +130,8 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         $this->assertStringContainsString('<FechaEmbarque>2026-09-01T00:00:00</FechaEmbarque>', $xml);
         $this->assertStringContainsString('<CodigoPuertoEmbarque>ARBUE</CodigoPuertoEmbarque>', $xml);
         $this->assertStringContainsString('<NumeroConocimiento>HOUSE001</NumeroConocimiento>', $xml);
-        $this->assertStringContainsString('<CodigoPuertoDescarga>PYASU</CodigoPuertoDescarga>', $xml);
-        $this->assertStringContainsString('<CodigoPaisDestino>PY</CodigoPaisDestino>', $xml);
+        $this->assertStringContainsString('<CodigoPuertoDescarga>ARBUE</CodigoPuertoDescarga>', $xml);
+        $this->assertStringContainsString('<CodigoPaisDestino>200</CodigoPaisDestino>', $xml);
         $this->assertStringContainsString('<MarcaBultos>MARCAS HOUSE</MarcaBultos>', $xml);
         $this->assertStringContainsString('<IndicadorConsolidado>S</IndicadorConsolidado>', $xml);
         $this->assertStringContainsString('<IndicadorTransitoTrasbordo>N</IndicadorTransitoTrasbordo>', $xml);
@@ -137,6 +139,10 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         $this->assertStringContainsString('<IndicadorOperadorLogisticoSeguro>N</IndicadorOperadorLogisticoSeguro>', $xml);
         $this->assertStringContainsString('<IndicadorTransitoMonitoreado>N</IndicadorTransitoMonitoreado>', $xml);
         $this->assertStringContainsString('<IndicadorRenar>N</IndicadorRenar>', $xml);
+        $this->assertStringContainsString(
+            '<RazonSocialFowarderExterior>CARGADOR EXTERIOR</RazonSocialFowarderExterior>',
+            $xml
+        );
         $this->assertStringContainsString('<CodigoLugarOperativoDescarga>10073</CodigoLugarOperativoDescarga>', $xml);
         $this->assertStringContainsString('<CodigoAduanaDescarga>001</CodigoAduanaDescarga>', $xml);
 
@@ -144,7 +150,7 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         $this->assertStringContainsString('<NumeroLinea>1</NumeroLinea>', $xml);
         $this->assertStringContainsString('<CodigoEmbalaje>05</CodigoEmbalaje>', $xml);
         $this->assertStringContainsString('<CondicionContenedor>H</CondicionContenedor>', $xml);
-        $this->assertStringContainsString('<CantidadManifestada>10</CantidadManifestada>', $xml);
+        $this->assertStringContainsString('<CantidadManifestada>1</CantidadManifestada>', $xml);
         $this->assertStringContainsString('<PesoVolumenManifestado>1234.56</PesoVolumenManifestado>', $xml);
         $this->assertStringContainsString('<DescripcionMercaderia>REPUESTOS</DescripcionMercaderia>', $xml);
         $this->assertStringContainsString('<NumeroBultos>BULTOS-1</NumeroBultos>', $xml);
@@ -155,7 +161,7 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         $this->assertStringContainsString('<NumeroPrecintoOrigen>PREC123</NumeroPrecintoOrigen>', $xml);
         $this->assertStringContainsString('<Acep>ACEP123</Acep>', $xml);
         $this->assertStringContainsString('<CodigoAduana>001</CodigoAduana>', $xml);
-        $this->assertStringContainsString('<IdentificadorTituloMadre>MASTER001</IdentificadorTituloMadre>', $xml);
+        $this->assertStringContainsString('<IdentificadorTituloMadre>MYKLAMASTER001</IdentificadorTituloMadre>', $xml);
 
         $ordered = [
             '<CodigoLugarOperativoDescarga>',
@@ -213,8 +219,13 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         $loadingPort = new Port();
         $loadingPort->code = 'ARBUE';
 
+        $argentina = new Country();
+        $argentina->alpha2_code = 'AR';
+        $argentina->codigo_afip = '200';
+
         $dischargePort = new Port();
-        $dischargePort->code = 'PYASU';
+        $dischargePort->code = 'ARBUE';
+        $dischargePort->setRelation('country', $argentina);
 
         $container = new Container();
         $container->id = 7;
@@ -251,12 +262,22 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         $item->setRelation('cargoType', null);
         $item->setRelation('containers', collect([$container]));
 
+        $shipper = new Client();
+        $shipper->legal_name = 'CARGADOR EXTERIOR';
+
         $bill = new BillOfLading();
         $bill->id = 9;
         $bill->master_bill_number = 'MASTER001';
+        $bill->webservice_data = [
+            'argentina' => [
+                'desconsolidated' => [
+                    'master_loading_port_code' => 'MYKLA',
+                ],
+            ],
+        ];
         $bill->bill_number = 'HOUSE001';
         $bill->loading_date = '2026-09-01';
-        $bill->destination_country_code = 'PY';
+        $bill->destination_country_code = '200';
         $bill->cargo_marks = 'MARCAS HOUSE';
         $bill->is_consolidated = 'S';
         $bill->is_transit_transshipment = 'N';
@@ -268,6 +289,7 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         $bill->discharge_customs_code = '001';
         $bill->setRelation('loadingPort', $loadingPort);
         $bill->setRelation('dischargePort', $dischargePort);
+        $bill->setRelation('shipper', $shipper);
         $bill->setRelation('transshipmentPort', null);
         $bill->setRelation('consignee', null);
         $bill->setRelation('notifyParty', null);

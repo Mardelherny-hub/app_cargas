@@ -111,16 +111,15 @@ class ArgentinaDeconsolidatedController extends Controller
             : null;
         $acep = $acep === '' ? null : $acep;
 
-        if (!$expiry && !$acep) {
-            return redirect()
-                ->route('company.simple.desconsolidado.show', $voyage)
-                ->withInput()
-                ->withErrors([
-                    'container_customs' =>
-                        'El contenedor debe tener Fecha de vencimiento CSC o ACEP para ATA-DESC.',
-                ]);
-        }
-
+        /*
+         * Regla confirmada para IA/ATA-DESC:
+         * - si se informa CSC o ACEP, se conserva ese dato real;
+         * - si no se informa ninguno, el generador calcula
+         *   FechaVencimientoContenedor = FechaArribo + 480 días.
+         *
+         * Por eso este formulario permite guardar sólo H/P sin obligar al
+         * operador a inventar un documento de contenedor.
+         */
         if ($expiry && $acep) {
             return redirect()
                 ->route('company.simple.desconsolidado.show', $voyage)

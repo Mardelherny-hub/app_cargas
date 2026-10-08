@@ -268,6 +268,7 @@ class MicdtaReportService
                         'cargo_marks' => $bill->cargo_marks ?? '',
                         'declared_value' => collect($bill->shipmentItems)->sum('declared_value'),
                         'currency_code' => $bill->currency_code ?? 'USD',
+                        'export_permit' => $bill->permiso_embarque ?? '',
                         'customs_remarks' => $bill->customs_remarks ?? '',
                         'is_transit' => $bill->is_transit_transshipment === 'S',
                         'items' => $items,

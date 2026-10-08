@@ -79,7 +79,7 @@
             <span class="label">Page No.</span>
             <span class="value page-number-placeholder">&nbsp;</span>
         </td>
-        <td rowspan="2" style="width:13%; text-align:center; vertical-align:middle">
+        <td style="width:13%; text-align:center; vertical-align:middle">
             <div style="font-size:8pt; font-weight:bold">{{ $voyage['company_name'] }}</div>
             @if(!empty($voyage['company_commercial_name']))
                 <div class="small">{{ $voyage['company_commercial_name'] }}</div>
@@ -107,15 +107,6 @@
             <span class="label">Port of Destination</span>
             <span class="value">{{ $group['final_destination_port'] }}</span>
         </td>
-    </tr>
-    <tr>
-        <td colspan="6">
-            <span class="label">Datos de Registro de la Embarcación</span>
-            <span class="value">
-                @if(!empty($voyage['vessel_registration'])) Matrícula: {{ $voyage['vessel_registration'] }} @endif
-                @if(!empty($voyage['vessel_imo'])) &nbsp; IMO: {{ $voyage['vessel_imo'] }} @endif
-            </span>
-        </td>
         <td>
             <span class="label">Date of Sailing</span>
             <span class="value">{{ $voyage['departure_date'] }}</span>
@@ -135,105 +126,64 @@
     </thead>
     <tbody>
     @foreach($group['bills'] as $bill)
-        @if(count($bill['items']) > 0)
-            @foreach($bill['items'] as $item)
-                <tr>
-                    <td class="parties">
-                        <div><strong>Sh)</strong> <span class="party-name">{{ $bill['shipper']['company_name'] ?? $bill['shipper_name'] }}</span></div>
-                        @if(!empty($bill['shipper']['address']))<div>{{ $bill['shipper']['address'] }}</div>@endif
-                        @if(!empty($bill['shipper']['tax_id']))<div>CUIT/RUC: {{ $bill['shipper']['tax_id'] }}</div>@endif
-                        <br>
-                        <div><strong>Co)</strong> <span class="party-name">{{ $bill['consignee']['company_name'] ?? $bill['consignee_name'] }}</span></div>
-                        @if(!empty($bill['consignee']['address']))<div>{{ $bill['consignee']['address'] }}</div>@endif
-                        @if(!empty($bill['consignee']['tax_id']))<div>CUIT/RUC: {{ $bill['consignee']['tax_id'] }}</div>@endif
-                        <br>
-                        <div><strong>No)</strong> <span class="party-name">{{ $bill['notify']['company_name'] ?? 'No aplica' }}</span></div>
-                        @if(!empty($bill['notify']['address']))<div>{{ $bill['notify']['address'] }}</div>@endif
-                        @if(!empty($bill['notify']['tax_id']))<div>CUIT/RUC: {{ $bill['notify']['tax_id'] }}</div>@endif
-                    </td>
-                    <td class="bl">{{ $bill['bill_number'] }}</td>
-                    <td class="marks">
-                        @if($loop->first && !empty($bill['cargo_marks']))
-                            <div class="container-line">{{ $bill['cargo_marks'] }}</div>
-                        @endif
-                        @foreach($item['containers'] as $container)
-                            <div class="container-line">
-                                {{ $container['number'] }}
-                                @if(!empty($container['type'])) {{ $container['type'] }} @endif
-                                @if(!empty($container['seals']))<br><span class="small">{{ $container['seals'] }}</span>@endif
-                            </div>
-                        @endforeach
-                    </td>
-                    <td class="goods">
-                        <div class="item">
-                            @if(!empty($item['quantity'])){{ $item['quantity'] }} @endif
-                            {{ $item['package_type'] ?: 'BULTOS' }}
-                            @if(!empty($item['description']))<br>{{ $item['description'] }}@endif
-                            @if(!empty($item['commodity_code']))<br>HS/NCM: {{ $item['commodity_code'] }}@endif
-                            @if(!empty($item['net_weight_kg']))<br>NET WEIGHT: {{ number_format((float)$item['net_weight_kg'], 3, '.', '') }} KGS @endif
-                            @if($loop->first && !empty($bill['final_destination_port']) && $bill['final_destination_port'] !== $bill['discharge_port'])
-                                <br>DESTINO FINAL: {{ $bill['final_destination_port'] }}
-                            @endif
-                        </div>
-                    </td>
-                    <td class="weight">
-                        @if($item['gross_weight_kg'] !== null)
-                            {{ number_format((float)$item['gross_weight_kg'], 3, '.', '') }}
-                        @endif
-                    </td>
-                    <td class="measure">
-                        @if($item['volume_m3'] !== null)
-                            {{ number_format((float)$item['volume_m3'], 3, '.', '') }}
-                        @endif
-                    </td>
-                </tr>
-            @endforeach
-        @else
-            @php
-                $fallbackContainers = collect($bill['containers'] ?? []);
-                if ($fallbackContainers->isEmpty()) {
-                    $fallbackContainers = collect([null]);
-                }
-            @endphp
-            @foreach($fallbackContainers as $container)
-                <tr>
-                    <td class="parties">
-                        <div><strong>Sh)</strong> <span class="party-name">{{ $bill['shipper']['company_name'] ?? $bill['shipper_name'] }}</span></div>
-                        <div><strong>Co)</strong> <span class="party-name">{{ $bill['consignee']['company_name'] ?? $bill['consignee_name'] }}</span></div>
-                        <div><strong>No)</strong> <span class="party-name">{{ $bill['notify']['company_name'] ?? 'No aplica' }}</span></div>
-                    </td>
-                    <td class="bl">{{ $bill['bill_number'] }}</td>
-                    <td class="marks">
-                        @if($loop->first && !empty($bill['cargo_marks']))
-                            <div class="container-line">{{ $bill['cargo_marks'] }}</div>
-                        @endif
-                        @if($container)
-                            <div class="container-line">
-                                {{ $container['number'] }}
-                                @if(!empty($container['type'])) {{ $container['type'] }} @endif
-                                @if(!empty($container['seals']))<br><span class="small">{{ $container['seals'] }}</span>@endif
-                            </div>
-                        @endif
-                    </td>
-                    <td class="goods">
-                        @if($loop->first)
-                            <div>{{ $bill['total_packages'] }} BULTOS</div>
-                            <div>{{ $bill['cargo_description'] }}</div>
-                            @if(!empty($bill['commodity_code']))<div>HS/NCM: {{ $bill['commodity_code'] }}</div>@endif
-                            @if(!empty($bill['final_destination_port']) && $bill['final_destination_port'] !== $bill['discharge_port'])
-                                <div>DESTINO FINAL: {{ $bill['final_destination_port'] }}</div>
-                            @endif
-                        @endif
-                    </td>
-                    <td class="weight">
-                        @if($loop->first){{ number_format((float)$bill['gross_weight_kg'], 3, '.', '') }}@endif
-                    </td>
-                    <td class="measure">
-                        @if($loop->first){{ number_format((float)$bill['volume_m3'], 3, '.', '') }}@endif
-                    </td>
-                </tr>
-            @endforeach
-        @endif
+        <tr>
+            <td class="parties">
+                <div><strong>Sh)</strong> <span class="party-name">{{ $bill['shipper']['company_name'] ?? $bill['shipper_name'] }}</span></div>
+                @if(!empty($bill['shipper']['address']))<div>{{ $bill['shipper']['address'] }}</div>@endif
+                @if(!empty($bill['shipper']['tax_id']))<div>CUIT/RUC: {{ $bill['shipper']['tax_id'] }}</div>@endif
+                <br>
+                <div><strong>Co)</strong> <span class="party-name">{{ $bill['consignee']['company_name'] ?? $bill['consignee_name'] }}</span></div>
+                @if(!empty($bill['consignee']['address']))<div>{{ $bill['consignee']['address'] }}</div>@endif
+                @if(!empty($bill['consignee']['tax_id']))<div>CUIT/RUC: {{ $bill['consignee']['tax_id'] }}</div>@endif
+                <br>
+                <div><strong>No)</strong> <span class="party-name">{{ $bill['notify']['company_name'] ?? 'No aplica' }}</span></div>
+                @if(!empty($bill['notify']['address']))<div>{{ $bill['notify']['address'] }}</div>@endif
+                @if(!empty($bill['notify']['tax_id']))<div>CUIT/RUC: {{ $bill['notify']['tax_id'] }}</div>@endif
+            </td>
+
+            <td class="bl">{{ $bill['bill_number'] }}</td>
+
+            <td class="marks">
+                @if(!empty($bill['cargo_marks']))
+                    <div class="container-line">{{ $bill['cargo_marks'] }}</div>
+                @endif
+                @foreach($bill['containers'] as $container)
+                    <div class="container-line">
+                        {{ $container['number'] }}
+                        @if(!empty($container['type'])) {{ $container['type'] }} @endif
+                        @if(!empty($container['seals']))<br><span class="small">{{ $container['seals'] }}</span>@endif
+                    </div>
+                @endforeach
+            </td>
+
+            <td class="goods">
+                @forelse($bill['items'] as $item)
+                    <div class="item">
+                        @if($item['quantity'] !== null){{ $item['quantity'] }} @endif
+                        {{ $item['package_type'] ?: 'BULTOS' }}
+                        @if(!empty($item['description']))<br>{{ $item['description'] }}@endif
+                        @if(!empty($item['commodity_code']))<br>HS/NCM: {{ $item['commodity_code'] }}@endif
+                        @if($item['net_weight_kg'] !== null)<br>NET WEIGHT: {{ number_format((float)$item['net_weight_kg'], 3, '.', '') }} KGS @endif
+                    </div>
+                @empty
+                    <div>{{ $bill['total_packages'] }} BULTOS</div>
+                    <div>{{ $bill['cargo_description'] }}</div>
+                    @if(!empty($bill['commodity_code']))<div>HS/NCM: {{ $bill['commodity_code'] }}</div>@endif
+                @endforelse
+
+                @if(!empty($bill['final_destination_port']) && $bill['final_destination_port'] !== $bill['discharge_port'])
+                    <div>DESTINO FINAL: {{ $bill['final_destination_port'] }}</div>
+                @endif
+            </td>
+
+            <td class="weight">
+                {{ number_format((float)$bill['gross_weight_kg'], 3, '.', '') }}
+            </td>
+
+            <td class="measure">
+                {{ number_format((float)$bill['volume_m3'], 3, '.', '') }}
+            </td>
+        </tr>
     @endforeach
     </tbody>
 </table>

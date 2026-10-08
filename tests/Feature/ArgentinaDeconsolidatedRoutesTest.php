@@ -91,6 +91,36 @@ class ArgentinaDeconsolidatedRoutesTest extends TestCase
         }
     }
 
+    public function test_container_customs_ui_keeps_arrival_plus_480_fallback(): void
+    {
+        $controller = file_get_contents(
+            app_path(
+                'Http/Controllers/Company/Simple/'
+                . 'ArgentinaDeconsolidatedController.php'
+            )
+        );
+        $view = file_get_contents(
+            resource_path('views/company/simple/desconsolidado/show.blade.php')
+        );
+
+        $this->assertStringNotContainsString(
+            'El contenedor debe tener Fecha de vencimiento CSC o ACEP',
+            $controller
+        );
+        $this->assertStringContainsString(
+            '$hasCalculatedExpiry',
+            $view
+        );
+        $this->assertStringContainsString(
+            'addDays(480)',
+            $view
+        );
+        $this->assertStringNotContainsString(
+            'no se completa automáticamente',
+            $view
+        );
+    }
+
     public function test_http_matching_neutralizes_legacy_read_and_write_endpoints(): void
     {
         $routes = app('router')->getRoutes();

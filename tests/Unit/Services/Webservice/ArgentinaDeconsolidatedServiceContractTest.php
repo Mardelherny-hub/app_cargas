@@ -5,8 +5,11 @@ namespace Tests\Unit\Services\Webservice;
 use App\Models\BillOfLading;
 use App\Models\Company;
 use App\Models\Container;
+use App\Models\Country;
+use App\Models\Port;
 use App\Models\ShipmentItem;
 use App\Models\User;
+use App\Models\Voyage;
 use App\Services\Simple\ArgentinaDeconsolidatedService;
 use App\Services\Webservice\Argentina\SimpleXmlGeneratorDesconsolidado;
 use Exception;
@@ -175,6 +178,132 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
     }
 
     #[Test]
+    public function non_consolidated_tariff_position_requires_seven_to_fifteen_characters(): void
+    {
+        $shortItem = new ShipmentItem();
+        $shortItem->id = 101;
+        $shortItem->tariff_position = '3923';
+
+        $consolidated = new BillOfLading();
+        $consolidated->id = 9;
+        $consolidated->is_consolidated = 'S';
+        $consolidated->setRelation(
+            'shipmentItems',
+            collect([$shortItem])
+        );
+
+        $this->assertSame(
+            '3923',
+            $this->generatorPrivate(
+                'tariffPositionForBill',
+                [$consolidated]
+            )
+        );
+
+        $nonConsolidated = new BillOfLading();
+        $nonConsolidated->id = 10;
+        $nonConsolidated->is_consolidated = 'N';
+        $nonConsolidated->setRelation(
+            'shipmentItems',
+            collect([$shortItem])
+        );
+
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage(
+            'entre 7 y 15 caracteres cuando IndicadorConsolidado=N'
+        );
+
+        $this->generatorPrivate(
+            'tariffPositionForBill',
+            [$nonConsolidated]
+        );
+    }
+
+    #[Test]
+    public function afip_country_code_requires_exactly_three_characters(): void
+    {
+        $this->assertSame(
+            '221',
+            $this->generatorPrivate(
+                'exactLengthString',
+                ['221', 'CodigoPaisDestino', 3]
+            )
+        );
+
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage(
+            'CodigoPaisDestino debe tener 3 caracteres'
+        );
+
+        $this->generatorPrivate(
+            'exactLengthString',
+            ['PY', 'CodigoPaisDestino', 3]
+        );
+    }
+
+    #[Test]
+    public function ata_desc_rejects_a_non_argentine_discharge_port(): void
+    {
+        $paraguay = new Country();
+        $paraguay->alpha2_code = 'PY';
+        $paraguay->codigo_afip = '221';
+
+        $port = new Port();
+        $port->code = 'PYPSE';
+        $port->setRelation('country', $paraguay);
+
+        $bill = new BillOfLading();
+        $bill->id = 9;
+        $bill->destination_country_code = '221';
+        $bill->setRelation('dischargePort', $port);
+
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage(
+            'ATA-DESC exige que el puerto de descarga pertenezca a Argentina'
+        );
+
+        $this->generatorPrivate(
+            'validateArgentinaDestination',
+            [$bill, 'BL 9']
+        );
+    }
+
+    #[Test]
+    public function master_title_identifier_uses_parent_port_plus_master_number(): void
+    {
+        $bill = new BillOfLading();
+        $bill->id = 9;
+        $bill->master_bill_number = '266597428';
+        $bill->webservice_data = [
+            'argentina' => [
+                'desconsolidated' => [
+                    'master_loading_port_code' => 'MYKLA',
+                ],
+            ],
+        ];
+
+        $this->assertSame(
+            'MYKLA266597428',
+            $this->generatorPrivate('masterTitleIdentifier', [$bill])
+        );
+    }
+
+    #[Test]
+    public function master_title_identifier_does_not_invent_missing_parent_port(): void
+    {
+        $bill = new BillOfLading();
+        $bill->id = 9;
+        $bill->master_bill_number = '266597428';
+
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage(
+            'CodigoPuertoEmbarque del título madre'
+        );
+
+        $this->generatorPrivate('masterTitleIdentifier', [$bill]);
+    }
+
+    #[Test]
     public function csc_expiry_satisfies_the_container_document_requirement(): void
     {
         $container = $this->container();
@@ -231,7 +360,27 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
     }
 
     #[Test]
-    public function generic_expiry_date_is_not_used_as_an_acep_or_csc_expiry_substitute(): void
+    public function origin_seal_longer_than_35_is_omitted_without_truncation(): void
+    {
+        $container = $this->container();
+        $container->csc_expiry_date = '2030-01-01';
+        $container->shipper_seal = str_repeat('A', 36);
+
+        $bill = $this->billWithContainer($container, ['H']);
+        $xml = $this->writeContainersXml($bill);
+
+        $this->assertStringNotContainsString(
+            '<NumeroPrecintoOrigen>',
+            $xml
+        );
+        $this->assertStringNotContainsString(
+            str_repeat('A', 35),
+            $xml
+        );
+    }
+
+    #[Test]
+    public function missing_csc_and_acep_use_arrival_plus_480_days_and_ignore_generic_expiry_date(): void
     {
         $container = $this->container();
         $container->expiry_date = '2030-01-01';
@@ -240,9 +389,20 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
 
         $bill = $this->billWithContainer($container, ['P']);
 
-        $this->expectException(Exception::class);
-        $this->expectExceptionMessage('debe informar FechaVencimientoContenedor o ACEP');
-        $this->generatorPrivate('validateContainer', [$container, $bill]);
+        $voyage = new Voyage();
+        $voyage->estimated_arrival_date = '2026-10-01';
+
+        $xml = $this->writeContainersXml($bill, $voyage);
+
+        $this->assertStringContainsString(
+            '<FechaVencimientoContenedor>2028-01-24T00:00:00</FechaVencimientoContenedor>',
+            $xml
+        );
+        $this->assertStringNotContainsString(
+            '<FechaVencimientoContenedor>2030-01-01T00:00:00</FechaVencimientoContenedor>',
+            $xml
+        );
+        $this->assertStringNotContainsString('<Acep>', $xml);
     }
 
     #[Test]
@@ -374,10 +534,21 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
         return $bill;
     }
 
-    private function writeContainersXml(BillOfLading $bill): string
-    {
-        $reflection = new ReflectionClass(SimpleXmlGeneratorDesconsolidado::class);
+    private function writeContainersXml(
+        BillOfLading $bill,
+        ?Voyage $voyage = null
+    ): string {
+        $reflection = new ReflectionClass(
+            SimpleXmlGeneratorDesconsolidado::class
+        );
         $generator = $reflection->newInstanceWithoutConstructor();
+
+        if ($voyage !== null) {
+            $property = $reflection->getProperty('voyage');
+            $property->setAccessible(true);
+            $property->setValue($generator, $voyage);
+        }
+
         $method = $reflection->getMethod('writeContainers');
         $method->setAccessible(true);
 

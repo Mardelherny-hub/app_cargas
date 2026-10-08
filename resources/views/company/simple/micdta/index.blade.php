@@ -50,11 +50,11 @@
                         <div class="mt-2 text-sm text-blue-700">
                             <p class="mb-2">El envío MIC/DTA sigue un proceso secuencial automático:</p>
                             <ol class="list-decimal list-inside space-y-1 ml-4">
-                                <li><strong>RegistrarTitEnvios:</strong> Genera TRACKs por cada shipment</li>
-                                <li><strong>RegistrarMicDta:</strong> Usa los TRACKs del paso anterior</li>
+                                <li><strong>RegistrarTitEnvios:</strong> Registra los títulos con sus envíos y recupera los TRACKs reales devueltos por AFIP</li>
+                                <li><strong>RegistrarMicDta:</strong> Usa únicamente esos TRACKs reales para registrar el MIC/DTA</li>
                             </ol>
                             <p class="mt-2 text-xs">
-                                <strong>Nota:</strong> Ambos pasos se ejecutan automáticamente en una sola operación.
+                                <strong>Nota:</strong> RegistrarEnvios se utiliza sólo cuando corresponde agregar nuevos envíos a un título ya registrado.
                             </p>
                         </div>
                     </div>
@@ -146,17 +146,7 @@
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Estado MIC/DTA
                                     </th>
-                                    
-                                    {{-- 🆕 NUEVA COLUMNA: Estado GPS --}}
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        <div class="flex items-center">
-                                            <svg class="w-4 h-4 mr-1 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                                                <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
-                                            </svg>
-                                            GPS AFIP
-                                        </div>
-                                    </th>
-                                    
+
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Acciones
                                     </th>
@@ -200,24 +190,7 @@
                                                 </span>
                                             @endif
                                         </td>
-                                        
-                                        {{-- 🆕 NUEVA COLUMNA: Estado GPS --}}
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div id="gps-status-{{ $voyage->id }}">
-                                                {{-- Estado GPS dinámico via AJAX --}}
-                                                <div class="flex items-center">
-                                                    <div class="flex-shrink-0">
-                                                        <svg class="w-4 h-4 text-gray-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                                                        </svg>
-                                                    </div>
-                                                    <div class="ml-2">
-                                                        <div class="text-xs text-gray-500">Cargando...</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        
+
                                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                             <div class="flex items-center space-x-2">
                                                 
@@ -227,35 +200,13 @@
                                                     Ver MIC/DTA
                                                 </a>
 
-                                                {{-- 🆕 BOTÓN GPS RÁPIDO --}}
-                                                @if($voyage->micdta_status?->status === 'sent')
-                                                    <button type="button" 
-                                                            onclick="quickGpsUpdate({{ $voyage->id }})"
-                                                            class="inline-flex items-center px-2 py-1 border border-blue-300 text-xs font-medium rounded text-blue-700 bg-blue-50 hover:bg-blue-100"
-                                                            title="Actualización GPS rápida">
-                                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                                                        </svg>
-                                                    </button>
-                                                @endif
 
-                                                {{-- 🆕 BOTÓN VER HISTORIAL GPS --}}
-                                                @if($voyage->micdta_status?->status === 'sent')
-                                                    <button type="button" 
-                                                            onclick="showGpsHistory({{ $voyage->id }})"
-                                                            class="inline-flex items-center px-2 py-1 border border-green-300 text-xs font-medium rounded text-green-700 bg-green-50 hover:bg-green-100"
-                                                            title="Ver historial GPS">
-                                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                                        </svg>
-                                                    </button>
-                                                @endif
                                             </div>
                                         </td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">
+                                        <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">
                                             No hay voyages disponibles para MIC/DTA
                                         </td>
                                     </tr>
@@ -263,74 +214,6 @@
                             </tbody>
                         </table>
                     </div>
-
-                    {{-- ===================================================================== --}}
-                    {{-- PANEL DE CONTROL GPS MASIVO - Agregar después de la tabla --}}
-                    {{-- ===================================================================== --}}
-
-                    <div class="mt-6 bg-white shadow rounded-lg">
-                        <div class="px-6 py-4 border-b border-gray-200">
-                            <h3 class="text-lg font-medium text-gray-900">
-                                <svg class="inline w-5 h-5 mr-2 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
-                                </svg>
-                                Panel de Control GPS Masivo
-                            </h3>
-                            <p class="mt-1 text-sm text-gray-500">
-                                Gestión de posiciones GPS para todos los voyages con MIC/DTA enviado
-                            </p>
-                        </div>
-                        
-                        <div class="px-6 py-4">
-                            <div class="flex flex-wrap gap-3">
-                                
-                                {{-- Botón Actualizar Estados GPS --}}
-                                <button type="button" onclick="refreshAllGpsStatus()" id="btn-refresh-all-gps"
-                                        class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                    </svg>
-                                    Actualizar Estados GPS
-                                </button>
-
-                                {{-- Botón Mostrar Mapa de Posiciones --}}
-                                <button type="button" onclick="showGpsMap()"
-                                        class="inline-flex items-center px-4 py-2 border border-blue-300 shadow-sm text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100">
-                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
-                                    </svg>
-                                    Ver Mapa de Posiciones
-                                </button>
-
-                                {{-- Botón Ver Puntos de Control --}}
-                                <button type="button" onclick="showAllControlPoints()"
-                                        class="inline-flex items-center px-4 py-2 border border-green-300 shadow-sm text-sm font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100">
-                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                    </svg>
-                                    Puntos de Control AFIP
-                                </button>
-
-                                {{-- Indicador Estado General --}}
-                                <div class="flex items-center ml-auto">
-                                    <div class="text-sm text-gray-500 mr-3">
-                                        Estado GPS General:
-                                    </div>
-                                    <div id="gps-general-status">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                            <svg class="w-3 h-3 mr-1 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                            </svg>
-                                            Cargando...
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-
 
                     {{-- Paginación --}}
                     <div class="bg-white px-4 py-3 border-t border-gray-200 sm:px-6">
@@ -425,8 +308,6 @@
     
 @push('scripts')
 <script>
-    {{-- JavaScript para Modal y Envío AJAX --}}
-    <script>
         let currentVoyageId = null;
         let autoRefreshInterval = null;
         let autoRefreshEnabled = false;
@@ -459,7 +340,7 @@
             }
             
             try {
-                const response = await fetch(`/simple/webservices/micdta/${voyageId}/consultar-estado`, {
+                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/consultar-estado`, {
                     method: 'GET',
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
@@ -556,7 +437,7 @@
             }
 
             try {
-                const response = await fetch('/simple/webservices/micdta/consultar-estados-masivo', {
+                const response = await fetch('/company/simple/webservices/micdta/consultar-estados-masivo', {
                     method: 'POST',
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
@@ -597,7 +478,7 @@
 
         async function verHistorialConsultas(voyageId) {
             try {
-                const response = await fetch(`/simple/webservices/micdta/${voyageId}/historial-consultas`);
+                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/historial-consultas`);
                 const data = await response.json();
 
                 if (data.success) {
@@ -692,10 +573,10 @@
                     const voyagesEnviados = document.querySelectorAll('tr[data-voyage-id]');
                     voyagesEnviados.forEach(row => {
                         const voyageId = row.getAttribute('data-voyage-id');
-                        const envioStatus = row.querySelector('td:nth-child(3) span')?.textContent;
+                        const envioStatus = row.querySelector('td:nth-child(4) span')?.textContent;
                         if (envioStatus && (envioStatus.includes('Enviado') || envioStatus.includes('Aprobado'))) {
                             // Consultar estado sin interfaz de usuario
-                            fetch(`/simple/webservices/micdta/${voyageId}/estado-afip`)
+                            fetch(`/company/simple/webservices/micdta/${voyageId}/estado-afip`)
                                 .then(response => response.json())
                                 .then(data => {
                                     if (data.success) {
@@ -764,19 +645,37 @@
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                 },
                 body: JSON.stringify({
-                    test_mode: true // Por defecto en modo test
+                    force_send: false,
+                    notes: 'Envío iniciado desde el listado MIC/DTA'
                 })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // Mostrar mensaje de éxito y recargar
-                    alert('MIC/DTA enviado exitosamente!\n\nConfirmación: ' + (data.confirmation_number || 'Pendiente'));
+                    const micDtaId =
+                        data?.data?.mic_dta_id
+                        || data?.mic_dta_id
+                        || 'Pendiente';
+
+                    alert(
+                        'MIC/DTA enviado exitosamente!\n\n'
+                        + 'MIC/DTA ID: '
+                        + micDtaId
+                    );
                     window.location.reload();
                 } else {
-                    // Mostrar error
-                    alert('Error enviando MIC/DTA:\n' + data.message);
-                    
+                    const validation = Array.isArray(data.validation_errors)
+                        ? data.validation_errors.join('\n')
+                        : '';
+
+                    const detail =
+                        data.details
+                        || data.error
+                        || validation
+                        || 'Error desconocido';
+
+                    alert('Error enviando MIC/DTA:\n' + detail);
+
                     // Rehabilitar botón
                     this.disabled = false;
                     this.textContent = 'Enviar MIC/DTA';
@@ -810,607 +709,6 @@
         });
    
 
-    //{{-- ===================================================================== --}}
-    //{{-- JAVASCRIPT PARA FUNCIONALIDADES GPS EN LISTA --}}
-    //{{-- ===================================================================== --}}
-
-
-    // Variables globales
-    let gpsStatusCache = new Map();
-    let autoRefreshGpsInterval = null;
-
-    // Inicialización cuando el DOM esté listo
-    document.addEventListener('DOMContentLoaded', function() {
-        // Cargar estados GPS de todos los voyages
-        loadAllGpsStatus();
-        
-        // Auto-refresh cada 30 segundos
-        autoRefreshGpsInterval = setInterval(loadAllGpsStatus, 30000);
-        
-        console.log('📍 Sistema GPS índice inicializado');
-    });
-
-    // Cargar estado GPS de todos los voyages
-    async function loadAllGpsStatus() {
-        const voyageRows = document.querySelectorAll('tr[data-voyage-id]');
-        
-        for (let row of voyageRows) {
-            const voyageId = row.getAttribute('data-voyage-id');
-            await loadVoyageGpsStatus(voyageId);
-        }
-        
-        updateGeneralGpsStatus();
-    }
-
-    // Cargar estado GPS de un Viaje específico
-    async function loadVoyageGpsStatus(voyageId) {
-        const statusElement = document.getElementById(`gps-status-${voyageId}`);
-        
-        if (!statusElement) return;
-        
-        try {
-            const response = await fetch(`/simple/webservices/micdta/${voyageId}/estado-gps`, {
-                headers: {
-                    'X-CSRF-TOKEN': getCSRFToken(),
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                updateVoyageGpsDisplay(voyageId, data.estado_gps);
-                gpsStatusCache.set(voyageId, data.estado_gps);
-            } else {
-                statusElement.innerHTML = `
-                    <div class="flex items-center text-red-500">
-                        <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                        </svg>
-                        <span class="text-xs">Error</span>
-                    </div>
-                `;
-            }
-        } catch (error) {
-            console.error(`❌ Error cargando GPS status voyage ${voyageId}:`, error);
-        }
-    }
-
-    // Actualizar display GPS de un voyage
-    function updateVoyageGpsDisplay(voyageId, estadoGps) {
-        const statusElement = document.getElementById(`gps-status-${voyageId}`);
-        if (!statusElement) return;
-
-        let html = '';
-        
-        if (estadoGps.tiene_coordenadas) {
-            if (estadoGps.ultima_actualizacion_afip) {
-                // Tiene GPS y actualización AFIP reciente
-                const lastUpdate = new Date(estadoGps.ultima_actualizacion_afip.enviada_at);
-                const hoursAgo = Math.floor((Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60));
-                
-                html = `
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
-                            </svg>
-                        </div>
-                        <div class="ml-2">
-                            <div class="text-xs font-medium text-green-700">GPS Activo</div>
-                            <div class="text-xs text-gray-500">
-                                Hace ${hoursAgo}h
-                                ${estadoGps.ultima_actualizacion_afip.punto_control ? 
-                                    `<br><span class="text-blue-600">📍 ${estadoGps.ultima_actualizacion_afip.punto_control.nombre}</span>` : 
-                                    ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            } else {
-                // Tiene GPS pero sin actualización AFIP
-                html = `
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                            </svg>
-                        </div>
-                        <div class="ml-2">
-                            <div class="text-xs font-medium text-yellow-700">GPS Pendiente</div>
-                            <div class="text-xs text-gray-500">Sin envío AFIP</div>
-                        </div>
-                    </div>
-                `;
-            }
-        } else {
-            // Sin GPS
-            html = `
-                <div class="flex items-center">
-                    <div class="flex-shrink-0">
-                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728"/>
-                        </svg>
-                    </div>
-                    <div class="ml-2">
-                        <div class="text-xs font-medium text-gray-500">Sin GPS</div>
-                        <div class="text-xs text-gray-400">Sin coordenadas</div>
-                    </div>
-                </div>
-            `;
-        }
-        
-        statusElement.innerHTML = html;
-    }
-
-    // Actualización GPS rápida desde la lista
-    async function quickGpsUpdate(voyageId) {
-        if (!navigator.geolocation) {
-            alert('Su navegador no soporta GPS');
-            return;
-        }
-
-        // Obtener GPS del navegador
-        navigator.geolocation.getCurrentPosition(
-            async (position) => {
-                try {
-                    const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/actualizar-posicion`, {
-                        method: 'POST',
-                        headers: {
-                            'X-CSRF-TOKEN': getCSRFToken(),
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude,
-                            source: 'lista_rapida'
-                        })
-                    });
-
-                    const result = await response.json();
-
-                    if (result.success) {
-                        if (result.skipped) {
-                            alert(`ℹ️ ${result.message}`);
-                        } else {
-                            alert(`✅ GPS enviado exitosamente a AFIP`);
-                            if (result.control_point_detected) {
-                                alert(`📍 Punto de control detectado: ${result.control_point_detected.nombre}`);
-                            }
-                        }
-                        
-                        // Recargar estado GPS del voyage
-                        await loadVoyageGpsStatus(voyageId);
-                    } else {
-                        alert(`❌ Error: ${result.error}`);
-                    }
-                } catch (error) {
-                    alert('❌ Error de comunicación');
-                }
-            },
-            (error) => {
-                alert('❌ Error obteniendo GPS del navegador');
-            },
-            { enableHighAccuracy: true, timeout: 10000 }
-        );
-    }
-
-    // Mostrar historial GPS desde la lista
-    async function showGpsHistory(voyageId) {
-        try {
-            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/historial-posiciones?days=7`, {
-                headers: {
-                    'X-CSRF-TOKEN': getCSRFToken(),
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                
-                let info = `📍 Historial GPS (últimos 7 días)\n`;
-                info += `Voyage: ${data.voyage_number}\n`;
-                info += `Total posiciones: ${data.total_posiciones}\n\n`;
-                
-                if (data.estadisticas) {
-                    info += `📊 Estadísticas:\n`;
-                    info += `• Distancia total: ${data.estadisticas.distancia_total_km} km\n`;
-                    info += `• Puntos de control: ${data.estadisticas.puntos_control_detectados}\n`;
-                    info += `• Tiempo activo: ${data.estadisticas.periodo_activo_horas}h\n`;
-                    info += `• Velocidad promedio: ${data.estadisticas.velocidad_promedio_kmh} km/h\n`;
-                }
-                
-                alert(info);
-            } else {
-                alert('❌ Error cargando historial GPS');
-            }
-        } catch (error) {
-            alert('❌ Error de comunicación');
-        }
-    }
-
-    // Actualizar estado GPS general
-    function updateGeneralGpsStatus() {
-        const statusElement = document.getElementById('gps-general-status');
-        if (!statusElement) return;
-
-        let totalVoyages = gpsStatusCache.size;
-        let conGps = 0;
-        let conAfipActualizado = 0;
-
-        for (let [voyageId, estado] of gpsStatusCache) {
-            if (estado.tiene_coordenadas) conGps++;
-            if (estado.ultima_actualizacion_afip) conAfipActualizado++;
-        }
-
-        let html = '';
-        if (totalVoyages === 0) {
-            html = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Sin datos</span>`;
-        } else {
-            html = `
-                <div class="flex space-x-2">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        📍 ${conGps}/${totalVoyages} con GPS
-                    </span>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        📡 ${conAfipActualizado} en AFIP
-                    </span>
-                </div>
-            `;
-        }
-
-        statusElement.innerHTML = html;
-    }
-
-    // Funciones auxiliares para botones del panel
-    async function refreshAllGpsStatus() {
-        const btn = document.getElementById('btn-refresh-all-gps');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Actualizando...';
-        }
-
-        await loadAllGpsStatus();
-
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Actualizar Estados GPS';
-        }
-    }
-
-    function showGpsMap() {
-        alert('🗺️ Función mapa GPS próximamente disponible');
-        // TODO: Implementar mapa interactivo
-    }
-
-    async function showAllControlPoints() {
-        try {
-            const response = await fetch('/simple/webservices/micdta/puntos-control');
-            const data = await response.json();
-            
-            if (data.success) {
-                let info = '📍 Puntos de Control AFIP - Hidrovía Paraná\n\n';
-                data.puntos_control.forEach(punto => {
-                    info += `🏛️ ${punto.nombre} (${punto.codigo})\n`;
-                    info += `   📍 ${punto.coordenadas.lat.toFixed(4)}, ${punto.coordenadas.lng.toFixed(4)}\n`;
-                    info += `   📏 Radio: ${punto.radio_km}km\n`;
-                    info += `   📋 ${punto.descripcion}\n\n`;
-                });
-                alert(info);
-            }
-        } catch (error) {
-            alert('❌ Error cargando puntos de control');
-        }
-    }
-
-    // Utilidad para CSRF token
-    function getCSRFToken() {
-        return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-    }
-
-    // Limpiar interval al salir
-    window.addEventListener('beforeunload', function() {
-        if (autoRefreshGpsInterval) {
-            clearInterval(autoRefreshGpsInterval);
-        }
-    });
-
-
-    /**
-     * ================================================================================
-     * GPS JAVASCRIPT LISTA VOYAGES - FUNCIONES SIMPLES
-     * ================================================================================
-     */
-
-    // Variables globales para la lista
-    let gpsStatesCache = new Map();
-    let autoRefreshInterval = null;
-
-    // Inicializar cuando el DOM esté listo
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('📍 Inicializando GPS para lista de voyages');
-        
-        // Cargar todos los estados GPS
-        loadAllGpsStates();
-        
-        // Auto-refresh cada 30 segundos
-        autoRefreshInterval = setInterval(loadAllGpsStates, 30000);
-    });
-
-    /**
-     * Cargar estados GPS de todos los voyages
-     */
-    async function loadAllGpsStates() {
-        const voyageRows = document.querySelectorAll('tr[data-voyage-id]');
-        
-        for (let row of voyageRows) {
-            const voyageId = row.getAttribute('data-voyage-id');
-            if (voyageId) {
-                await loadSingleVoyageGpsState(voyageId);
-            }
-        }
-        
-        updateGeneralGpsStatus();
-    }
-
-    /**
-     * Cargar estado GPS de un Viaje específico
-     */
-    async function loadSingleVoyageGpsState(voyageId) {
-        const statusElement = document.getElementById(`gps-status-${voyageId}`);
-        
-        if (!statusElement) return;
-        
-        try {
-            const response = await fetch(`/simple/webservices/micdta/${voyageId}/estado-gps`, {
-                headers: {
-                    'X-CSRF-TOKEN': getCSRFToken(),
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                updateSingleVoyageGpsDisplay(voyageId, data.estado_gps);
-                gpsStatesCache.set(voyageId, data.estado_gps);
-            } else {
-                // Error cargando estado
-                statusElement.innerHTML = `
-                    <div class="flex items-center text-red-500">
-                        <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                        </svg>
-                        <span class="text-xs">Error</span>
-                    </div>
-                `;
-            }
-        } catch (error) {
-            console.error(`❌ Error cargando GPS del voyage ${voyageId}:`, error);
-            
-            statusElement.innerHTML = `
-                <div class="flex items-center text-gray-400">
-                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728"/>
-                    </svg>
-                    <span class="text-xs">Sin datos</span>
-                </div>
-            `;
-        }
-    }
-
-    /**
-     * Actualizar display GPS de un Viaje en la lista
-     */
-    function updateSingleVoyageGpsDisplay(voyageId, estadoGps) {
-        const statusElement = document.getElementById(`gps-status-${voyageId}`);
-        if (!statusElement) return;
-
-        let html = '';
-        
-        if (estadoGps.tiene_coordenadas) {
-            if (estadoGps.ultima_actualizacion_afip) {
-                // GPS activo con actualización AFIP
-                const lastUpdate = new Date(estadoGps.ultima_actualizacion_afip.enviada_at);
-                const hoursAgo = Math.floor((Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60));
-                
-                html = `
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/>
-                            </svg>
-                        </div>
-                        <div class="ml-2">
-                            <div class="text-xs font-medium text-green-700">GPS Activo</div>
-                            <div class="text-xs text-gray-500">Hace ${hoursAgo}h</div>
-                            ${estadoGps.ultima_actualizacion_afip.punto_control ? 
-                                `<div class="text-xs text-blue-600">📍 ${estadoGps.ultima_actualizacion_afip.punto_control.nombre}</div>` : 
-                                ''}
-                        </div>
-                    </div>
-                `;
-            } else {
-                // Tiene GPS pero sin actualización AFIP
-                html = `
-                    <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                            <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                            </svg>
-                        </div>
-                        <div class="ml-2">
-                            <div class="text-xs font-medium text-yellow-700">GPS Pendiente</div>
-                            <div class="text-xs text-gray-500">Sin envío AFIP</div>
-                        </div>
-                    </div>
-                `;
-            }
-        } else {
-            // Sin GPS
-            html = `
-                <div class="flex items-center">
-                    <div class="flex-shrink-0">
-                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L18.364 5.636M5.636 18.364l12.728-12.728"/>
-                        </svg>
-                    </div>
-                    <div class="ml-2">
-                        <div class="text-xs font-medium text-gray-500">Sin GPS</div>
-                        <div class="text-xs text-gray-400">Sin coordenadas</div>
-                    </div>
-                </div>
-            `;
-        }
-        
-        statusElement.innerHTML = html;
-    }
-
-    /**
-     * Actualizar estado general GPS (panel inferior)
-     */
-    function updateGeneralGpsStatus() {
-        const statusElement = document.getElementById('gps-general-status');
-        if (!statusElement) return;
-
-        let totalVoyages = gpsStatesCache.size;
-        let conGps = 0;
-        let conAfipActualizado = 0;
-
-        for (let [voyageId, estado] of gpsStatesCache) {
-            if (estado.tiene_coordenadas) conGps++;
-            if (estado.ultima_actualizacion_afip) conAfipActualizado++;
-        }
-
-        let html = '';
-        if (totalVoyages === 0) {
-            html = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Sin datos</span>`;
-        } else {
-            html = `
-                <div class="flex space-x-2">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        📍 ${conGps}/${totalVoyages} con GPS
-                    </span>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                        📡 ${conAfipActualizado} en AFIP
-                    </span>
-                </div>
-            `;
-        }
-
-        statusElement.innerHTML = html;
-    }
-
-    /**
-     * GPS rápido desde la lista (botón en cada fila)
-     */
-    async function quickGpsUpdate(voyageId) {
-        if (!navigator.geolocation) {
-            alert('Su navegador no soporta GPS');
-            return;
-        }
-
-        // Obtener GPS del navegador
-        navigator.geolocation.getCurrentPosition(
-            async (position) => {
-                try {
-                    const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/actualizar-posicion`, {
-                        method: 'POST',
-                        headers: {
-                            'X-CSRF-TOKEN': getCSRFToken(),
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            latitude: position.coords.latitude,
-                            longitude: position.coords.longitude,
-                            source: 'lista_rapida'
-                        })
-                    });
-
-                    const result = await response.json();
-
-                    if (result.success) {
-                        if (result.skipped) {
-                            alert(`ℹ️ ${result.message}`);
-                        } else {
-                            alert(`✅ GPS enviado exitosamente a AFIP`);
-                            
-                            if (result.control_point_detected) {
-                                alert(`📍 Punto de control: ${result.control_point_detected.nombre}`);
-                            }
-                        }
-                        
-                        // Recargar estado GPS del voyage
-                        await loadSingleVoyageGpsState(voyageId);
-                    } else {
-                        alert(`❌ Error: ${result.error}`);
-                    }
-                } catch (error) {
-                    alert('❌ Error de comunicación');
-                }
-            },
-            (error) => {
-                alert('❌ Error obteniendo GPS del navegador');
-            },
-            { enableHighAccuracy: true, timeout: 10000 }
-        );
-    }   
-
-    /**
-     * Funciones del panel de control masivo
-     */
-    async function refreshAllGpsStatus() {
-        const btn = document.getElementById('btn-refresh-all-gps');
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle></svg>Actualizando...';
-        }
-
-        await loadAllGpsStates();
-
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Actualizar Estados GPS';
-        }
-    }
-
-    async function showAllControlPoints() {
-        try {
-            const response = await fetch('/simple/webservices/micdta/puntos-control');
-            const data = await response.json();
-            
-            if (data.success) {
-                let info = '📍 Puntos de Control AFIP - Hidrovía Paraná\n\n';
-                data.puntos_control.forEach(punto => {
-                    info += `🏛️ ${punto.nombre} (${punto.codigo})\n`;
-                    info += `   📍 ${punto.coordenadas.lat.toFixed(4)}, ${punto.coordenadas.lng.toFixed(4)}\n`;
-                    info += `   📏 Radio: ${punto.radio_km}km\n\n`;
-                });
-                alert(info);
-            }
-        } catch (error) {
-            alert('❌ Error cargando puntos de control');
-        }
-    }
-
-    function showGpsMap() {
-        alert('🗺️ Función mapa GPS próximamente');
-        // TODO: Implementar mapa interactivo
-    }
-
-    /**
-     * Utilidades
-     */
-    function getCSRFToken() {
-        return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-    }
-
-    // Limpiar interval al salir
-    window.addEventListener('beforeunload', function() {
-        if (autoRefreshInterval) {
-            clearInterval(autoRefreshInterval);
-        }
-    });
 
     </script>
     @endpush
