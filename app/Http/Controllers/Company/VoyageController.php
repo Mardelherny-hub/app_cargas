@@ -839,58 +839,6 @@ class VoyageController extends Controller
         ];
     }
 
-    public function containers(Voyage $voyage)
-    {
-        if (!$this->canPerform('view_cargas')) {
-            abort(403, 'No tiene permisos para gestionar contenedores.');
-        }
-
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas.');
-        }
-
-        if (!$this->canAccessCompany($voyage->company_id)) {
-            abort(403, 'No tiene permisos para gestionar contenedores de este viaje.');
-        }
-
-        if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
-            abort(403, 'No tiene permisos para gestionar contenedores de este viaje.');
-        }
-
-        if (!in_array($voyage->status, ['planning', 'loading'])) {
-            return redirect()->route('company.voyages.show', $voyage)
-                ->with('error', 'Solo se pueden gestionar contenedores en viajes en estado de planificación o carga.');
-        }
-
-        $voyage->load([
-            'shipments.vessel',
-            'shipments.captain',
-            'company',
-            'leadVessel',
-            'originPort',
-            'destinationPort'
-        ]);
-
-        $existingContainers = $voyage->getAllContainers()->get();
-
-        $shipmentStats = $voyage->shipments->map(function ($shipment) {
-            return [
-                'id' => $shipment->id,
-                'shipment_number' => $shipment->shipment_number,
-                'vessel_name' => $shipment->vessel->name ?? 'Sin embarcación',
-                'container_capacity' => $shipment->container_capacity,
-                'containers_loaded' => $shipment->containers_loaded,
-                'available_capacity' => $shipment->container_capacity - $shipment->containers_loaded,
-            ];
-        });
-
-        return view('company.voyages.containers', compact(
-            'voyage',
-            'existingContainers',
-            'shipmentStats'
-        ));
-    }
-
     public function manifest(Voyage $voyage)
     {
         if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
