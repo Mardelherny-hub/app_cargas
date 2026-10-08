@@ -11,7 +11,6 @@ use App\Http\Controllers\Company\CertificateController;
 use App\Http\Controllers\Company\WebServiceController as WebserviceController;
 use App\Http\Controllers\Company\ImportController;
 use App\Http\Controllers\Company\ExportController;
-use App\Http\Controllers\Company\DeconsolidationController;
 use App\Http\Controllers\Company\TransferController;
 use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Company\ClientController;
@@ -205,21 +204,6 @@ Route::prefix('vessels')->name('company.vessels.')->group(function () {
     Route::patch('/{vessel}/toggle-operational-status', [VesselController::class, 'toggleStatus'])->name('toggle-operational-status');
 });
 
-
-// Gestión de Desconsolidación (solo si la empresa tiene rol "Desconsolidador")
-Route::prefix('deconsolidation')->name('company.deconsolidation.')->group(function () {
-    Route::get('/', [DeconsolidationController::class, 'index'])->name('index');
-    Route::get('/create', [DeconsolidationController::class, 'create'])->name('create');
-    Route::post('/', [DeconsolidationController::class, 'store'])->name('store');
-    Route::get('/{deconsolidation}', [DeconsolidationController::class, 'show'])->name('show');
-    Route::get('/{deconsolidation}/edit', [DeconsolidationController::class, 'edit'])->name('edit');
-    Route::put('/{deconsolidation}', [DeconsolidationController::class, 'update'])->name('update');
-    Route::delete('/{deconsolidation}', [DeconsolidationController::class, 'destroy'])->name('destroy');
-
-    // Acciones específicas de desconsolidación
-    Route::patch('/{deconsolidation}/status', [DeconsolidationController::class, 'updateStatus'])->name('update-status');
-    Route::get('/{deconsolidation}/pdf', [DeconsolidationController::class, 'generatePdf'])->name('pdf');
-});
 
 // Gestión de Transbordos (solo si la empresa tiene rol "Transbordos")
 Route::prefix('transfers')->name('company.transfers.')->group(function () {
