@@ -289,18 +289,11 @@ Route::prefix('export')->name('company.export.')->group(function () {
 // Webservices - USAR WebserviceController (sin 'S')
 Route::prefix('webservices')->name('company.webservices.')->group(function () {
     Route::get('/', [WebserviceController::class, 'index'])->name('index');
-    Route::get('/send', [WebserviceController::class, 'send'])->name('send');
-    Route::post('/send', [WebserviceController::class, 'processSend'])->name('process-send');
     Route::get('/query', [WebserviceController::class, 'query'])->name('query');
     Route::post('/query', [WebserviceController::class, 'processQuery'])->name('process-query');
-    Route::get('/rectify', [WebserviceController::class, 'rectify'])->name('rectify');
-    Route::post('/rectify', [WebserviceController::class, 'processRectify'])->name('process-rectify');
-    Route::get('/cancel', [WebserviceController::class, 'cancel'])->name('cancel');
-    Route::post('/cancel', [WebserviceController::class, 'processCancel'])->name('process-cancel');
 
     // Historial de webservices
     Route::get('/history', [WebserviceController::class, 'history'])->name('history');
-    Route::get('/history/{webservice}', [WebserviceController::class, 'showWebservice'])->name('show-webservice');
 
     Route::get('/dashboard', [WebserviceController::class, 'dashboard'])->name('dashboard');
     
@@ -320,15 +313,6 @@ Route::prefix('webservices')->name('company.webservices.')->group(function () {
 
     // Acciones adicionales del historial
     Route::post('/retry/{webservice}', [WebserviceController::class, 'retryTransaction'])->name('retry-transaction');
-    Route::post('/send-pending/{webservice}', [WebserviceController::class, 'processPendingTransaction'])->name('send-pending-transaction');
-    Route::post('/export', [WebserviceController::class, 'export'])->name('export');
-    
-    // Descargas
-    Route::get('/download/{webservice}/xml', [WebserviceController::class, 'downloadXml'])->name('download-xml');
-    Route::get('/download/{webservice}/pdf', [WebserviceController::class, 'downloadPdf'])->name('download-pdf');
-
-    // Datos PARANA para autocompletar (AJAX)
-    Route::get('/parana-data', [WebserviceController::class, 'getParanaData'])->name('parana-data');
 
     // Importación de manifiestos - REDIRECCIÓN
     Route::get('/import', function() {
