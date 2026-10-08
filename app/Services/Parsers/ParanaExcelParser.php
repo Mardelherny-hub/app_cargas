@@ -135,6 +135,18 @@ class ParanaExcelParser implements ManifestParserInterface
             $reader->setReadDataOnly(true);
             $spreadsheet = $reader->load($filePath);
             $worksheet = $spreadsheet->getActiveSheet();
+
+            // El formato GUARAN se identifica explícitamente con "EDI To Custom"
+            // en A1. Debe descartarse antes de buscar MAERSK en las filas, porque
+            // una exportación GUARAN puede contener clientes MAERSK y producir un
+            // falso positivo como PARANA.
+            $firstCell = strtoupper(trim((string) $worksheet
+                ->getCell('A1')
+                ->getCalculatedValue()));
+
+            if (str_contains($firstCell, 'EDI TO CUSTOM')) {
+                return false;
+            }
             
             // Verificar estructura PARANA: debe tener ~73 columnas y datos MAERSK
             $highestColumn = $worksheet->getHighestColumn();
