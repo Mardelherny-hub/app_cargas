@@ -140,14 +140,15 @@ class ClientReportTemplateContractTest extends TestCase
         $this->assertStringContainsString("\$row['gross_weight_kg']", $template);
         $this->assertStringContainsString("\$row['quantity'] }} BULTOS", $template);
         $this->assertStringContainsString("\$row['description']", $template);
-        $this->assertStringContainsString("\$row['containers']", $template);
+        $this->assertStringContainsString("\$row['container_text']", $template);
         $this->assertStringContainsString("'CONTENEDOR' : 'CONTENEDORES'", $template);
         $this->assertStringNotContainsString('PRECINTO:', $template);
         $this->assertStringContainsString('$showVesselRegistration', $template);
 
         $this->assertStringContainsString('$documentPages', $template);
-        $this->assertStringContainsString('->chunk(4)', $template);
-        $this->assertStringContainsString("'rows' => \$rows->values()", $template);
+        $this->assertStringContainsString('$pageLineBudget = 18;', $template);
+        $this->assertStringContainsString('$usedLines + $lineCost > $pageLineBudget', $template);
+        $this->assertStringContainsString("'rows' => \$pageRows->values()", $template);
         $this->assertStringContainsString('Page: &nbsp; {{ $pageIndex + 1 }}', $template);
         $this->assertStringContainsString('.page-footer', $template);
         $this->assertStringContainsString('position: absolute;', $template);
