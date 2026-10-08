@@ -226,8 +226,9 @@ class SimpleXmlGeneratorDesconsolidado
             ->whereNotNull('master_bill_number')
             ->with([
                 'loadingPort',
-                'dischargePort',
+                'dischargePort.country',
                 'transshipmentPort',
+                'shipper',
                 'consignee.documentType',
                 'notifyParty',
                 'shipmentItems.packagingType',
@@ -254,14 +255,111 @@ class SimpleXmlGeneratorDesconsolidado
         return $bills;
     }
 
+    private function masterTitleIdentifier(BillOfLading $bill): string
+    {
+        $prefix = "BL {$bill->id}";
+        $masterNumber = $this->requiredString(
+            $bill->master_bill_number,
+            "{$prefix}: NumeroConocimiento del título madre",
+            18
+        );
+
+        $masterPort = strtoupper(trim((string) data_get(
+            $bill->webservice_data,
+            'argentina.desconsolidated.master_loading_port_code'
+        )));
+
+        if ($masterPort === '') {
+            throw new Exception(
+                "Falta campo obligatorio {$prefix}: "
+                . "CodigoPuertoEmbarque del título madre."
+            );
+        }
+
+        if (!preg_match('/^[A-Z0-9]{5}$/', $masterPort)) {
+            throw new Exception(
+                "{$prefix}: CodigoPuertoEmbarque del título madre "
+                . "debe tener 5 caracteres alfanuméricos."
+            );
+        }
+
+        return $masterPort . $masterNumber;
+    }
+
+    private function tariffPositionForBill(BillOfLading $bill): string
+    {
+        $value = $this->singleItemValue(
+            $bill,
+            'tariff_position',
+            'PosicionArancelaria',
+            16,
+            true
+        );
+
+        if ($this->normalizeFlag($bill->is_consolidated) === 'N') {
+            $length = mb_strlen($value);
+            if ($length < 7 || $length > 15) {
+                throw new Exception(
+                    "BL {$bill->id}: PosicionArancelaria debe tener entre "
+                    . "7 y 15 caracteres cuando IndicadorConsolidado=N."
+                );
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * ARCA rechaza ATA-DESC cuando el destino/puerto de descarga no es
+     * Argentina (errores 11413 y 11416). Se valida con el país real del
+     * puerto cuando la relación está disponible, sin inventar códigos.
+     */
+    private function validateArgentinaDestination(
+        BillOfLading $bill,
+        string $prefix
+    ): void {
+        $country = $bill->dischargePort?->country;
+
+        if (!$country) {
+            return;
+        }
+
+        if (strtoupper(trim((string) $country->alpha2_code)) !== 'AR') {
+            throw new Exception(
+                "{$prefix}: ATA-DESC exige que el puerto de descarga "
+                . "pertenezca a Argentina."
+            );
+        }
+
+        $afipCountryCode = trim((string) ($country->codigo_afip ?? ''));
+        if (
+            $afipCountryCode !== ''
+            && trim((string) $bill->destination_country_code)
+                !== $afipCountryCode
+        ) {
+            throw new Exception(
+                "{$prefix}: CodigoPaisDestino no coincide con Argentina."
+            );
+        }
+    }
+
     private function validateBill(BillOfLading $bill): void
     {
         $prefix = "BL {$bill->id}";
 
-        $this->requiredString($bill->master_bill_number, "{$prefix}: IdentificadorTituloMadre", 23);
-        $this->requiredString($bill->destination_country_code, "{$prefix}: CodigoPaisDestino", 3);
+        $this->masterTitleIdentifier($bill);
+        $this->exactLengthString(
+            $bill->destination_country_code,
+            "{$prefix}: CodigoPaisDestino",
+            3
+        );
+        $this->validateArgentinaDestination($bill, $prefix);
         $this->requiredString($bill->bill_number, "{$prefix}: NumeroConocimiento", 18);
-        $this->requiredString($bill->cargo_marks, "{$prefix}: MarcaBultos", 80);
+        $this->requiredString(
+            $this->billMarks($bill),
+            "{$prefix}: MarcaBultos",
+            80
+        );
         $this->requiredFlag($bill->is_consolidated, "{$prefix}: IndicadorConsolidado");
         $this->requiredFlag(
             $bill->is_transit_transshipment,
@@ -287,7 +385,7 @@ class SimpleXmlGeneratorDesconsolidado
             throw new Exception("{$prefix}: debe tener al menos una línea de mercadería.");
         }
 
-        $this->singleItemValue($bill, 'tariff_position', 'PosicionArancelaria', 16, true);
+        $this->tariffPositionForBill($bill);
         $this->singleItemFlag(
             $bill,
             'is_secure_logistics_operator',
@@ -295,13 +393,15 @@ class SimpleXmlGeneratorDesconsolidado
         );
         $this->singleItemFlag($bill, 'is_monitored_transit', 'IndicadorTransitoMonitoreado');
         $this->singleItemFlag($bill, 'is_renar', 'IndicadorRenar');
-        $this->singleItemValue(
-            $bill,
-            'foreign_forwarder_name',
-            'RazonSocialFowarderExterior',
-            70,
-            false
-        );
+        $forwarderName = $this->forwarderNameForBill($bill);
+
+        if ($this->normalizeFlag($bill->is_consolidated) === 'S') {
+            $this->requiredString(
+                $forwarderName,
+                "{$prefix}: RazonSocialFowarderExterior",
+                70
+            );
+        }
 
         $lineNumbers = [];
         foreach ($bill->shipmentItems as $item) {
@@ -320,11 +420,9 @@ class SimpleXmlGeneratorDesconsolidado
             }
             $lineNumbers[] = $lineNumber;
 
-            $packagingCode = $item->packaging_code ?: $item->packagingType?->argentina_ws_code;
-            $this->requiredString(
-                $packagingCode,
-                "{$prefix}: ShipmentItem {$item->id} CodigoEmbalaje",
-                2
+            $packagingCode = $this->packagingCodeForItem(
+                $item,
+                "{$prefix}: ShipmentItem {$item->id}"
             );
 
             $this->containerCondition(
@@ -332,8 +430,12 @@ class SimpleXmlGeneratorDesconsolidado
                 "{$prefix}: ShipmentItem {$item->id} CondicionContenedor"
             );
 
+            $manifestedQuantity = $packagingCode === '05'
+                ? $item->containers->count()
+                : $item->package_quantity;
+
             $this->requiredIntegerLike(
-                $item->package_quantity,
+                $manifestedQuantity,
                 "{$prefix}: ShipmentItem {$item->id} CantidadManifestada",
                 9
             );
@@ -347,7 +449,7 @@ class SimpleXmlGeneratorDesconsolidado
                 80
             );
             $this->requiredString(
-                $item->cargo_marks,
+                $this->packageMarksForItem($item),
                 "{$prefix}: ShipmentItem {$item->id} NumeroBultos",
                 100
             );
@@ -378,27 +480,7 @@ class SimpleXmlGeneratorDesconsolidado
             );
         }
 
-        $acep = $this->optionalString($container->acep, "{$prefix}: ACEP", 20);
-        if ($acep !== null && !preg_match('/^[A-Za-z0-9]+$/', $acep)) {
-            throw new Exception("{$prefix}: ACEP sólo puede contener letras y números.");
-        }
-
-        $hasExpiry = (bool) $container->csc_expiry_date;
-        if ($hasExpiry) {
-            $this->formatDate($container->csc_expiry_date);
-        }
-
-        if (!$hasExpiry && $acep === null) {
-            throw new Exception(
-                "{$prefix}: debe informar FechaVencimientoContenedor o ACEP."
-            );
-        }
-
-        if ($hasExpiry && $acep !== null) {
-            throw new Exception(
-                "{$prefix}: informe FechaVencimientoContenedor o ACEP, pero no ambos."
-            );
-        }
+        $this->containerValidityData($container, $prefix);
     }
 
     private function writeTitle(XMLWriter $writer, BillOfLading $bill): void
@@ -424,7 +506,7 @@ class SimpleXmlGeneratorDesconsolidado
         $this->writeOptionalString($writer, 'CodigoPuertoDescarga', $bill->dischargePort?->code, 5);
         $this->writeOptionalDate($writer, 'FechaDescarga', $bill->discharge_date);
         $writer->writeElement('CodigoPaisDestino', (string) $bill->destination_country_code);
-        $writer->writeElement('MarcaBultos', (string) $bill->cargo_marks);
+        $writer->writeElement('MarcaBultos', $this->billMarks($bill));
         $this->writeOptionalString($writer, 'Consignatario', $bill->consignee?->legal_name, 80);
         $this->writeOptionalString(
             $writer,
@@ -453,7 +535,7 @@ class SimpleXmlGeneratorDesconsolidado
 
         $writer->writeElement(
             'PosicionArancelaria',
-            $this->singleItemValue($bill, 'tariff_position', 'PosicionArancelaria', 16, true)
+            $this->tariffPositionForBill($bill)
         );
         $writer->writeElement(
             'IndicadorOperadorLogisticoSeguro',
@@ -475,13 +557,7 @@ class SimpleXmlGeneratorDesconsolidado
         $this->writeOptionalString(
             $writer,
             'RazonSocialFowarderExterior',
-            $this->singleItemValue(
-                $bill,
-                'foreign_forwarder_name',
-                'RazonSocialFowarderExterior',
-                70,
-                false
-            ),
+            $this->forwarderNameForBill($bill),
             70
         );
         $this->writeOptionalString(
@@ -525,7 +601,10 @@ class SimpleXmlGeneratorDesconsolidado
         $this->writeMerchandise($writer, $bill);
         $this->writeContainers($writer, $bill);
 
-        $writer->writeElement('IdentificadorTituloMadre', (string) $bill->master_bill_number);
+        $writer->writeElement(
+            'IdentificadorTituloMadre',
+            $this->masterTitleIdentifier($bill)
+        );
         $writer->endElement();
     }
 
@@ -534,7 +613,13 @@ class SimpleXmlGeneratorDesconsolidado
         $writer->startElement('Mercaderias');
 
         foreach ($bill->shipmentItems->sortBy('line_number') as $item) {
-            $packagingCode = (string) ($item->packaging_code ?: $item->packagingType?->argentina_ws_code);
+            $packagingCode = $this->packagingCodeForItem(
+                $item,
+                "BL {$bill->id}: ShipmentItem {$item->id}"
+            );
+            $manifestedQuantity = $packagingCode === '05'
+                ? $item->containers->count()
+                : $item->package_quantity;
 
             $writer->startElement('LineaMercaderia');
             $writer->writeElement('NumeroLinea', (string) ((int) $item->line_number));
@@ -546,13 +631,19 @@ class SimpleXmlGeneratorDesconsolidado
                     "BL {$bill->id}: ShipmentItem {$item->id} CondicionContenedor"
                 )
             );
-            $writer->writeElement('CantidadManifestada', $this->integerString($item->package_quantity));
+            $writer->writeElement(
+                'CantidadManifestada',
+                $this->integerString($manifestedQuantity)
+            );
             $writer->writeElement(
                 'PesoVolumenManifestado',
                 $this->decimalString($item->gross_weight_kg)
             );
             $writer->writeElement('DescripcionMercaderia', (string) $item->item_description);
-            $writer->writeElement('NumeroBultos', (string) $item->cargo_marks);
+            $writer->writeElement(
+                'NumeroBultos',
+                $this->packageMarksForItem($item)
+            );
             $this->writeOptionalString($writer, 'TipoCarga', $item->cargoType?->webservice_code, 3);
             $this->writeOptionalString($writer, 'Comentario', $item->comments, 60);
             $writer->endElement();
@@ -601,20 +692,29 @@ class SimpleXmlGeneratorDesconsolidado
             // fuente real como de defaults operativos históricos y el modelo no
             // registra esa procedencia. Ambos son optativos para ATA-DESC.
 
-            $this->writeOptionalString(
-                $writer,
-                'NumeroPrecintoOrigen',
-                $container->shipper_seal,
-                35
+            $shipperSeal = trim((string) $container->shipper_seal);
+            if (
+                $shipperSeal !== ''
+                && mb_strlen($shipperSeal) <= 35
+            ) {
+                $writer->writeElement(
+                    'NumeroPrecintoOrigen',
+                    $shipperSeal
+                );
+            }
+
+            [$expiry, $acep] = $this->containerValidityData(
+                $container,
+                "BL {$bill->id}: Contenedor {$container->id}"
             );
 
-            if ($container->csc_expiry_date) {
+            if ($expiry !== null) {
                 $writer->writeElement(
                     'FechaVencimientoContenedor',
-                    $this->formatDate($container->csc_expiry_date)
+                    $this->formatDate($expiry)
                 );
-            } else {
-                $writer->writeElement('Acep', (string) $container->acep);
+            } elseif ($acep !== null) {
+                $writer->writeElement('Acep', $acep);
             }
 
             $this->writeOptionalString(
@@ -633,6 +733,148 @@ class SimpleXmlGeneratorDesconsolidado
         }
 
         $writer->endElement();
+    }
+
+    /**
+     * Regla confirmada por el cliente (02/10/2026):
+     * si el contenedor no trae vencimiento CSC ni ACEP, la fecha a informar
+     * es FechaArribo del viaje + 480 días.
+     *
+     * Se conserva cualquier CSC/ACEP real ya cargado y no se usa expiry_date
+     * genérico, porque ese campo puede tener otra procedencia.
+     *
+     * @return array{0:mixed,1:?string}
+     */
+    private function containerValidityData(
+        Container $container,
+        string $prefix
+    ): array {
+        $acep = $this->optionalString(
+            $container->acep,
+            "{$prefix}: ACEP",
+            20
+        );
+
+        if (
+            $acep !== null
+            && !preg_match('/^[A-Za-z0-9]+$/', $acep)
+        ) {
+            throw new Exception(
+                "{$prefix}: ACEP sólo puede contener letras y números."
+            );
+        }
+
+        $expiry = $container->csc_expiry_date;
+
+        if ($expiry && $acep !== null) {
+            throw new Exception(
+                "{$prefix}: informe FechaVencimientoContenedor "
+                . "o ACEP, pero no ambos."
+            );
+        }
+
+        if (!$expiry && $acep === null) {
+            $arrival = isset($this->voyage)
+                ? $this->voyage->estimated_arrival_date
+                : null;
+
+            if (!$arrival) {
+                throw new Exception(
+                    "{$prefix}: no se puede calcular "
+                    . "FechaVencimientoContenedor sin FechaArribo."
+                );
+            }
+
+            $expiry = $arrival->copy()->addDays(480);
+        }
+
+        if ($expiry) {
+            $this->formatDate($expiry);
+        }
+
+        return [$expiry, $acep];
+    }
+
+    private function packagingCodeForItem($item, string $prefix): string
+    {
+        $explicit = trim((string) $item->packaging_code);
+        if ($explicit !== '') {
+            return $this->requiredString(
+                $explicit,
+                "{$prefix}: CodigoEmbalaje",
+                2
+            );
+        }
+
+        if ($item->containers->isNotEmpty()) {
+            // Contrato ATA-DESC / wgesinformacionanticipada:
+            // 05 representa mercadería contenedorizada.
+            return '05';
+        }
+
+        return $this->requiredString(
+            $item->packagingType?->argentina_ws_code,
+            "{$prefix}: CodigoEmbalaje",
+            2
+        );
+    }
+
+    private function packageMarksForItem($item): string
+    {
+        $marks = trim((string) $item->cargo_marks);
+        if ($marks === '') {
+            $marks = trim((string) $item->package_numbers);
+        }
+
+        return $marks;
+    }
+
+    /**
+     * Criterio operativo confirmado por Roberto: el forwarder exterior es
+     * el cargador. Se respeta un valor explícito por línea y, si falta,
+     * se usa la razón social real del shipper del conocimiento.
+     */
+    private function forwarderNameForBill(BillOfLading $bill): ?string
+    {
+        $explicit = $this->singleItemValue(
+            $bill,
+            'foreign_forwarder_name',
+            'RazonSocialFowarderExterior',
+            70,
+            false
+        );
+
+        if ($explicit !== null && $explicit !== '') {
+            return $explicit;
+        }
+
+        return $this->optionalString(
+            $bill->shipper?->legal_name,
+            "BL {$bill->id}: RazonSocialFowarderExterior",
+            70
+        );
+    }
+
+    private function billMarks(BillOfLading $bill): string
+    {
+        $marks = trim((string) $bill->cargo_marks);
+        if ($marks !== '') {
+            return $marks;
+        }
+
+        $itemMarks = $bill->shipmentItems
+            ->map(fn ($item) => $this->packageMarksForItem($item))
+            ->filter(fn ($value) => $value !== '')
+            ->unique()
+            ->values();
+
+        if ($itemMarks->count() > 1) {
+            throw new Exception(
+                "BL {$bill->id}: MarcaBultos tiene valores distintos entre líneas."
+            );
+        }
+
+        return (string) ($itemMarks->first() ?? '');
     }
 
     private function billContainers(BillOfLading $bill): Collection
@@ -993,6 +1235,22 @@ class SimpleXmlGeneratorDesconsolidado
         }
         if (mb_strlen($text) > $maxLength) {
             throw new Exception("{$label} supera {$maxLength} caracteres.");
+        }
+
+        return $text;
+    }
+
+    private function exactLengthString(
+        $value,
+        string $label,
+        int $length
+    ): string {
+        $text = $this->requiredString($value, $label, $length);
+
+        if (mb_strlen($text) !== $length) {
+            throw new Exception(
+                "{$label} debe tener {$length} caracteres."
+            );
         }
 
         return $text;

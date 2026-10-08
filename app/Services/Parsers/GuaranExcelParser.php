@@ -841,6 +841,9 @@ class GuaranExcelParser implements ManifestParserInterface
             'cargo_marks' => $sourceCargoMarks->count() === 1
                 ? (string) $sourceCargoMarks->first()
                 : null,
+            // Regla operativa confirmada por Roberto (04/10/2026):
+            // los conocimientos provenientes de GUARAN son tránsito/trasbordo.
+            'is_transit_transshipment' => 'S',
             'bill_number' => $row['BL_NUMBER'],
             'bill_date' => $billDates['bill_date'],
             'loading_date' => $billDates['loading_date'],

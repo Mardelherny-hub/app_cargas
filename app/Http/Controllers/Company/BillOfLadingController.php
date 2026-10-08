@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Validator;
 use App\Models\ShipmentItem;
@@ -1407,12 +1408,35 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
             'description' => 'nullable|string|max:255'
         ]);
 
+        $storedPath = null;
+
         try {
+            $file = $request->file('file');
+            $disk = 'local';
+            $directory = "attachments/bills-of-lading/{$billOfLading->id}";
+            $storedPath = $file->store($directory, $disk);
+
             DB::beginTransaction();
 
-            // TODO: Implementar lógica de subida de archivos
-            // Esto dependerá del sistema de archivos configurado
-            
+            $billOfLading->attachments()->create([
+                'original_filename' => $file->getClientOriginalName(),
+                'stored_filename' => basename($storedPath),
+                'file_path' => $storedPath,
+                'disk' => $disk,
+                'mime_type' => (string) $file->getMimeType(),
+                'file_extension' => strtolower((string) $file->getClientOriginalExtension()),
+                'file_size_bytes' => (int) $file->getSize(),
+                'file_hash' => hash_file('sha256', $file->getRealPath()),
+                'attachment_type' => 'other',
+                'description' => $request->input('description'),
+                'visibility' => 'internal',
+                'processing_status' => 'completed',
+                'active' => true,
+                'is_deleted' => false,
+                'created_by_user_id' => Auth::id(),
+                'last_updated_by_user_id' => Auth::id(),
+            ]);
+
             DB::commit();
 
             return redirect()->route('company.bills-of-lading.attachments', $billOfLading)
@@ -1420,7 +1444,17 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
+            if ($storedPath && Storage::disk('local')->exists($storedPath)) {
+                Storage::disk('local')->delete($storedPath);
+            }
+
+            Log::error('Error subiendo adjunto de conocimiento', [
+                'bill_of_lading_id' => $billOfLading->id,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage(),
+            ]);
+
             return redirect()->back()
                 ->with('error', 'Error al subir el archivo: ' . $e->getMessage());
         }
@@ -1442,20 +1476,31 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
         }
 
         try {
-            DB::beginTransaction();
+            $attachment = $billOfLading->attachments()->findOrFail($attachmentId);
+            $disk = $attachment->disk ?: 'local';
+            $filePath = $attachment->file_path;
 
-            // TODO: Implementar eliminación de archivos
-            // $attachment = $billOfLading->attachments()->findOrFail($attachmentId);
-            // $attachment->delete();
-            
+            DB::beginTransaction();
+            $attachment->delete();
             DB::commit();
+
+            if ($filePath && Storage::disk($disk)->exists($filePath)) {
+                Storage::disk($disk)->delete($filePath);
+            }
 
             return redirect()->route('company.bills-of-lading.attachments', $billOfLading)
                 ->with('success', 'Archivo eliminado exitosamente.');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
+            Log::error('Error eliminando adjunto de conocimiento', [
+                'bill_of_lading_id' => $billOfLading->id,
+                'attachment_id' => $attachmentId,
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage(),
+            ]);
+
             return redirect()->back()
                 ->with('error', 'Error al eliminar el archivo: ' . $e->getMessage());
         }

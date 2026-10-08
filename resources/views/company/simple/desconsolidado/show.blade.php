@@ -130,7 +130,14 @@
                                     );
                                     $hasExpiry = !empty($container->csc_expiry_date);
                                     $hasAcep = !empty($container->acep);
-                                    $documentReady = $hasExpiry !== $hasAcep;
+                                    $hasCalculatedExpiry = !$hasExpiry
+                                        && !$hasAcep
+                                        && !empty($voyage->estimated_arrival_date);
+                                    $calculatedExpiry = $hasCalculatedExpiry
+                                        ? $voyage->estimated_arrival_date->copy()->addDays(480)
+                                        : null;
+                                    $documentReady = ($hasExpiry !== $hasAcep)
+                                        || $hasCalculatedExpiry;
                                     $containerReady = $allConditionsReady && $documentReady;
                                     $isOldContainer = (int) old('container_id') === (int) $container->id;
                                     $oldItemConditions = $isOldContainer ? old('item_conditions', []) : [];
@@ -213,8 +220,13 @@
                                                 Documento del contenedor
                                             </p>
                                             <p class="text-xs text-gray-500 mb-3">
-                                                ATA-DESC exige Fecha de vencimiento del contenedor o ACEP. Informe uno u otro dato real, no ambos; no se completa automáticamente.
+                                                Si informa un vencimiento CSC o un ACEP real, se usa ese dato y no deben completarse ambos. Si deja los dos campos vacíos, ATA-DESC calcula el vencimiento como Fecha de arribo + 480 días.
                                             </p>
+                                            @if($calculatedExpiry)
+                                                <p class="text-xs font-medium text-green-700 mb-3">
+                                                    Vencimiento calculado para este viaje: {{ $calculatedExpiry->format('d/m/Y') }}
+                                                </p>
+                                            @endif
                                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                 <div>
                                                     <label class="block text-xs font-medium text-gray-600 mb-1">

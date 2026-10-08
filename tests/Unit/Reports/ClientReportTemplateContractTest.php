@@ -89,6 +89,37 @@ class ClientReportTemplateContractTest extends TestCase
         }
     }
 
+    public function test_client_templates_keep_fields_from_roberto_samples(): void
+    {
+        $manifest = $this->source(
+            'resources/views/company/reports/pdf/manifest-client.blade.php'
+        );
+        $mic = $this->source(
+            'resources/views/company/reports/pdf/micdta-client.blade.php'
+        );
+        $micService = $this->source(
+            'app/Services/Reports/MicDtaReportService.php'
+        );
+
+        // Cargo Manifest entregado: operador en cabecera y Date of Sailing
+        // dentro de la segunda fila, sin una fila extra de matrícula/IMO.
+        $this->assertStringContainsString('Date of Sailing', $manifest);
+        $this->assertStringNotContainsString(
+            'Datos de Registro de la Embarcación',
+            $manifest
+        );
+
+        // MIC/DTA entregado: Roberto marcó el permiso de embarque en campo 16.
+        $this->assertStringContainsString(
+            "'export_permit' => \$bill->permiso_embarque ?? ''",
+            $micService
+        );
+        $this->assertStringContainsString(
+            "(\$bill['export_permit'] ?? '') ?:",
+            $mic
+        );
+    }
+
     public function test_manifest_is_ordered_and_grouped_by_ports_before_bill_number(): void
     {
         $service = $this->source('app/Services/Reports/ManifestReportService.php');
@@ -147,8 +178,18 @@ class ClientReportTemplateContractTest extends TestCase
 
         $this->assertStringContainsString('$documentPages', $template);
         $this->assertStringContainsString('$pageLineBudget = 18;', $template);
-        $this->assertStringContainsString('$usedLines + $lineCost > $pageLineBudget', $template);
-        $this->assertStringContainsString("'rows' => \$pageRows->values()", $template);
+        $this->assertStringContainsString(
+            '$pageCount = max(1, (int) ceil($lineCount / $pageLineBudget));',
+            $template
+        );
+        $this->assertStringContainsString(
+            "'rows' => collect([\$row])",
+            $template
+        );
+        $this->assertStringContainsString(
+            "->flatMap(fn (\$item) => \$item['containers'] ?? [])",
+            $template
+        );
         $this->assertStringContainsString('Page: &nbsp; {{ $pageIndex + 1 }}', $template);
         $this->assertStringContainsString('.page-footer', $template);
         $this->assertStringContainsString('position: absolute;', $template);

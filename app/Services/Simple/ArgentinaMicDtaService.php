@@ -16,7 +16,9 @@ use App\Services\Simple\Parsers\SoapResponseParser;
  * SISTEMA MODULAR WEBSERVICES - ArgentinaMicDtaService CORREGIDO
  * 
  * SOLUCIÓN DEFINITIVA para MIC/DTA Argentina AFIP
- * Flujo secuencial corregido: RegistrarTitEnvios -> RegistrarEnvios -> RegistrarMicDta
+ * Flujo inicial: RegistrarTitEnvios -> RegistrarMicDta.
+ * RegistrarEnvios queda disponible únicamente para agregar envíos a un título
+ * ya registrado, tal como define el manual oficial.
  * 
  * CORRECCIONES CRÍTICAS:
  * - Flujo secuencial claro y separado
@@ -26,10 +28,12 @@ use App\Services\Simple\Parsers\SoapResponseParser;
  * - Validaciones mejoradas
  * - Logging detallado para debug
  * 
- * FLUJO CORRECTO AFIP:
- * 1. RegistrarTitEnvios (por cada shipment) -> registra título
- * 2. RegistrarEnvios (por cada shipment) -> genera TRACKs
- * 3. RegistrarMicDta (voyage completo) -> usa todos los TRACKs
+ * FLUJO INICIAL AFIP:
+ * 1. RegistrarTitEnvios (por cada shipment) -> registra títulos, envíos y TRACKs
+ * 2. RegistrarMicDta (por shipment) -> usa los TRACKs reales devueltos
+ *
+ * RegistrarEnvios es una operación posterior para incorporar nuevos envíos a
+ * un título ya registrado; no forma parte del alta inicial.
  */
 class ArgentinaMicDtaService extends BaseWebserviceService
 {
@@ -76,6 +80,62 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             'company_id' => $company->id,
             'user_id' => $user->id,
         ]);
+    }
+
+    /**
+     * MIC/DTA ejecuta varios métodos remotos secuenciales.
+     * No envolver toda la secuencia en una transacción DB porque AFIP no
+     * participa de esa transacción: cada paso debe conservar su auditoría
+     * aunque un paso posterior falle.
+     */
+    public function sendWebservice(Voyage $voyage, array $options = []): array
+    {
+        try {
+            $validation = $this->canProcessVoyage($voyage);
+            if (!$validation['can_process']) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Viaje no válido para MIC/DTA',
+                    'error_code' => 'VALIDATION_FAILED',
+                    'validation_errors' => $validation['errors'],
+                    'warnings' => $validation['warnings'],
+                ];
+            }
+
+            $status = $this->getWebserviceStatus($voyage);
+            $status->update(['status' => 'validating']);
+
+            $result = $this->sendSpecificWebservice($voyage, $options);
+
+            if ($result['success']) {
+                $status->update([
+                    'status' => 'sent',
+                    'last_sent_at' => now(),
+                    'retry_count' => 0,
+                    'last_error_message' => null,
+                ]);
+            } else {
+                $status->update([
+                    'status' => 'error',
+                    'last_error_message' =>
+                        $result['error_message'] ?? 'Error desconocido',
+                ]);
+            }
+
+            return $result;
+
+        } catch (Exception $e) {
+            $this->logOperation('error', 'Error enviando MIC/DTA', [
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error_message' => $e->getMessage(),
+                'error_code' => 'MICDTA_SEND_ERROR',
+            ];
+        }
     }
 
     /**
@@ -384,10 +444,8 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $details[] = "";
             $details[] = "💡 Próximo paso: Ejecutar RegistrarMicDta para usar estos TRACKs.";
         } else {
-            $details[] = "⚠️ No se detectaron TRACKs en la respuesta de AFIP.";
-            $details[] = "Esto puede ser normal en ambiente de testing.";
-            $details[] = "";
-            $details[] = "💡 Si está en producción, verifique los logs para más detalles.";
+            $details[] = "⚠️ AFIP no devolvió TRACKs reales.";
+            $details[] = "No se puede continuar con RegistrarMicDta hasta obtenerlos.";
         }
         
         return $details;
@@ -424,13 +482,16 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      */
     private function processRegistrarMicDta(Voyage $voyage, array $data): array
     {
-        // Obtener TRACKs de transacciones previas
-        $allTracks = $data['tracks'] ?? $this->getTracksFromPreviousTransactions($voyage);
-        
+        // Obtener únicamente TRACKs reales persistidos por los pasos previos.
+        // La estructura queda separada por shipment y por semántica AFIP:
+        // carga_suelta / cont_vacios.
+        $allTracks = $data['tracks']
+            ?? $this->getTracksFromPreviousTransactions($voyage);
+
         if (empty($allTracks)) {
             return [
                 'success' => false,
-                'error_message' => 'No se encontraron TRACKs para procesar MIC/DTA. Ejecute RegistrarEnvios primero.',
+                'error_message' => 'No se encontraron TRACKs reales para procesar MIC/DTA. Ejecute RegistrarTitEnvios/RegistrarEnvios primero.',
                 'error_code' => 'MISSING_TRACKS',
             ];
         }
@@ -443,8 +504,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             $shipment->load(['vessel.vesselType', 'vessel.flagCountry', 'captain', 'billsOfLading']);
             
             // Verificar si este shipment ya tiene MIC/DTA exitoso en AFIP
-            $micdtaExitoso = \App\Models\WebserviceTransaction::where('shipment_id', $shipment->id)
+            $micdtaExitoso = \App\Models\WebserviceTransaction::where(
+                    'shipment_id',
+                    $shipment->id
+                )
                 ->where('webservice_type', 'micdta')
+                ->where('soap_action', $this->config['soap_action_micdta'])
                 ->where('status', 'success')
                 ->whereNotNull('external_reference')
                 ->first();
@@ -459,13 +524,23 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 continue;
             }
 
+            $shipmentTracks = $this->tracksForShipment(
+                $allTracks,
+                $shipment
+            );
+
             $this->logOperation('info', 'RegistrarMicDta para shipment', [
                 'shipment_id' => $shipment->id,
                 'shipment_number' => $shipment->shipment_number,
-                'vessel_name' => $shipment->vessel?->name ?? 'SIN VESSEL',
+                'vessel_name' => $shipment->vessel?->name,
+                'tracks' => $shipmentTracks,
             ]);
-            
-            $result = $this->registrarMicDta($voyage, $allTracks, $shipment);
+
+            $result = $this->registrarMicDta(
+                $voyage,
+                $shipmentTracks,
+                $shipment
+            );
             $results[] = $result;
             
             if (!$result['success']) {
@@ -474,8 +549,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 return $result;
             }
             
-            if (!empty($result['idMicDta'])) {
-                $allMicDtaIds[] = $result['idMicDta'];
+            $micDtaId = $result['mic_dta_id']
+                ?? $result['idMicDta']
+                ?? null;
+
+            if ($micDtaId) {
+                $allMicDtaIds[] = $micDtaId;
             }
         }
         
@@ -537,9 +616,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 
             case 'RegistrarEnvios':
                 // Requiere que RegistrarTitEnvios se haya ejecutado exitosamente
-                $hasTitEnvios = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
-                    ->where('soap_action', 'like', '%RegistrarTitEnvios%')
-                    ->where('status', 'success')
+                $hasTitEnvios = \App\Models\WebserviceTransaction::where(
+                        'voyage_id',
+                        $voyage->id
+                    )
+                    ->where('soap_action', $this->config['soap_action_titenvios'])
+                    ->whereIn('status', ['success', 'sent'])
                     ->exists();
                 
                 if (!$hasTitEnvios) {
@@ -548,15 +630,14 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 break;
                 
             case 'RegistrarMicDta':
-                // Requiere TRACKs existentes generados previamente
-                $tracksCount = WebserviceTrack::whereIn('shipment_id', $voyage->shipments->pluck('id'))
-                    ->where('status', 'generated')
-                    ->count();
-                
+                // Usar el mismo origen de verdad que consume RegistrarMicDta.
+                $trackGroups = $this->getTracksFromPreviousTransactions($voyage);
+                $tracksCount = collect($trackGroups)->flatten()->count();
+
                 if ($tracksCount === 0) {
-                    $errors[] = 'No hay TRACKs generados. Ejecute RegistrarTitEnvios primero (Error AFIP 27130).';
+                    $errors[] = 'No hay TRACKs reales disponibles. Ejecute RegistrarTitEnvios/RegistrarEnvios primero (Error AFIP 27130).';
                 } else {
-                    $this->logOperation('info', 'TRACKs disponibles para MIC/DTA', [
+                    $this->logOperation('info', 'TRACKs reales disponibles para MIC/DTA', [
                         'voyage_id' => $voyage->id,
                         'tracks_count' => $tracksCount,
                     ]);
@@ -885,51 +966,86 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'shipments_count' => $voyage->shipments()->count(),
             ]);
 
-            // FLUJO SECUENCIAL AFIP CORREGIDO
-            $allTracks = [];
-
-            // PROCESAR CADA SHIPMENT: TitEnvios -> Envios (genera TRACKs)
+            // Alta inicial oficial:
+            // RegistrarTitEnvios ya registra títulos Y envíos y devuelve TRACKs.
+            // RegistrarEnvios se reserva para agregar envíos posteriormente.
             foreach ($voyage->shipments as $shipment) {
-                // Verificar si este shipment ya tiene MIC/DTA exitoso en AFIP
-                $micdtaExitoso = \App\Models\WebserviceTransaction::where('shipment_id', $shipment->id)
+                $micdtaExitoso = \App\Models\WebserviceTransaction::where(
+                        'shipment_id',
+                        $shipment->id
+                    )
                     ->where('webservice_type', 'micdta')
+                    ->where('soap_action', $this->config['soap_action_micdta'])
                     ->where('status', 'success')
                     ->whereNotNull('external_reference')
                     ->first();
 
                 if ($micdtaExitoso) {
-                    $this->logOperation('info', 'Shipment ya tiene MIC/DTA exitoso - saltear', [
-                        'shipment_id' => $shipment->id,
-                        'shipment_number' => $shipment->shipment_number,
-                        'idMicDta' => $micdtaExitoso->external_reference,
-                    ]);
-                    $allTracks[$shipment->id] = [];
                     continue;
                 }
 
-                // Verificar si es remolcador en lastre (sin BLs) - no necesita TitEnvios/Envios
                 $vesselCategory = $shipment->vessel?->vesselType?->category ?? '';
-                if ($voyage->vessel_count > 1 && $vesselCategory !== 'barge' && $shipment->billsOfLading()->count() === 0) {
-                    $this->logOperation('info', 'Shipment en lastre - saltear flujo TitEnvios/Envios', [
-                        'shipment_id' => $shipment->id,
-                        'shipment_number' => $shipment->shipment_number,
-                    ]);
-                    $allTracks[$shipment->id] = [];
+                $isLastre = $voyage->vessel_count > 1
+                    && $vesselCategory !== 'barge'
+                    && $shipment->billsOfLading()->count() === 0;
+
+                if ($isLastre) {
                     continue;
                 }
 
-                $shipmentTracks = $this->processShipmentFlow($shipment);
-                if (!$shipmentTracks['success']) {
-                    return $shipmentTracks;
+                $existingTitEnvios = \App\Models\WebserviceTransaction::where(
+                        'shipment_id',
+                        $shipment->id
+                    )
+                    ->where('webservice_type', 'micdta')
+                    ->where('soap_action', $this->config['soap_action_titenvios'])
+                    ->whereIn('status', ['success', 'sent'])
+                    ->latest()
+                    ->first();
+
+                $knownTracks = $this->tracksForShipment(
+                    $this->getTracksFromPreviousTransactions($voyage),
+                    $shipment
+                );
+                $knownTrackCount = collect($knownTracks)->flatten()->count();
+
+                if ($existingTitEnvios) {
+                    if ($knownTrackCount === 0) {
+                        return [
+                            'success' => false,
+                            'error_message' =>
+                                "RegistrarTitEnvios ya fue enviado para shipment {$shipment->shipment_number}, pero no hay TRACKs reales recuperables. No se reenvía automáticamente para evitar duplicar el título.",
+                            'error_code' => 'MISSING_TRACKS_AFTER_TITENVIOS',
+                            'transaction_record_id' => $existingTitEnvios->id,
+                        ];
+                    }
+
+                    continue;
                 }
-                
-                $allTracks[$shipment->id] = $shipmentTracks['tracks'];
+
+                $soapClient = $this->createSoapClient();
+                $titEnviosResult = $this->sendTitEnvios(
+                    $soapClient,
+                    $shipment
+                );
+
+                if (!$titEnviosResult['success']) {
+                    return $titEnviosResult;
+                }
+
+                if (empty($titEnviosResult['tracks'])) {
+                    return [
+                        'success' => false,
+                        'error_message' =>
+                            "RegistrarTitEnvios fue aceptado para shipment {$shipment->shipment_number}, pero AFIP no devolvió TRACKs reales.",
+                        'error_code' => 'MISSING_TRACKS_AFTER_TITENVIOS',
+                        'transaction_record_id' =>
+                            $titEnviosResult['transaction_record_id'] ?? null,
+                    ];
+                }
             }
 
-            // PASO FINAL: RegistrarMicDta con todos los TRACKs
-            $micDtaResult = $this->registrarMicDta($voyage, $allTracks);
-            
-            return $micDtaResult;
+            return $this->processRegistrarMicDta($voyage, $options);
 
         } catch (Exception $e) {
             $this->logOperation('error', 'Error en envío MIC/DTA', [
@@ -942,63 +1058,6 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'success' => false,
                 'error_message' => $e->getMessage(),
                 'error_code' => 'MICDTA_SEND_ERROR',
-            ];
-        }
-    }
-
-    /**
-     * FLUJO CORRECTO POR SHIPMENT: TitEnvios -> Envios
-     */
-    private function processShipmentFlow($shipment): array
-    {
-        try {
-            $this->logOperation('info', 'Procesando flujo shipment', [
-                'shipment_id' => $shipment->id,
-                'shipment_number' => $shipment->shipment_number,
-            ]);
-
-            // Crear cliente SOAP
-            $soapClient = $this->createSoapClient();
-
-            // PASO 1: RegistrarTitEnvios (solo registra el título)
-            $titEnviosResult = $this->sendTitEnvios($soapClient, $shipment);
-            if (!$titEnviosResult['success']) {
-                return $titEnviosResult;
-            }
-
-            // PASO 2: RegistrarEnvios (genera TRACKs)
-            $enviosResult = $this->sendEnvios($soapClient, $shipment);
-            if (!$enviosResult['success']) {
-                return $enviosResult;
-            }
-
-            // Extraer TRACKs de la respuesta
-            $tracks = $this->extractTracksFromResponse($enviosResult['response']);
-            if (empty($tracks)) {
-                throw new Exception("No se generaron TRACKs para shipment {$shipment->id}");
-            }
-
-            $this->logOperation('info', 'Flujo shipment completado exitosamente', [
-                'shipment_id' => $shipment->id,
-                'tracks_generated' => count($tracks),
-                'tracks' => $tracks,
-            ]);
-
-            return [
-                'success' => true,
-                'tracks' => $tracks,
-            ];
-
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error en flujo shipment', [
-                'shipment_id' => $shipment->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return [
-                'success' => false,
-                'error_message' => $e->getMessage(),
-                'error_code' => 'SHIPMENT_FLOW_ERROR',
             ];
         }
     }
@@ -1069,8 +1128,13 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception($fullError);
             }
 
-            // Extraer TRACKs de la respuesta RegistrarTitEnvios
-            $tracks = $this->extractTracksFromResponse($response);
+            // RegistrarTitEnvios devuelve dos familias distintas:
+            // tracks de envíos y tracks de títulos de contenedores vacíos.
+            $trackGroups = $this->extractTitEnviosTrackGroups($response);
+            $tracks = array_values(array_unique(array_merge(
+                $trackGroups['envio'],
+                $trackGroups['contenedor_vacio']
+            )));
 
              // ✅ NUEVO: Extraer TODOS los mensajes de AFIP
             $afipMessages = $this->extractAfipMessages($response);
@@ -1155,6 +1219,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     'id_tit_trans' => $idTitTrans,
                     'tracks_count' => count($tracks),
                     'tracks' => $tracks,
+                    'track_groups' => $trackGroups,
                 ],
             ]);
 
@@ -1174,14 +1239,18 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ]);
             }
 
-            // Guardar TRACKs en BD si se encontraron
+            // Guardar TRACKs en BD conservando su semántica AFIP.
             if (!empty($tracks)) {
-                $this->saveTracksFromTitEnvios($tracks, $transaction, $shipment);
-                
+                $this->saveTracksFromTitEnvios(
+                    $trackGroups,
+                    $transaction,
+                    $shipment
+                );
+
                 $this->logOperation('info', 'TRACKs extraídos y guardados de RegistrarTitEnvios', [
                     'shipment_id' => $shipment->id,
                     'tracks_count' => count($tracks),
-                    'tracks' => $tracks,
+                    'track_groups' => $trackGroups,
                 ]);
             }
 
@@ -1224,51 +1293,87 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
-     * Guardar TRACKs extraídos de RegistrarTitEnvios en BD
-     * 
-     * @param array $tracks Lista de números de TRACK
-     * @param WebserviceTransaction $transaction Transacción que generó los TRACKs
-     * @param Shipment $shipment Shipment asociado
+     * Extraer las dos familias oficiales de TRACKs de RegistrarTitEnvios.
      */
-    private function saveTracksFromTitEnvios(array $tracks, $transaction, $shipment): void
+    private function extractTitEnviosTrackGroups(string $response): array
     {
-        foreach ($tracks as $trackNumber) {
-            try {
-                WebserviceTrack::create([
-                    'webservice_transaction_id' => $transaction->id,
-                    'shipment_id' => $shipment->id,
-                    'container_id' => null,
-                    'bill_of_lading_id' => null,
-                    'track_number' => $trackNumber,
-                    'track_type' => 'envio',
-                    'webservice_method' => 'RegistrarTitEnvios',
-                    'reference_type' => 'shipment',
-                    'reference_number' => $shipment->shipment_number ?? "SHIP_{$shipment->id}",
-                    'description' => "TRACK generado por RegistrarTitEnvios para shipment {$shipment->shipment_number}",
-                    'afip_metadata' => [
-                        'source_method' => 'RegistrarTitEnvios',
-                        'extraction_date' => now()->toIso8601String(),
-                        'transaction_id' => $transaction->transaction_id,
+        $groups = [
+            'envio' => [],
+            'contenedor_vacio' => [],
+        ];
+
+        $dom = new \DOMDocument();
+        if (!@$dom->loadXML($response)) {
+            return $groups;
+        }
+
+        $xpath = new \DOMXPath($dom);
+
+        foreach ([
+            'envio' =>
+                '//*[local-name()="titTracksEnv"]//*[local-name()="idTrack"]',
+            'contenedor_vacio' =>
+                '//*[local-name()="titTracksContVacio"]//*[local-name()="idTrack"]',
+        ] as $group => $query) {
+            foreach ($xpath->query($query) as $node) {
+                $track = trim((string) $node->textContent);
+                if ($track !== '') {
+                    $groups[$group][] = $track;
+                }
+            }
+
+            $groups[$group] = array_values(array_unique($groups[$group]));
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Guardar TRACKs extraídos de RegistrarTitEnvios conservando su tipo real.
+     */
+    private function saveTracksFromTitEnvios(
+        array $trackGroups,
+        $transaction,
+        $shipment
+    ): void {
+        foreach ([
+            'envio' => 'envio',
+            'contenedor_vacio' => 'contenedor_vacio',
+        ] as $group => $trackType) {
+            foreach ($trackGroups[$group] ?? [] as $trackNumber) {
+                $trackNumber = trim((string) $trackNumber);
+                if ($trackNumber === '') {
+                    continue;
+                }
+
+                WebserviceTrack::updateOrCreate(
+                    [
+                        'webservice_transaction_id' => $transaction->id,
+                        'track_number' => $trackNumber,
                     ],
-                    'generated_at' => now(),
-                    'status' => 'generated',
-                    'created_by_user_id' => $this->user->id,
-                    'created_from_ip' => request()->ip(),
-                    'process_chain' => ['RegistrarTitEnvios'],
-                ]);
-                
-                $this->logOperation('debug', 'TRACK guardado en BD', [
-                    'track_number' => $trackNumber,
-                    'shipment_id' => $shipment->id,
-                    'method' => 'RegistrarTitEnvios',
-                ]);
-                
-            } catch (\Exception $e) {
-                $this->logOperation('error', 'Error guardando TRACK de TitEnvios', [
-                    'track_number' => $trackNumber,
-                    'shipment_id' => $shipment->id,
-                    'error' => $e->getMessage(),
-                ]);
+                    [
+                        'shipment_id' => $shipment->id,
+                        'container_id' => null,
+                        'bill_of_lading_id' => null,
+                        'track_type' => $trackType,
+                        'webservice_method' => 'RegistrarTitEnvios',
+                        'reference_type' => 'shipment',
+                        'reference_number' => $shipment->shipment_number
+                            ?? "SHIP_{$shipment->id}",
+                        'description' =>
+                            "TRACK {$trackType} generado por RegistrarTitEnvios",
+                        'afip_metadata' => [
+                            'source_method' => 'RegistrarTitEnvios',
+                            'track_group' => $group,
+                            'transaction_id' => $transaction->transaction_id,
+                        ],
+                        'generated_at' => now(),
+                        'status' => 'generated',
+                        'created_by_user_id' => $this->user->id,
+                        'created_from_ip' => request()->ip(),
+                        'process_chain' => ['RegistrarTitEnvios'],
+                    ]
+                );
             }
         }
     }
@@ -1276,9 +1381,37 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     /**
      * PASO 2: Enviar RegistrarEnvios (genera TRACKs)
      */
-    private function sendEnvios($soapClient, $shipment): array
-    {
+    private function sendEnvios(
+        $soapClient,
+        $shipment,
+        ?string $idTitTrans = null
+    ): array {
         try {
+            if (!$idTitTrans) {
+                $titEnviosTx = \App\Models\WebserviceTransaction::where(
+                        'shipment_id',
+                        $shipment->id
+                    )
+                    ->where('webservice_type', 'micdta')
+                    ->where('soap_action', $this->config['soap_action_titenvios'])
+                    ->whereIn('status', ['success', 'sent'])
+                    ->latest()
+                    ->first();
+
+                $idTitTrans = $titEnviosTx?->external_reference
+                    ?: data_get($titEnviosTx?->success_data, 'id_tit_trans');
+            }
+
+            $idTitTrans = trim((string) $idTitTrans);
+            if ($idTitTrans === '') {
+                return [
+                    'success' => false,
+                    'error_message' =>
+                        'RegistrarEnvios requiere el idTitTrans real devuelto por RegistrarTitEnvios.',
+                    'error_code' => 'MISSING_TITLE_ID',
+                ];
+            }
+
             $transactionId = 'ENV_' . time() . '_' . $shipment->id;
 
             // NUEVO: Crear transacción en BD ANTES de enviar
@@ -1297,7 +1430,11 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             ]);
             
             // Usar XML corregido
-            $xml = $this->xmlSerializer->createRegistrarEnviosXml($shipment, $transactionId);
+            $xml = $this->xmlSerializer->createRegistrarEnviosXml(
+                $shipment,
+                $idTitTrans,
+                $transactionId
+            );
             
             $this->logOperation('info', 'Enviando RegistrarEnvios', [
                 'shipment_id' => $shipment->id,
@@ -1346,6 +1483,33 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'shipment_id' => $shipment->id,
                 'tracks_count' => count($tracks),
                 'tracks' => $tracks,
+            ]);
+
+            if (empty($tracks)) {
+                $message = 'AFIP respondió RegistrarEnvios sin TRACKs reales. No se puede continuar con RegistrarMicDta.';
+
+                $transaction->update([
+                    'status' => 'sent',
+                    'tracking_numbers' => [],
+                    'error_message' => $message,
+                    'completed_at' => now(),
+                ]);
+
+                return [
+                    'success' => false,
+                    'error_message' => $message,
+                    'error_code' => 'MISSING_TRACKS',
+                    'response' => $response,
+                    'transaction_id' => $transactionId,
+                    'transaction_record_id' => $transaction->id,
+                    'tracks' => [],
+                ];
+            }
+
+            $transaction->update([
+                'status' => 'success',
+                'tracking_numbers' => $tracks,
+                'completed_at' => now(),
             ]);
 
             return [
@@ -1401,13 +1565,20 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // ✅ BUSCAR TRANSACCIÓN EXISTENTE (puede haber sido creada antes)
             $transactionId = 'MD' . time() . substr(uniqid(), -3);
-            $transaction = \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+            $transaction = \App\Models\WebserviceTransaction::where(
+                    'voyage_id',
+                    $voyage->id
+                )
+                ->where('shipment_id', $shipment?->id)
                 ->where('webservice_type', 'micdta')
                 ->where('status', 'pending')
+                ->where('soap_action', $this->config['soap_action_micdta'])
                 ->latest()
                 ->first();
 
-            if (!$transaction) {
+            if ($transaction) {
+                $transactionId = $transaction->transaction_id;
+            } else {
                 // ✅ CREAR TRANSACCIÓN CON DATOS COMPLETOS PARA REPORTES
                 $transaction = \App\Models\WebserviceTransaction::create([
                     'company_id' => $this->company->id,
@@ -1693,8 +1864,8 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 'response_time_ms' => $responseTime,
             ]);
 
-            // Guardar TRACKs en base de datos
-            $this->saveTracks($voyage, $allTracks);
+            // Marcar como usados los TRACKs reales ya persistidos.
+            $this->saveTracks($voyage, $allTracks, $shipment);
 
             // ✅ CRÍTICO: Guardar datos para GPS y auditorías
             $this->saveTransactionData($transaction->transaction_id, $xml, $response, $micDtaId);
@@ -4883,49 +5054,149 @@ class ArgentinaMicDtaService extends BaseWebserviceService
  * 
  * Busca directamente en webservice_tracks por voyage_id
  */
+private function tracksForShipment(
+    array $allTracks,
+    \App\Models\Shipment $shipment
+): array {
+    $groups = $allTracks[$shipment->id]
+        ?? $allTracks[(string) $shipment->id]
+        ?? null;
+
+    if ($groups === null && (
+        array_key_exists('carga_suelta', $allTracks)
+        || array_key_exists('cont_vacios', $allTracks)
+    )) {
+        $groups = $allTracks;
+    }
+
+    if (!is_array($groups)) {
+        return [
+            'carga_suelta' => [],
+            'cont_vacios' => [],
+        ];
+    }
+
+    $normalized = [];
+    foreach (['carga_suelta', 'cont_vacios'] as $group) {
+        $normalized[$group] = collect($groups[$group] ?? [])
+            ->map(fn ($track) => trim((string) $track))
+            ->filter(fn ($track) =>
+                $track !== ''
+                && !str_starts_with($track, 'TEST_TRACK_')
+            )
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    return $normalized;
+}
+
 private function getTracksFromPreviousTransactions(Voyage $voyage): array
 {
     try {
-        $this->logOperation('info', 'Buscando TRACKs de transacciones previas', [
-            'voyage_id' => $voyage->id,
-            'voyage_number' => $voyage->voyage_number,
-        ]);
-
-        // BUSQUEDA DIRECTA en webservice_tracks - más eficiente y correcta
-        $tracks = \App\Models\WebserviceTrack::whereHas('webserviceTransaction', function($query) use ($voyage) {
+        $tracks = \App\Models\WebserviceTrack::whereHas(
+            'webserviceTransaction',
+            function ($query) use ($voyage) {
                 $query->where('voyage_id', $voyage->id)
-                      ->where('company_id', $this->company->id);
-            })
-            ->where('track_type', 'envio')
-            ->whereIn('status', ['generated', 'used_in_micdta']) // Permitir reutilización
+                    ->where('company_id', $this->company->id);
+            }
+        )
+            ->whereIn(
+                'status',
+                ['generated', 'used_in_micdta']
+            )
             ->get();
 
-        if ($tracks->isEmpty()) {
-            $this->logOperation('warning', 'No se encontraron TRACKs para el voyage', [
-                'voyage_id' => $voyage->id,
-            ]);
-            return [];
-        }
-
-        // AGRUPAR por shipment_id
         $allTracks = [];
-        $totalTracks = 0;
 
         foreach ($tracks as $track) {
-            $shipmentId = $track->shipment_id ?: 'default_shipment';
-            
-            if (!isset($allTracks[$shipmentId])) {
-                $allTracks[$shipmentId] = [];
+            $trackNumber = trim((string) $track->track_number);
+            $shipmentId = $track->shipment_id;
+
+            if (
+                !$shipmentId
+                || $trackNumber === ''
+                || str_starts_with($trackNumber, 'TEST_TRACK_')
+                || (bool) data_get($track->afip_metadata, 'is_fake', false)
+            ) {
+                continue;
             }
-            
-            $allTracks[$shipmentId][] = $track->track_number;
-            $totalTracks++;
+
+            $group = null;
+
+            if ($track->track_type === 'contenedor_vacio') {
+                $group = 'cont_vacios';
+            } elseif (
+                $track->track_type === 'envio'
+                && $track->webservice_method === 'RegistrarTitEnvios'
+            ) {
+                $group = 'carga_suelta';
+            }
+
+            if ($group === null) {
+                continue;
+            }
+
+            $allTracks[$shipmentId] ??= [
+                'carga_suelta' => [],
+                'cont_vacios' => [],
+            ];
+            $allTracks[$shipmentId][$group][] = $trackNumber;
         }
 
-        $this->logOperation('info', 'TRACKs recuperados exitosamente', [
+        // RegistrarEnvios no cabe en el ENUM histórico webservice_tracks.
+        // Sus TRACKs reales se conservan en la transacción que los recibió.
+        $envioTransactions = \App\Models\WebserviceTransaction::query()
+            ->where('voyage_id', $voyage->id)
+            ->where('company_id', $this->company->id)
+            ->whereNotNull('shipment_id')
+            ->where('webservice_type', 'micdta')
+            ->where('soap_action', $this->config['soap_action_envios'])
+            ->whereIn('status', ['success', 'sent'])
+            ->get();
+
+        foreach ($envioTransactions as $transaction) {
+            $shipmentId = $transaction->shipment_id;
+            $numbers = $transaction->tracking_numbers ?? [];
+
+            if (
+                empty($numbers)
+                && is_string($transaction->response_xml)
+                && trim($transaction->response_xml) !== ''
+            ) {
+                $numbers = $this->extractTracksFromResponse(
+                    $transaction->response_xml
+                );
+            }
+
+            foreach ((array) $numbers as $trackNumber) {
+                $trackNumber = trim((string) $trackNumber);
+                if (
+                    $trackNumber === ''
+                    || str_starts_with($trackNumber, 'TEST_TRACK_')
+                ) {
+                    continue;
+                }
+
+                $allTracks[$shipmentId] ??= [
+                    'carga_suelta' => [],
+                    'cont_vacios' => [],
+                ];
+                $allTracks[$shipmentId]['carga_suelta'][] = $trackNumber;
+            }
+        }
+
+        foreach ($allTracks as $shipmentId => $groups) {
+            foreach (['carga_suelta', 'cont_vacios'] as $group) {
+                $allTracks[$shipmentId][$group] = array_values(
+                    array_unique($groups[$group] ?? [])
+                );
+            }
+        }
+
+        $this->logOperation('info', 'TRACKs reales recuperados', [
             'voyage_id' => $voyage->id,
-            'shipments_with_tracks' => count($allTracks),
-            'total_tracks' => $totalTracks,
             'tracks_detail' => $allTracks,
         ]);
 
@@ -4935,7 +5206,6 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
         $this->logOperation('error', 'Error recuperando TRACKs previos', [
             'voyage_id' => $voyage->id,
             'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString(),
         ]);
 
         return [];
@@ -5226,92 +5496,66 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
     }
 
     /**
-     * Guardar TRACKs en base de datos - COMPLETO con todos los campos obligatorios
-     * Reemplaza el método saveTracks() en ArgentinaMicDtaService.php
+     * Marcar como usados los TRACKs reales que ya fueron persistidos.
+     * RegistrarMicDta no genera TRACKs nuevos.
      */
-    private function saveTracks(Voyage $voyage, array $allTracks): void
-    {
-        try {
-            // Obtener la transacción actual
-            $currentTransaction = $this->getCurrentTransaction();
-            
-            if (!$currentTransaction) {
-                $this->logOperation('error', 'No se encontró transacción actual para vincular TRACKs');
-                return;
-            }
+    private function saveTracks(
+        Voyage $voyage,
+        array $allTracks,
+        ?\App\Models\Shipment $shipment = null
+    ): void {
+        $trackNumbers = collect($allTracks)
+            ->flatten()
+            ->map(fn ($track) => trim((string) $track))
+            ->filter(fn ($track) =>
+                $track !== ''
+                && !str_starts_with($track, 'TEST_TRACK_')
+            )
+            ->unique()
+            ->values();
 
-            $totalSaved = 0;
-
-            foreach ($allTracks as $shipmentId => $tracks) {
-                // Obtener datos del shipment para completar referencias
-                $shipment = \App\Models\Shipment::find($shipmentId);
-                
-                foreach ($tracks as $trackNumber) {
-                    WebserviceTrack::create([
-                        // Claves foráneas
-                        'webservice_transaction_id' => $currentTransaction->id,
-                        'shipment_id' => $shipmentId,
-                        'container_id' => null, // Para envíos, no contenedores específicos
-                        'bill_of_lading_id' => null, // Podríamos mejorar esto después
-                        
-                        // Datos del TRACK
-                        'track_number' => $trackNumber,
-                        'track_type' => 'envio', // OBLIGATORIO: tipo de TRACK según AFIP
-                        'webservice_method' => 'RegistrarTitEnvios', // OBLIGATORIO: método que generó
-                        
-                        // Referencias de negocio (OBLIGATORIOS)
-                        'reference_type' => 'shipment',
-                        'reference_number' => $shipment ? $shipment->shipment_number : "SHIP_{$shipmentId}",
-                        'description' => $shipment ? "Envío {$shipment->shipment_number}" : "Envío ID {$shipmentId}",
-                        
-                        // Datos AFIP
-                        'afip_title_number' => null, // Se podría llenar si tenemos el título
-                        'afip_metadata' => [
-                            'generated_from' => 'RegistrarTitEnvios',
-                            'voyage_id' => $voyage->id,
-                            'voyage_number' => $voyage->voyage_number,
-                            'extraction_method' => 'alternative_patterns',
-                        ],
-                        
-                        // Timestamps
-                        'generated_at' => now(),
-                        
-                        // Estado y tracking
-                        'status' => 'used_in_micdta', // ENUM CORRECTO
-                        'used_at' => now(), // Ya que se está usando en MIC/DTA
-                        'completed_at' => null,
-                        
-                        // Auditoría (OBLIGATORIOS)
-                        'created_by_user_id' => $this->user->id,
-                        'created_from_ip' => request()->ip(),
-                        
-                        // Cadena de proceso
-                        'process_chain' => ['generated', 'used_in_micdta'],
-                        'notes' => 'TRACK extraído de respuesta RegistrarEnvios y usado inmediatamente en MIC/DTA',
-                    ]);
-                    $totalSaved++;
-                }
-            }
-
-            $this->logOperation('info', 'TRACKs guardados exitosamente con datos completos', [
-                'tracks_saved' => $totalSaved,
-                'voyage_id' => $voyage->id,
-                'voyage_number' => $voyage->voyage_number,
-                'transaction_id' => $currentTransaction->id,
-                'transaction_external_id' => $currentTransaction->transaction_id,
-                'shipments_count' => count($allTracks),
-                'user_id' => $this->user->id,
-            ]);
-
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error guardando TRACKs completos', [
-                'error' => $e->getMessage(),
-                'voyage_id' => $voyage->id,
-                'line' => $e->getLine(),
-                'file' => $e->getFile(),
-            ]);
-            // No fallar el proceso completo
+        if ($trackNumbers->isEmpty()) {
+            return;
         }
+
+        $query = WebserviceTrack::whereIn(
+                'track_number',
+                $trackNumbers->all()
+            )
+            ->whereHas(
+                'webserviceTransaction',
+                function ($builder) use ($voyage) {
+                    $builder->where('voyage_id', $voyage->id)
+                        ->where('company_id', $this->company->id);
+                }
+            );
+
+        if ($shipment) {
+            $query->where('shipment_id', $shipment->id);
+        }
+
+        $updated = 0;
+
+        foreach ($query->get() as $track) {
+            $chain = $track->process_chain ?? [];
+            if (!in_array('used_in_micdta', $chain, true)) {
+                $chain[] = 'used_in_micdta';
+            }
+
+            $track->update([
+                'status' => 'used_in_micdta',
+                'used_at' => now(),
+                'process_chain' => $chain,
+            ]);
+            $updated++;
+        }
+
+        $this->logOperation('info', 'TRACKs marcados como usados en MIC/DTA', [
+            'voyage_id' => $voyage->id,
+            'shipment_id' => $shipment?->id,
+            'tracks_requested' => $trackNumbers->count(),
+            'tracks_updated' => $updated,
+        ]);
     }
 
     /**
@@ -6816,181 +7060,44 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
     private function extractAndSaveTracksFromEnvios(string $response, $transaction, $shipment): array
     {
         $tracks = [];
-        
-        try {
-            // Loguear respuesta completa para debug
-            $this->logOperation('debug', 'Respuesta XML completa de RegistrarEnvios', [
-                'response' => $response,
-                'response_length' => strlen($response),
-            ]);
-            
-            // Parsear XML con manejo de errores de namespace
-            libxml_use_internal_errors(true);
-            $xml = simplexml_load_string($response);
-            libxml_clear_errors();
-            
-            if (!$xml) {
-                $this->logOperation('warning', 'No se pudo parsear XML de respuesta (intentando regex)');
-            } else {
-                // Registrar namespaces del XML
-                $namespaces = $xml->getNamespaces(true);
-                $this->logOperation('debug', 'Namespaces encontrados en XML', [
-                    'namespaces' => $namespaces,
-                ]);
-                
-                // Buscar TRACKs en diferentes estructuras posibles según AFIP
-                if (isset($xml->Body)) {
-                    $body = $xml->children('soap', true)->Body;
-                    $response_node = $body->children();
-                    
-                    // Buscar tracksEnv
-                    foreach ($response_node->children() as $child) {
-                        if ($child->getName() == 'tracksEnv') {
-                            foreach ($child->children() as $trackEnv) {
-                                $idTrack = (string)$trackEnv->idTrack;
-                                $idEnvio = (string)$trackEnv->idEnvio;
-                                
-                                if (!empty($idTrack)) {
-                                    $tracks[] = $idTrack;
-                                    
-                                    // Crear registro en webservice_tracks
-                                    \App\Models\WebserviceTrack::create([
-                                        'webservice_transaction_id' => $transaction->id,
-                                        'shipment_id' => $shipment->id,
-                                        'container_id' => null,
-                                        'bill_of_lading_id' => null,
-                                        'track_number' => $idTrack,
-                                        'track_type' => 'envio',
-                                        'webservice_method' => 'RegistrarEnvios',
-                                        'reference_type' => 'shipment',
-                                        'reference_number' => $shipment->shipment_number,
-                                        'description' => "TRACK generado para shipment {$shipment->shipment_number}",
-                                        'afip_metadata' => [
-                                            'id_envio' => $idEnvio,
-                                            'response_date' => now()->toIso8601String(),
-                                        ],
-                                        'generated_at' => now(),
-                                        'status' => 'generated',
-                                        'created_by_user_id' => $this->user->id,
-                                        'created_from_ip' => request()->ip(),
-                                        'process_chain' => ['RegistrarEnvios'],
-                                    ]);
-                                    
-                                    $this->logOperation('info', 'TRACK creado en BD', [
-                                        'track_number' => $idTrack,
-                                        'id_envio' => $idEnvio,
-                                        'shipment_id' => $shipment->id,
-                                    ]);
-                                }
-                            }
-                        }
-                    }
+
+        $dom = new \DOMDocument();
+        if (@$dom->loadXML($response)) {
+            $xpath = new \DOMXPath($dom);
+            foreach ($xpath->query('//*[local-name()="tracksEnv"]//*[local-name()="idTrack"]') as $node) {
+                $track = trim((string) $node->textContent);
+                if ($track !== '') {
+                    $tracks[] = $track;
                 }
             }
-            
-            // Si no encontró TRACKs con XML parser, intentar búsqueda con regex como fallback
-            if (empty($tracks)) {
-                $this->logOperation('debug', 'Intentando extraer TRACKs con regex');
-                
-                // Patrón para encontrar <idTrack>valor</idTrack>
-                if (preg_match_all('/<idTrack>([^<]+)<\/idTrack>/', $response, $matches)) {
-                    foreach ($matches[1] as $trackNumber) {
-                        $tracks[] = $trackNumber;
-                        
-                        // Crear registro en webservice_tracks
-                        \App\Models\WebserviceTrack::create([
-                            'webservice_transaction_id' => $transaction->id,
-                            'shipment_id' => $shipment->id,
-                            'container_id' => null,
-                            'bill_of_lading_id' => null,
-                            'track_number' => $trackNumber,
-                            'track_type' => 'envio',
-                            'webservice_method' => 'RegistrarEnvios',
-                            'reference_type' => 'shipment',
-                            'reference_number' => $shipment->shipment_number,
-                            'description' => "TRACK generado para shipment {$shipment->shipment_number}",
-                            'afip_metadata' => [
-                                'extraction_method' => 'regex',
-                                'response_date' => now()->toIso8601String(),
-                            ],
-                            'generated_at' => now(),
-                            'status' => 'generated',
-                            'created_by_user_id' => $this->user->id,
-                            'created_from_ip' => request()->ip(),
-                            'process_chain' => ['RegistrarEnvios'],
-                        ]);
-                        
-                        $this->logOperation('info', 'TRACK creado en BD (regex)', [
-                            'track_number' => $trackNumber,
-                            'shipment_id' => $shipment->id,
-                        ]);
-                    }
-                }
-            }
-            
-            // ✅ GENERACIÓN AUTOMÁTICA DE TRACKs FAKE EN TESTING
-            if (empty($tracks)) {
-                $environment = $this->config['environment'];
-                
-                if ($environment === 'testing') {
-                    $this->logOperation('info', '🔄 Ambiente TESTING: Generando TRACK ficticio', [
-                        'shipment_id' => $shipment->id,
-                        'reason' => 'AFIP testing no devuelve TRACKs reales según manual',
-                    ]);
-                    
-                    // Generar TRACK fake con formato realista
-                    $fakeTrack = 'TEST_TRACK_' . time() . '_' . $shipment->id;
-                    
-                    // Crear registro en webservice_tracks
-                    \App\Models\WebserviceTrack::create([
-                        'webservice_transaction_id' => $transaction->id,
-                        'shipment_id' => $shipment->id,
-                        'container_id' => null,
-                        'bill_of_lading_id' => null,
-                        'track_number' => $fakeTrack,
-                        'track_type' => 'envio',
-                        'webservice_method' => 'RegistrarEnvios',
-                        'reference_type' => 'shipment',
-                        'reference_number' => $shipment->shipment_number,
-                        'description' => "TRACK FAKE generado para testing - Shipment {$shipment->shipment_number}",
-                        'afip_metadata' => [
-                            'is_fake' => true,
-                            'environment' => 'testing',
-                            'generation_reason' => 'AFIP testing no devuelve TRACKs reales según manual',
-                            'generated_at' => now()->toIso8601String(),
-                            'server' => $this->extractServerFromXml($response),
-                            'timestamp' => $this->extractTimestampFromXml($response),
-                        ],
-                        'generated_at' => now(),
-                        'status' => 'generated',
-                        'created_by_user_id' => $this->user->id,
-                        'created_from_ip' => request()->ip(),
-                        'process_chain' => ['RegistrarEnvios_fake'],
-                        'notes' => '⚠️ TRACK FICTICIO para ambiente de testing - AFIP homologación no devuelve TRACKs reales',
-                    ]);
-                    
-                    $tracks[] = $fakeTrack;
-                    
-                    $this->logOperation('info', '✅ TRACK ficticio generado exitosamente', [
-                        'track_number' => $fakeTrack,
-                        'shipment_id' => $shipment->id,
-                        'is_fake' => true,
-                    ]);
-                } else {
-                    $this->logOperation('warning', 'No se pudieron extraer TRACKs de la respuesta AFIP', [
-                        'response_preview' => substr($response, 0, 500),
-                        'environment' => $environment,
-                    ]);
-                }
-            }
-            
-        } catch (Exception $e) {
-            $this->logOperation('error', 'Error extrayendo TRACKs', [
-                'error' => $e->getMessage(),
-                'shipment_id' => $shipment->id,
-            ]);
         }
-        
+
+        if (empty($tracks) && preg_match_all('/<idTrack>([^<]+)<\/idTrack>/', $response, $matches)) {
+            $tracks = array_merge($tracks, $matches[1]);
+        }
+
+        $tracks = collect($tracks)
+            ->map(fn ($track) => trim((string) $track))
+            ->filter(fn ($track) =>
+                $track !== ''
+                && !str_starts_with($track, 'TEST_TRACK_')
+            )
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($tracks)) {
+            $this->logOperation(
+                'warning',
+                'RegistrarEnvios no devolvió TRACKs reales',
+                [
+                    'shipment_id' => $shipment->id,
+                    'environment' => $this->config['environment'],
+                    'response_preview' => substr($response, 0, 500),
+                ]
+            );
+        }
+
         return $tracks;
     }
 

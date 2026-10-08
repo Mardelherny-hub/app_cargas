@@ -299,13 +299,15 @@
                                     </div>
                                     @endif
                                     
-                                    <!-- Tercera fila: Adjuntos Paraguay (existente) -->
+                                    <!-- Adjuntos Paraguay: una única puerta operativa.
+                                         La carga, gestión y envío DocumentoIMG real se realizan
+                                         desde el módulo Simple de Manifiesto. -->
                                     @if($voyage->destinationPort->country->alpha2_code === 'PY')
                                     <div class="flex space-x-2">
-                                        <button onclick="showAttachmentsModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}', '{{ $voyage->originPort->name ?? "N/A" }} → {{ $voyage->destinationPort->name ?? "N/A" }}')"
-                                                class="inline-flex items-center px-3 py-1 border border-yellow-300 rounded-md text-xs font-medium text-yellow-700 bg-yellow-50 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1">
-                                            📎 Adjuntos PY
-                                        </button>
+                                        <a href="{{ route('company.simple.manifiesto.show', $voyage) }}"
+                                           class="inline-flex items-center px-3 py-1 border border-yellow-300 rounded-md text-xs font-medium text-yellow-700 bg-yellow-50 hover:bg-yellow-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-1">
+                                            📎 Adjuntos PY / Enviar a DNA
+                                        </a>
                                     </div>
                                     @endif
                                 </div>

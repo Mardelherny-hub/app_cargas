@@ -145,14 +145,13 @@
                                             Transferir Cargas
                                         </label>
                                         <p class="text-sm text-gray-500 mt-1">
-                                            Permite transferir:
+                                            Permite transferir viajes completos de esta empresa a otra empresa activa.
                                         </p>
                                         <ul class="text-xs text-gray-500 mt-2 space-y-1">
-                                            <li>• Cargas entre operadores</li>
-                                            <li>• Cargas entre empresas</li>
-                                            <li>• Viajes completos</li>
-                                            <li>• Reasignar responsabilidades</li>
-                                            <li>• Cambiar propietarios</li>
+                                            <li>• Conserva conocimientos, ítems, contenedores y documentos del viaje.</li>
+                                            <li>• No duplica la carga: la empresa destino pasa a administrarla.</li>
+                                            <li>• No se permite si el viaje ya fue enviado a Aduana/Webservices.</li>
+                                            <li>• El operador sólo puede transferir viajes creados por él.</li>
                                         </ul>
                                     </div>
                                 </div>

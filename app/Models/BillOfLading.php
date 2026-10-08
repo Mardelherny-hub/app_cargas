@@ -161,6 +161,7 @@ class BillOfLading extends Model
 
         'is_consolidated',
         'is_transit_transshipment',
+        'webservice_data',
 
         'id_mic_dta_pri_fracc',
     ];
@@ -229,6 +230,7 @@ class BillOfLading extends Model
         'delivery_instructions' => 'json',
         'required_documents' => 'json',
         'attached_documents' => 'json',
+        'webservice_data' => 'array',
 
         'is_consolidated' => 'string',
         'is_transit_transshipment' => 'string',
@@ -489,10 +491,10 @@ class BillOfLading extends Model
     /**
      * Archivos adjuntos (relación polimórfica)
      */
-    //public function attachments(): MorphMany
-    //{
-    //    return $this->morphMany(Attachment::class, 'attachable');
-    //}
+    public function attachments(): MorphMany
+    {
+        return $this->morphMany(Attachment::class, 'attachable');
+    }
 
     // ========================================
     // SCOPES

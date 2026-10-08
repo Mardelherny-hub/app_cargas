@@ -71,135 +71,42 @@
         return mb_strtoupper(preg_replace('/[^A-Z0-9]/i', '', trim((string) $value)));
     };
 
-    // Normaliza saltos y fragmenta cada línea sin descartar caracteres visibles.
-    $wrapText = function (?string $text, int $width) {
-        $text = str_replace(["\r\n", "\r"], "\n", (string) $text);
-        $chunks = [];
-        foreach (explode("\n", $text) as $line) {
-            preg_match_all('/[\s\S]{1,'.$width.'}/u', $line, $matches);
-            foreach ($matches[0] ?? [] as $chunk) {
-                if (preg_match('/[^\s\p{Z}]/u', $chunk)) {
-                    $chunks[] = $chunk;
+    /*
+     * El modelo entregado trabaja por conocimiento, no por ítem/contenedor:
+     * campos 10-14 forman una única fila lógica del B/L. Cuando el contenido
+     * no entra, continúa en otra hoja sin repetir pesos/cantidades.
+     */
+    $wrapText = function (?string $text, int $width): array {
+        $text = str_replace(["\r\n", "\r"], "\n", trim((string) $text));
+        if ($text === '') {
+            return [];
+        }
+
+        $lines = [];
+        foreach (explode("\n", $text) as $sourceLine) {
+            $sourceLine = trim($sourceLine);
+            if ($sourceLine === '') {
+                continue;
+            }
+
+            while (mb_strlen($sourceLine) > $width) {
+                $piece = mb_substr($sourceLine, 0, $width);
+                $breakAt = mb_strrpos($piece, ' ');
+                if ($breakAt !== false && $breakAt > (int) floor($width * .55)) {
+                    $piece = mb_substr($sourceLine, 0, $breakAt);
+                    $sourceLine = ltrim(mb_substr($sourceLine, $breakAt + 1));
+                } else {
+                    $sourceLine = mb_substr($sourceLine, $width);
                 }
+                $lines[] = $piece;
             }
-        }
-        return collect($chunks);
-    };
 
-    $estimateLines = function (?string $text, int $width): int {
-        $lines = 0;
-        $text = str_replace(["\r\n", "\r"], "\n", (string) $text);
-        foreach (explode("\n", $text) as $line) {
-            $lines += max(1, (int) ceil(mb_strlen($line) / $width));
-        }
-        return max(1, $lines);
-    };
-
-    $buildCargoRows = function (array $item, array $containers = [], bool $legacy = false) use ($wrapText, $estimateLines) {
-        $containers = array_values($containers);
-        $containerCount = count($containers);
-        $singleContainer = !$legacy && $containerCount === 1;
-        $baseRow = [
-            'bill_number' => $item['_bill_number'] ?? '',
-            'first_part' => true,
-            'label' => $legacy ? 'Total del conocimiento' : 'Total del ítem',
-            'container_count' => $containerCount,
-            'quantity' => $item['quantity'] ?? null,
-            'package_type' => $item['package_type'] ?? null,
-            'volume_m3' => $item['volume_m3'] ?? null,
-            'description' => $item['description'] ?? '',
-            'commodity_code' => $item['commodity_code'] ?? null,
-            'net_weight_kg' => $item['net_weight_kg'] ?? null,
-            'gross_weight_kg' => $item['gross_weight_kg'] ?? null,
-            'declared_value' => $item['declared_value'] ?? null,
-            'cargo_marks' => $item['cargo_marks'] ?? '',
-            'container_text' => '',
-            'container_number' => null,
-        ];
-        $detailRows = $singleContainer ? [] : [$baseRow];
-
-        foreach ($containers as $container) {
-            $row = $baseRow;
-            $row['label'] = $legacy ? 'Contenedor del conocimiento' : 'Contenedor del ítem';
-            $row['container_count'] = $singleContainer ? 1 : 0;
-            $row['container_number'] = (string) ($container['number'] ?? '');
-            foreach ([
-                'quantity' => 'package_quantity',
-                'gross_weight_kg' => 'gross_weight_kg',
-                'net_weight_kg' => 'net_weight_kg',
-                'volume_m3' => 'volume_m3',
-            ] as $field => $pivotField) {
-                $row[$field] = $container[$pivotField] ?? ($singleContainer ? $baseRow[$field] : null);
-            }
-            if (!$singleContainer) {
-                $row['description'] = '';
-                $row['cargo_marks'] = '';
-                $row['declared_value'] = null;
-            }
-            $row['container_text'] = $row['container_number'];
-            if (!empty($container['type'])) {
-                $row['container_text'] .= ' ['.$container['type'].']';
-            }
-            if (!empty($container['seals'])) {
-                $row['container_text'] .= "\n".(string) $container['seals'];
-            }
-            $detailRows[] = $row;
-        }
-
-        $rows = collect();
-        foreach ($detailRows as $detail) {
-            $descriptionChunks = $wrapText($detail['description'], 52)->all();
-            $marksChunks = $wrapText($detail['cargo_marks'], 40)->all();
-            $partCount = max(1, count($descriptionChunks), count($marksChunks));
-            for ($part = 0; $part < $partCount; $part++) {
-                $row = $detail;
-                $row['description'] = $descriptionChunks[$part] ?? '';
-                $row['cargo_marks'] = $marksChunks[$part] ?? '';
-                if ($part > 0) {
-                    $row['first_part'] = false;
-                    $row['label'] = $legacy ? 'Continuación del conocimiento' : 'Continuación del ítem';
-                    foreach (['quantity', 'volume_m3', 'net_weight_kg', 'gross_weight_kg', 'declared_value'] as $field) {
-                        $row[$field] = null;
-                    }
-                    $row['container_text'] = '';
-                    $row['container_number'] = null;
-                }
-
-                $column11 = implode("\n", array_filter([
-                    $row['label'],
-                    $row['first_part'] && $row['container_count'] > 0
-                        ? $row['container_count'].' '.($row['container_count'] === 1 ? 'CONTENEDOR' : 'CONTENEDORES')
-                        : null,
-                    $row['quantity'] !== null ? $row['quantity'].' BULTOS' : null,
-                    $row['volume_m3'] !== null ? 'VOLUMEN: '.$row['volume_m3'].' M3' : null,
-                    $row['description'],
-                    !empty($row['commodity_code']) ? 'HS/NCM: '.$row['commodity_code'] : null,
-                    $row['net_weight_kg'] !== null ? 'NET WEIGHT: '.number_format((float) $row['net_weight_kg'], 3, '.', '').' KGS' : null,
-                ], static fn ($value) => $value !== null && $value !== ''));
-
-                $column14 = implode("\n", array_filter([
-                    $row['cargo_marks'],
-                    $row['container_text'],
-                ], static fn ($value) => $value !== ''));
-
-                $lineCount = max(
-                    1,
-                    $estimateLines((string) $row['bill_number'], 20),
-                    $estimateLines($column11, 52),
-                    $row['gross_weight_kg'] === null
-                        ? 1
-                        : $estimateLines(number_format((float) $row['gross_weight_kg'], 3, '.', ''), 18),
-                    $row['declared_value'] === null
-                        ? 1
-                        : $estimateLines(number_format((float) $row['declared_value'], 2, '.', ''), 10),
-                    $estimateLines($column14, 40)
-                );
-                $row['_line_cost'] = $lineCount + 1; // Padding vertical y bordes por fila.
-                $rows->push($row);
+            if ($sourceLine !== '') {
+                $lines[] = $sourceLine;
             }
         }
 
-        return $rows;
+        return $lines;
     };
 
     $documentPages = collect();
@@ -207,69 +114,119 @@
 
     foreach ($client_template_bills as $bill) {
         $items = collect($bill['items'] ?? []);
-        $cargoRows = collect();
 
-        if ($items->isNotEmpty()) {
-            foreach ($items as $item) {
-                $item['_bill_number'] = $bill['bill_number'] ?? '';
-                $cargoRows = $cargoRows->concat(
-                    $buildCargoRows($item, array_values($item['containers'] ?? []))
-                );
-            }
-        } else {
-            // Compatibilidad con el formato histórico sin items detallados.
-            $legacyItem = [
-                '_bill_number' => $bill['bill_number'] ?? '',
-                'quantity' => $bill['total_packages'] ?? null,
-                'package_type' => 'BULTOS',
-                'description' => $bill['cargo_description'] ?? '',
-                'commodity_code' => null,
-                'net_weight_kg' => null,
-                'gross_weight_kg' => $bill['gross_weight_kg'] ?? null,
-                'volume_m3' => $bill['volume_m3'] ?? null,
-                'declared_value' => $bill['declared_value'] ?? null,
-                'cargo_marks' => $bill['cargo_marks'] ?? '',
-            ];
-            $cargoRows = $buildCargoRows(
-                $legacyItem,
-                array_values($bill['containers'] ?? []),
-                true
+        $containers = $items->isNotEmpty()
+            ? $items
+                ->flatMap(fn ($item) => $item['containers'] ?? [])
+                ->unique('number')
+                ->values()
+            : collect($bill['containers'] ?? [])
+                ->unique('number')
+                ->values();
+
+        $descriptionParts = $items
+            ->map(fn ($item) => trim((string) ($item['description'] ?? '')))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($descriptionParts->isEmpty() && !empty($bill['cargo_description'])) {
+            $descriptionParts->push(trim((string) $bill['cargo_description']));
+        }
+
+        $commodityCodes = $items
+            ->pluck('commodity_code')
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $netWeight = $items
+            ->pluck('net_weight_kg')
+            ->filter(fn ($value) => $value !== null && $value !== '')
+            ->sum();
+
+        $goodsLines = [];
+        foreach ($descriptionParts as $description) {
+            $goodsLines = array_merge($goodsLines, $wrapText($description, 52));
+        }
+        if ($commodityCodes->isNotEmpty()) {
+            $goodsLines = array_merge(
+                $goodsLines,
+                $wrapText('HS/NCM: '.$commodityCodes->implode(', '), 52)
             );
         }
-
-        $pageRows = collect();
-        $usedLines = 0;
-        foreach ($cargoRows as $row) {
-            $lineCost = $row['_line_cost'];
-            unset($row['_line_cost']);
-
-            if ($lineCost > $pageLineBudget) {
-                $detailName = $row['container_number'] !== null
-                    ? 'del contenedor '.$row['container_number']
-                    : 'del ítem';
-                throw new \RuntimeException(
-                    'El detalle '.$detailName.' del conocimiento '.$row['bill_number'].
-                    ' es demasiado extenso para imprimirse en una sola página MIC/DTA.'
-                );
-            }
-
-            if ($pageRows->isNotEmpty() && $usedLines + $lineCost > $pageLineBudget) {
-                $documentPages->push([
-                    'bill' => $bill,
-                    'rows' => $pageRows->values(),
-                ]);
-                $pageRows = collect();
-                $usedLines = 0;
-            }
-
-            $pageRows->push($row);
-            $usedLines += $lineCost;
+        if ((float) $netWeight > 0) {
+            $goodsLines[] = 'NET WEIGHT: '
+                . number_format((float) $netWeight, 3, '.', '')
+                . ' KGS';
         }
 
-        if ($pageRows->isNotEmpty()) {
+        $markParts = collect();
+        if (!empty($bill['cargo_marks'])) {
+            $markParts->push(trim((string) $bill['cargo_marks']));
+        }
+        $items->pluck('cargo_marks')
+            ->map(fn ($value) => trim((string) $value))
+            ->filter()
+            ->unique()
+            ->each(fn ($value) => $markParts->push($value));
+
+        foreach ($containers as $container) {
+            $text = trim((string) ($container['number'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+            if (!empty($container['type'])) {
+                $text .= ' ['.(string) $container['type'].']';
+            }
+            if (!empty($container['seals'])) {
+                $text .= "\n".(string) $container['seals'];
+            }
+            $markParts->push($text);
+        }
+
+        $marksLines = $wrapText($markParts->unique()->implode("\n"), 40);
+
+        $lineCount = max(1, count($goodsLines), count($marksLines));
+        $pageCount = max(1, (int) ceil($lineCount / $pageLineBudget));
+
+        for ($page = 0; $page < $pageCount; $page++) {
+            $offset = $page * $pageLineBudget;
+            $firstPart = $page === 0;
+
+            $row = [
+                'bill_number' => $bill['bill_number'] ?? '',
+                'first_part' => $firstPart,
+                'label' => $firstPart ? '' : 'Continuación',
+                'container_count' => $firstPart ? $containers->count() : 0,
+                'quantity' => $firstPart ? ($bill['total_packages'] ?? null) : null,
+                'volume_m3' => $firstPart ? ($bill['volume_m3'] ?? null) : null,
+                'description' => implode("\n", array_slice(
+                    $goodsLines,
+                    $offset,
+                    $pageLineBudget
+                )),
+                'commodity_code' => null,
+                'net_weight_kg' => null,
+                'gross_weight_kg' => $firstPart
+                    ? ($bill['gross_weight_kg'] ?? null)
+                    : null,
+                'declared_value' => $firstPart
+                    ? ($bill['declared_value'] ?? null)
+                    : null,
+                'cargo_marks' => implode("\n", array_slice(
+                    $marksLines,
+                    $offset,
+                    $pageLineBudget
+                )),
+                'container_text' => '',
+                'container_number' => null,
+            ];
+
             $documentPages->push([
                 'bill' => $bill,
-                'rows' => $pageRows->values(),
+                'rows' => collect([$row]),
             ]);
         }
     }
@@ -426,7 +383,7 @@
                 </td>
                 <td style="width:52%">
                     <span class="label">16. Observaciones de la Aduana de partida</span>
-                    <div class="value">{{ $bill['customs_remarks'] ?: $micdta['customs_observation'] }}</div>
+                    <div class="value">{{ ($bill['export_permit'] ?? '') ?: (($bill['customs_remarks'] ?? '') ?: $micdta['customs_observation']) }}</div>
                 </td>
             </tr>
         </table>

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Company;
+use App\Models\Operator;
 use App\Models\User;
 use App\Models\Voyage;
 use Illuminate\Database\Schema\Blueprint;
@@ -33,8 +34,16 @@ class VoyageTransferTest extends TestCase
             $t->string('userable_type'); $t->unsignedBigInteger('userable_id');
             $t->timestamp('email_verified_at')->nullable(); $t->boolean('active')->default(true); $t->timestamps();
         });
+        Schema::create('operators', function (Blueprint $t) {
+            $t->id(); $t->unsignedBigInteger('company_id');
+            $t->string('type')->default('external');
+            $t->boolean('can_transfer')->default(false);
+            $t->boolean('active')->default(true);
+            $t->timestamps();
+        });
         Schema::create('voyages', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->string('voyage_number');
+            $t->unsignedBigInteger('created_by_user_id')->nullable();
             $t->string('status')->default('planning'); $t->date('departure_date')->nullable();
             foreach (['lead_vessel_id', 'captain_id', 'origin_port_id', 'destination_port_id', 'transshipment_port_id'] as $field) $t->unsignedBigInteger($field)->nullable();
             foreach (['argentina', 'paraguay'] as $country) {
@@ -82,6 +91,38 @@ class VoyageTransferTest extends TestCase
         $user = User::findOrFail($id);
         $user->assignRole($role);
         if ($permission) $user->givePermissionTo('voyages.transfer');
+        return $user;
+    }
+
+    private function operatorUser(
+        int $company = 1,
+        bool $canTransfer = true,
+        bool $permission = true,
+        bool $active = true
+    ): User {
+        $operator = Operator::create([
+            'company_id' => $company,
+            'type' => 'external',
+            'can_transfer' => $canTransfer,
+            'active' => $active,
+        ]);
+
+        $id = DB::table('users')->insertGetId([
+            'name' => 'Operador QA',
+            'email' => uniqid().'@example.test',
+            'password' => 'unused',
+            'userable_type' => Operator::class,
+            'userable_id' => $operator->id,
+            'email_verified_at' => now(),
+            'active' => true,
+        ]);
+
+        $user = User::findOrFail($id);
+        $user->assignRole('user');
+        if ($permission) {
+            $user->givePermissionTo('voyages.transfer');
+        }
+
         return $user;
     }
 
@@ -147,11 +188,15 @@ class VoyageTransferTest extends TestCase
         $this->actingAs($this->admin());
         $this->sendTransfer()->assertSessionHasNoErrors();
         DB::table('companies')->where('id', 2)->update(['company_roles' => '[]']);
-        Schema::create('operators', function (Blueprint $t) {
-            $t->id(); $t->unsignedBigInteger('company_id');
-            $t->string('type'); $t->boolean('active');
-        });
-        DB::table('operators')->insert(['id' => 1, 'company_id' => 2, 'type' => 'external', 'active' => true]);
+        DB::table('operators')->insert([
+            'id' => 1,
+            'company_id' => 2,
+            'type' => 'external',
+            'can_transfer' => true,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         $operator = $this->admin(2, true, 'user');
         DB::table('users')->where('id', $operator->id)->update([
             'userable_type' => \App\Models\Operator::class, 'userable_id' => 1,
@@ -178,9 +223,80 @@ class VoyageTransferTest extends TestCase
         $this->actingAs($this->admin(1, false)); $this->sendTransfer()->assertForbidden();
     }
 
-    public function test_non_admin_with_permission_cannot_transfer(): void
+    public function test_non_operator_user_with_permission_cannot_transfer(): void
     {
-        $this->actingAs($this->admin(1, true, 'user')); $this->sendTransfer()->assertForbidden();
+        $this->actingAs($this->admin(1, true, 'user'));
+        $this->sendTransfer()->assertForbidden();
+    }
+
+    public function test_operator_with_can_transfer_can_transfer_own_voyage(): void
+    {
+        $operator = $this->operatorUser();
+        DB::table('voyages')->where('id', 1)->update([
+            'created_by_user_id' => $operator->id,
+        ]);
+
+        $this->actingAs($operator);
+
+        $view = app(\App\Http\Controllers\Company\VoyageController::class)
+            ->show(Voyage::findOrFail(1));
+        $this->assertTrue($view->getData()['canTransferVoyage']);
+        $this->assertFalse($view->getData()['transferBlocked']);
+        $this->assertSame(
+            [2],
+            $view->getData()['transferCompanies']->pluck('id')->all()
+        );
+
+        $this->sendTransfer()
+            ->assertRedirect(route('company.voyages.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('voyages', [
+            'id' => 1,
+            'company_id' => 2,
+            'created_by_user_id' => $operator->id,
+        ]);
+        $this->assertDatabaseHas('audits', [
+            'event' => 'transferred',
+            'auditable_id' => 1,
+        ]);
+    }
+
+    public function test_operator_without_can_transfer_cannot_transfer(): void
+    {
+        $operator = $this->operatorUser(canTransfer: false);
+        DB::table('voyages')->where('id', 1)->update([
+            'created_by_user_id' => $operator->id,
+        ]);
+
+        $this->actingAs($operator);
+        $this->sendTransfer()->assertForbidden();
+        $this->assertDatabaseHas('voyages', ['id' => 1, 'company_id' => 1]);
+    }
+
+    public function test_operator_cannot_transfer_another_operators_voyage(): void
+    {
+        $owner = $this->operatorUser();
+        $other = $this->operatorUser();
+        DB::table('voyages')->where('id', 1)->update([
+            'created_by_user_id' => $owner->id,
+        ]);
+
+        $this->actingAs($other);
+        $this->sendTransfer()->assertForbidden();
+        $this->assertDatabaseHas('voyages', ['id' => 1, 'company_id' => 1]);
+    }
+
+    public function test_inactive_operator_cannot_transfer(): void
+    {
+        $operator = $this->operatorUser(active: false);
+        DB::table('voyages')->where('id', 1)->update([
+            'created_by_user_id' => $operator->id,
+        ]);
+
+        $this->actingAs($operator);
+        $this->sendTransfer()->assertForbidden();
+        $this->assertDatabaseHas('voyages', ['id' => 1, 'company_id' => 1]);
     }
 
     public function test_invalid_destinations_are_rejected(): void
