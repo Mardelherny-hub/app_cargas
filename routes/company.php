@@ -920,9 +920,6 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
     // Paraguay – Manifiesto (DNA)
     // ============================
     Route::prefix('manifiesto')->name('manifiesto.')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'manifiestoIndex'])
-            ->name('index');
-
         Route::get('/{voyage}', [\App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'manifiestoShow'])
             ->whereNumber('voyage')
             ->name('show');

@@ -683,14 +683,6 @@ class SimpleManifestController extends Controller
     }
 
     /**
-     * TODO FASE 3: Manifiestos Paraguay
-     */
-    public function manifiestoIndex(Request $request)
-    {
-        return $this->renderComingSoon('manifiesto', 'Manifiestos Paraguay');
-    }
-
-    /**
      * TODO FASE 4: Desconsolidados Argentina
      */
     // =============================
