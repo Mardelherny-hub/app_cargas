@@ -498,7 +498,7 @@
                                 Error
                             </span>`;
                     }
-                    mostrarNotificacion('error', data.error || 'Error consultando estado');
+                    mostrarNotificacion('error', detalleErrorConsulta(data));
                 }
 
             } catch (error) {
@@ -525,6 +525,15 @@
                     `;
                 }
             }
+        }
+
+        function detalleErrorConsulta(data) {
+            const result = data.resultado || {};
+            const detail = data.details || result.error || data.error || 'Error consultando estado';
+            const code = data.error_code || result.error_code;
+            const transaction = data.transaction_record_id || result.consulta_transaction_id;
+            return [detail, code ? 'Código: ' + code : '',
+                transaction ? 'Transacción: ' + transaction : ''].filter(Boolean).join(' — ');
         }
 
         async function consultarEstadoMasivo() {
@@ -564,7 +573,7 @@
                         `Consulta completada: ${resultado.consultas_exitosas} exitosas, ${resultado.consultas_error} errores`
                     );
                 } else {
-                    mostrarNotificacion('error', data.error || 'Error en consulta masiva');
+                    mostrarNotificacion('error', detalleErrorConsulta(data));
                 }
 
             } catch (error) {

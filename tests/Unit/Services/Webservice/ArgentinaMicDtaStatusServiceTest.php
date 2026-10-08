@@ -8,7 +8,6 @@ use App\Models\Voyage;
 use App\Models\WebserviceTransaction;
 use App\Services\Simple\ArgentinaMicDtaStatusService;
 use App\Services\Simple\BaseWebserviceService;
-use App\Services\Webservice\SoapClientService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -58,13 +57,12 @@ class ArgentinaMicDtaStatusServiceTest extends TestCase
     public function test_public_individual_and_mass_queries_without_pending_transactions_do_not_send(): void
     {
         $service = $this->service();
-        $transport = Mockery::mock(SoapClientService::class);
-        $transport->shouldNotReceive('createClient');
-        $transport->shouldNotReceive('sendRequest');
-        (new ReflectionProperty($service, 'soapClientService'))->setValue($service, $transport);
+        $native = Mockery::mock(SoapClient::class);
+        $native->shouldNotReceive('__doRequest');
+        (new ReflectionProperty($service, 'soapClient'))->setValue($service, $native);
         foreach ([[], [123]] as $ids) {
             $result = $service->consultarEstadoTransacciones($ids);
-            $this->assertTrue($result['success']);
+            $this->assertFalse($result['success']);
             $this->assertSame(0, $result['consultas_realizadas']);
         }
     }
@@ -77,17 +75,16 @@ class ArgentinaMicDtaStatusServiceTest extends TestCase
         $this->assertSame('STATUS_REQUIRES_TRANSACTION_QUERY', $result['error_code']);
     }
 
-    public function test_existing_soap_operation_is_delegated_to_wrapper(): void
+    public function test_existing_soap_operation_uses_simple_native_transport(): void
     {
         $service = $this->service();
         $transaction = Mockery::mock(WebserviceTransaction::class)->makePartial();
-        $transaction->shouldReceive('update')->twice()->andReturn(true);
-        $native = new SoapClient(null, ['location' => 'http://unused.invalid', 'uri' => 'urn:test']);
-        $transport = Mockery::mock(SoapClientService::class);
-        $transport->shouldReceive('sendRequest')->once()
-            ->with($transaction, 'ConsultarEstadoMicDta', ['xmlParam' => '<consulta/>'])
-            ->andReturn(['response_xml' => '<respuesta/>']);
-        (new ReflectionProperty($service, 'soapClientService'))->setValue($service, $transport);
+        $transaction->shouldReceive('update')->times(3)->andReturn(true);
+        $native = Mockery::mock(SoapClient::class);
+        $native->shouldReceive('__doRequest')->once()
+            ->with('<consulta/>', 'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+                'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarEstadoMicDta', SOAP_1_2, false)
+            ->andReturn('<respuesta/>');
         $result = (new ReflectionMethod($service, 'enviarConsultaSoap'))
             ->invoke($service, $transaction, $native, '<consulta/>');
         $this->assertTrue($result['success']);
