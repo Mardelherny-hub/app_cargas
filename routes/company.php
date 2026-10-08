@@ -63,13 +63,6 @@ Route::prefix('shipments')->name('company.shipments.')->group(function () {
     Route::patch('/{shipment}/status', [ShipmentController::class, 'updateStatus'])->name('update-status');
     Route::post('/{shipment}/duplicate', [ShipmentController::class, 'duplicate'])->name('duplicate');
 
-    // Búsqueda y filtros
-    Route::get('/search', [ShipmentController::class, 'search'])->name('search');
-    Route::post('/search', [ShipmentController::class, 'searchResults'])->name('search-results');
-
-    // Historial y seguimiento
-    Route::get('/{shipment}/history', [ShipmentController::class, 'history'])->name('history');
-    Route::get('/{shipment}/tracking', [ShipmentController::class, 'tracking'])->name('tracking');
 });
 
 // Gestión de Items de Cargas
