@@ -221,6 +221,17 @@ class TfpTextParserCompat extends TfpTextParser
                     $data['naturaleza_mercaderia'] ?? null
                 ),
             'tariff_position' => null,
+            'imdg_class' => ($data['imdg'] ?? null) !== null
+                && trim((string) $data['imdg']) !== ''
+                    ? trim((string) $data['imdg'])
+                    : null,
+            'webservice_data' => [
+                'tfp' => [
+                    // null = campo ausente; '' = campo presente pero vacío.
+                    'es_combustible' => $data['es_combustible'] ?? null,
+                    'contenedor' => $data['contenedor'] ?? null,
+                ],
+            ],
             'created_by_user_id' => auth()->id(),
         ]);
     }

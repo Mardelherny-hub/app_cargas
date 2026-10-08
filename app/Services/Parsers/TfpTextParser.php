@@ -335,6 +335,7 @@ class TfpTextParser implements ManifestParserInterface
             'cantidad' => 'CANTIDAD:',
             'tara' => 'TARA:',
             'temperatura' => 'TEMPERATURA:',
+            'reefer_activo' => 'REEFERACTIVO:',
             'obs' => 'OBS:',
         ];
 
@@ -408,6 +409,11 @@ class TfpTextParser implements ManifestParserInterface
                     'tipo_embalaje' => $this->extractValue($frag, 'TIPOEMBALAJE:'),
                     'cod_armonizado' => $this->extractValue($frag, 'CODARMONIZADO:'),
                     'volumen_total' => $this->extractValue($frag, 'VOLUMENTOTAL:'),
+                    // Estos dos campos existen en los TFP reales y deben
+                    // conservarse para que una exportación posterior no los
+                    // pierda ni tenga que inventar valores.
+                    'es_combustible' => $this->extractValue($frag, 'ESCOMBUSTIBLE:'),
+                    'imdg' => $this->extractValue($frag, 'IMDG:'),
                     // CONTENEDOR vincula la mercaderia con su contenedor; OBS trae
                     // el permiso de embarque en este formato.
                     'contenedor' => $this->extractValue($frag, 'CONTENEDOR:'),
@@ -767,6 +773,7 @@ protected function extractValue(string $scope, string $label): ?string
             'condition' => $this->mapTfpCondition($data['condicion'] ?? null)['condition'],
             'container_condition' => $this->mapTfpCondition($data['condicion'] ?? null)['container_condition'],
             'shipper_seal' => $data['nro_precinta'] ?? null,
+            'webservice_data' => ['tfp' => ['reefer_activo' => $data['reefer_activo'] ?? null]],
             'operational_status' => 'loaded',
             'active' => true,
         ]);
@@ -862,6 +869,17 @@ protected function extractValue(string $scope, string $label): ?string
                 ? $this->normalizeNcm($data['cod_armonizado'])
                 : $this->extractNcmFromText($data['naturaleza_mercaderia'] ?? null),
             'tariff_position' => null,
+            'imdg_class' => ($data['imdg'] ?? null) !== null
+                && trim((string) $data['imdg']) !== ''
+                    ? trim((string) $data['imdg'])
+                    : null,
+            'webservice_data' => [
+                'tfp' => [
+                    // null = campo ausente; '' = campo presente pero vacío.
+                    'es_combustible' => $data['es_combustible'] ?? null,
+                    'contenedor' => $data['contenedor'] ?? null,
+                ],
+            ],
             'created_by_user_id' => auth()->id()
         ]);
     }
