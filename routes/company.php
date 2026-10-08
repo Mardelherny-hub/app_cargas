@@ -453,8 +453,6 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     // === RUTAS ESPECÍFICAS PRIMERO (antes de rutas con parámetros) ===
     Route::get('/', [ManifestController::class, 'index'])->name('index');
     Route::get('/create', [ManifestController::class, 'create'])->name('create');
-    Route::get('/summary', [ManifestController::class, 'summary'])->name('summary');
-    Route::get('/reports', [ManifestController::class, 'reports'])->name('reports');
     Route::post('/', [ManifestController::class, 'store'])->name('store');
 
     // === IMPORTACIÓN - ANTES DE RUTAS CON PARÁMETROS ===
