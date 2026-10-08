@@ -95,8 +95,8 @@ class CertificateManagerService
         ];
 
         try {
-            $certificatePath = $this->company->getCertificatePath();
-            $certificatePassword = $this->company->getCertificatePassword();
+            $certificatePath = $this->resolveCertificatePath();
+            $certificatePassword = $this->resolveCertificatePassword();
 
             // 1. Verificar que existe configuración de certificado
             if (!$certificatePath) {
@@ -193,12 +193,14 @@ class CertificateManagerService
                 'company_country' => $this->company->country,
                 'certificate_path_legacy' => $this->company->certificate_path,
                 'certificates_json' => $this->company->certificates,
-                'getCertificatePath_result' => $this->company->getCertificatePath(),
-                'getCertificatePassword_result' => $this->company->getCertificatePassword() ? '***EXISTS***' : 'NULL',
+                'resolved_country' => $this->resolvedCertificateCountry(),
+                'getCertificatePath_result' => $this->resolveCertificatePath(),
+                'getCertificatePassword_result' => $this->resolveCertificatePassword() ? '***EXISTS***' : 'NULL',
             ]);
             
-            // CAMBIO 1: Usar método getCertificatePath() que soporta ambas estructuras
-            $certificatePath = $this->company->getCertificatePath();
+            // Resolver certificado según país solicitado por el servicio; si no
+            // se especifica, conservar el comportamiento histórico de la empresa.
+            $certificatePath = $this->resolveCertificatePath();
             
             if (!$certificatePath) {
                 $this->logOperation('error', 'No hay ruta de certificado configurada', [
@@ -219,8 +221,7 @@ class CertificateManagerService
 
             $certificateContent = Storage::get($certificatePath);
             
-            // CAMBIO 2: Usar método getCertificatePassword() que soporta ambas estructuras
-            $password = $this->company->getCertificatePassword();
+            $password = $this->resolveCertificatePassword();
             
             if (!$password) {
                 $this->logOperation('error', 'No hay contraseña de certificado configurada', [
@@ -399,6 +400,59 @@ class CertificateManagerService
         }
 
         return $stdout;
+    }
+
+    /**
+     * País de certificado solicitado por el consumidor del servicio.
+     *
+     * Los certificados del JSON se guardan con claves "argentina"/"paraguay";
+     * también aceptamos AR/PY para los servicios aduaneros.
+     */
+    private function resolvedCertificateCountry(): ?string
+    {
+        $country = $this->config['country'] ?? null;
+
+        if ($country === null || trim((string) $country) === '') {
+            return null;
+        }
+
+        return match (strtolower(trim((string) $country))) {
+            'ar', 'argentina' => 'argentina',
+            'py', 'paraguay' => 'paraguay',
+            default => strtolower(trim((string) $country)),
+        };
+    }
+
+    private function resolveCertificatePath(): ?string
+    {
+        $country = $this->resolvedCertificateCountry();
+
+        if ($country) {
+            $path = $this->company->getCertificatePathForCountry($country);
+            if ($path) {
+                return $path;
+            }
+
+            return $this->company->certificate_path ?: null;
+        }
+
+        return $this->company->getCertificatePath();
+    }
+
+    private function resolveCertificatePassword(): ?string
+    {
+        $country = $this->resolvedCertificateCountry();
+
+        if ($country) {
+            $password = $this->company->getCertificatePasswordForCountry($country);
+            if ($password) {
+                return $password;
+            }
+
+            return $this->company->certificate_password ?: null;
+        }
+
+        return $this->company->getCertificatePassword();
     }
 
     /**

@@ -786,7 +786,7 @@ class SimpleManifestController extends Controller
 
         // 7. Obtener historial de transacciones
         $transactions = WebserviceTransaction::where('voyage_id', $voyage->id)
-            ->where('webservice_type', 'desconsolidados')
+            ->where('webservice_type', 'desconsolidado')
             ->with('user')
             ->orderBy('created_at', 'desc')
             ->limit(20)
@@ -816,19 +816,19 @@ class SimpleManifestController extends Controller
 
         // Verificar si hay transacciones exitosas por cada método
         $registrarSuccess = WebserviceTransaction::where('voyage_id', $voyage->id)
-            ->where('webservice_type', 'desconsolidados')
+            ->where('webservice_type', 'desconsolidado')
             ->where('status', 'success')
             ->whereJsonContains('additional_metadata->method', 'registrar')
             ->exists();
 
         $rectificarSuccess = WebserviceTransaction::where('voyage_id', $voyage->id)
-            ->where('webservice_type', 'desconsolidados')
+            ->where('webservice_type', 'desconsolidado')
             ->where('status', 'success')
             ->whereJsonContains('additional_metadata->method', 'rectificar')
             ->exists();
 
         $eliminarSuccess = WebserviceTransaction::where('voyage_id', $voyage->id)
-            ->where('webservice_type', 'desconsolidados')
+            ->where('webservice_type', 'desconsolidado')
             ->where('status', 'success')
             ->whereJsonContains('additional_metadata->method', 'eliminar')
             ->exists();

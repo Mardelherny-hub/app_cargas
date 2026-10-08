@@ -70,6 +70,7 @@ class Container extends Model
         'webservice_data',
         'csc_certificate',
         'csc_expiry_date',
+        'acep',
         'insurance_certificate',
         'certifications',
         'active',

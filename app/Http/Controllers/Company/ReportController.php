@@ -1122,7 +1122,7 @@ private function buildBillsOfLadingQuery($company)
     {
         return WebserviceTransaction::with(['voyage', 'shipment'])
             ->where('company_id', $company->id)
-            ->whereIn('webservice_type', ['micdta', 'anticipada', 'desconsolidados', 'transbordos'])
+            ->whereIn('webservice_type', ['micdta', 'anticipada', 'desconsolidado', 'transbordo'])
             ->whereIn('status', ['success', 'error', 'pending'])
             ->orderBy('created_at', 'desc');
     }
@@ -2015,7 +2015,7 @@ private function buildBillsOfLadingQuery($company)
     {
         return WebserviceTransaction::with(['voyage', 'shipment'])
             ->where('company_id', $company->id)
-            ->where('webservice_type', 'desconsolidados')
+            ->where('webservice_type', 'desconsolidado')
             ->where('status', '!=', 'cancelled')
             ->orderBy('created_at', 'desc');
     }
@@ -2027,7 +2027,7 @@ private function buildBillsOfLadingQuery($company)
     {
         return WebserviceTransaction::with(['voyage', 'shipment'])
             ->where('company_id', $company->id)
-            ->where('webservice_type', 'transbordos')
+            ->where('webservice_type', 'transbordo')
             ->where('status', '!=', 'cancelled')
             ->orderBy('created_at', 'desc');
     }
@@ -2111,7 +2111,7 @@ private function buildBillsOfLadingQuery($company)
     private function getDeconsolidationStats($company): array
     {
         $transactions = WebserviceTransaction::where('company_id', $company->id)
-            ->where('webservice_type', 'desconsolidados');
+            ->where('webservice_type', 'desconsolidado');
 
         return [
             'total' => $transactions->count(),
@@ -2127,7 +2127,7 @@ private function buildBillsOfLadingQuery($company)
     private function getTransshipmentStats($company): array
     {
         $transactions = WebserviceTransaction::where('company_id', $company->id)
-            ->where('webservice_type', 'transbordos');
+            ->where('webservice_type', 'transbordo');
 
         return [
             'total' => $transactions->count(),

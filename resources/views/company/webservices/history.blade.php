@@ -595,6 +595,7 @@ function getWebserviceTypeName(type) {
         'micdta': 'MIC/DTA',
         'anticipada': 'Información Anticipada',
         'transbordo': 'Transbordos',
+        'desconsolidado': 'Desconsolidados',
         'desconsolidados': 'Desconsolidados',
         'paraguay_customs': 'Aduana Paraguay'
     };
@@ -923,6 +924,7 @@ function showErrorModal(message) {
                 'micdta': 'MIC/DTA',
                 'anticipada': 'Información Anticipada',
                 'transbordo': 'Transbordos',
+                'desconsolidado': 'Desconsolidados',
                 'desconsolidados': 'Desconsolidados',
                 'paraguay_customs': 'Aduana Paraguay'
             };
