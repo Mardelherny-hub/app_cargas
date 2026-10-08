@@ -1461,6 +1461,35 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
     }
 
     /**
+     * Descargar archivo adjunto
+     */
+    public function downloadAttachment(BillOfLading $billOfLading, $attachmentId)
+    {
+        if (!$this->hasCompanyRole('Cargas')) {
+            abort(403, 'No tiene permisos para descargar adjuntos.');
+        }
+
+        if (!$this->canAccessCompanyResource($billOfLading, 'shipment.voyage.company_id')) {
+            abort(403, 'No tiene permisos para descargar adjuntos de este conocimiento.');
+        }
+
+        $attachment = $billOfLading->attachments()->findOrFail($attachmentId);
+        $disk = $attachment->disk ?: 'local';
+
+        if (
+            !$attachment->file_path
+            || !Storage::disk($disk)->exists($attachment->file_path)
+        ) {
+            abort(404, 'Archivo no encontrado.');
+        }
+
+        return Storage::disk($disk)->download(
+            $attachment->file_path,
+            $attachment->original_filename
+        );
+    }
+
+    /**
      * Eliminar archivo adjunto
      */
     public function deleteAttachment(BillOfLading $billOfLading, $attachmentId)

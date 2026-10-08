@@ -122,17 +122,23 @@
                             </p>
                         </div>
 
-                        <form method="POST"
-                              action="{{ route('company.bills-of-lading.delete-attachment', [$billOfLading, $attachment->id]) }}"
-                              onsubmit="return confirm('¿Eliminar este archivo adjunto?');"
-                              class="flex-shrink-0">
-                            @csrf
-                            @method('DELETE')
-                            <button type="submit"
-                                    class="inline-flex items-center px-3 py-2 border border-red-300 rounded-md text-sm font-medium text-red-700 bg-white hover:bg-red-50">
-                                Eliminar
-                            </button>
-                        </form>
+                        <div class="flex-shrink-0 flex items-center gap-2">
+                            <a href="{{ route('company.bills-of-lading.download-attachment', [$billOfLading, $attachment->id]) }}"
+                               class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                                Descargar
+                            </a>
+
+                            <form method="POST"
+                                  action="{{ route('company.bills-of-lading.delete-attachment', [$billOfLading, $attachment->id]) }}"
+                                  onsubmit="return confirm('¿Eliminar este archivo adjunto?');">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit"
+                                        class="inline-flex items-center px-3 py-2 border border-red-300 rounded-md text-sm font-medium text-red-700 bg-white hover:bg-red-50">
+                                    Eliminar
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 @empty
                     <div class="px-6 py-10 text-center text-sm text-gray-500">
