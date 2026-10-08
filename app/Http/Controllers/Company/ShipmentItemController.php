@@ -775,7 +775,24 @@ return view('company.shipment-items.edit', compact(
             'containers.*.seal_number' => 'nullable|string|max:255',
             'containers.*.seal_source' => 'nullable|in:carrier,shipper',
             'containers.*.tare_weight' => 'nullable|numeric|min:0',
-            'containers.*.operator_client_id' => 'nullable|exists:clients,id,status,active',
+            'containers.*.operator_client_id' => [
+                'nullable',
+                'exists:clients,id,status,active',
+                function ($attribute, $value, $fail) {
+                    if ($value === null || $value === '') {
+                        return;
+                    }
+
+                    $taxId = Client::whereKey($value)->value('tax_id');
+                    $digits = preg_replace('/\D+/', '', (string) $taxId);
+
+                    if (strlen($digits) !== 11) {
+                        $fail(
+                            'El Operador del Contenedor (ATA) debe tener un CUIT de 11 dígitos.'
+                        );
+                    }
+                },
+            ],
             'containers.*.csc_expiry_date' => 'nullable|date',
             'containers.*.acep' => 'nullable|string|max:20',
             'containers.*.condition' => 'nullable|in:L,V',
