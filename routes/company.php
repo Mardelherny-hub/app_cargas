@@ -62,7 +62,6 @@ Route::prefix('shipments')->name('company.shipments.')->group(function () {
     // Acciones específicas de cargas
     Route::patch('/{shipment}/status', [ShipmentController::class, 'updateStatus'])->name('update-status');
     Route::post('/{shipment}/duplicate', [ShipmentController::class, 'duplicate'])->name('duplicate');
-    Route::get('/{shipment}/pdf', [ShipmentController::class, 'generatePdf'])->name('pdf');
 
     // Búsqueda y filtros
     Route::get('/search', [ShipmentController::class, 'search'])->name('search');

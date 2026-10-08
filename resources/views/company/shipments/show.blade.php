@@ -537,9 +537,6 @@
                         <div class="px-4 py-4">
                             <h3 class="text-lg font-medium text-gray-900 mb-3">Acciones</h3>
                             <div class="space-y-2">
-                                <a href="#" class="w-full bg-red-100 hover:bg-red-200 text-red-800 font-medium py-2 px-3 rounded text-sm text-center block">
-                                    Descargar PDF
-                                </a>
                                 @if($shipment->status === 'planning' && auth()->user()->hasRole('company-admin'))
                                     <form method="POST" action="{{ route('company.shipments.destroy', $shipment) }}" 
                                         class="inline w-full" 
