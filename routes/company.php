@@ -574,17 +574,7 @@ Route::prefix('captains')->name('company.captains.')->group(function () {
 // DASHBOARD DE ESTADOS 
 // ========================================
 Route::prefix('dashboard-estados')->name('company.dashboard-estados.')->group(function () {
-    // Vista principal del dashboard
     Route::get('/', [DashboardEstadosController::class, 'index'])->name('index');
-    
-    // API endpoints para datos dinámicos
-    Route::get('/api/metrics', [DashboardEstadosController::class, 'getMetrics'])->name('api.metrics');
-    Route::get('/api/recent-changes', [DashboardEstadosController::class, 'getRecentChanges'])->name('api.recent-changes');
-    Route::get('/api/status-distribution', [DashboardEstadosController::class, 'getStatusDistribution'])->name('api.status-distribution');
-    
-    // Acciones rápidas para cambios de estado
-    Route::post('/bulk-update', [DashboardEstadosController::class, 'bulkUpdateStatus'])->name('bulk-update');
-    Route::get('/export', [DashboardEstadosController::class, 'exportStatusReport'])->name('export');
 });
 
 
