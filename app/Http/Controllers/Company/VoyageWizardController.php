@@ -165,23 +165,6 @@ class VoyageWizardController extends Controller
     }
 
     /**
-     * PASO 3: Placeholder (será implementado después)
-     */
-    public function step3(Request $request)
-    {
-        // Verificar que PASO 1 y 2 estén completados
-        if (!session('voyage_wizard.step1') || !session('voyage_wizard.step2')) {
-            return redirect()->route('voyage-wizard.step1')
-                ->with('warning', 'Debe completar los pasos anteriores primero.');
-        }
-
-        return view('company.voyage-wizard.step3', [
-            'step1Data' => session('voyage_wizard.step1'),
-            'step2Data' => session('voyage_wizard.step2'),
-        ]);
-    }
-
-    /**
      * Cancelar wizard y limpiar session
      */
     public function cancel()
