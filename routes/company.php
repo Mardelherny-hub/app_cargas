@@ -11,7 +11,6 @@ use App\Http\Controllers\Company\CertificateController;
 use App\Http\Controllers\Company\WebServiceController as WebserviceController;
 use App\Http\Controllers\Company\ImportController;
 use App\Http\Controllers\Company\ExportController;
-use App\Http\Controllers\Company\TransferController;
 use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Company\ClientController;
 use App\Http\Controllers\Company\VesselOwnerController;
@@ -204,21 +203,6 @@ Route::prefix('vessels')->name('company.vessels.')->group(function () {
     Route::patch('/{vessel}/toggle-operational-status', [VesselController::class, 'toggleStatus'])->name('toggle-operational-status');
 });
 
-
-// Gestión de Transbordos (solo si la empresa tiene rol "Transbordos")
-Route::prefix('transfers')->name('company.transfers.')->group(function () {
-    Route::get('/', [TransferController::class, 'index'])->name('index');
-    Route::get('/create', [TransferController::class, 'create'])->name('create');
-    Route::post('/', [TransferController::class, 'store'])->name('store');
-    Route::get('/{transfer}', [TransferController::class, 'show'])->name('show');
-    Route::get('/{transfer}/edit', [TransferController::class, 'edit'])->name('edit');
-    Route::put('/{transfer}', [TransferController::class, 'update'])->name('update');
-    Route::delete('/{transfer}', [TransferController::class, 'destroy'])->name('destroy');
-
-    // Acciones específicas de transbordos
-    Route::patch('/{transfer}/status', [TransferController::class, 'updateStatus'])->name('update-status');
-    Route::get('/{transfer}/pdf', [TransferController::class, 'generatePdf'])->name('pdf');
-});
 
 // Gestión de Operadores (solo company-admin)
 Route::prefix('operators')->name('company.operators.')->group(function () {
