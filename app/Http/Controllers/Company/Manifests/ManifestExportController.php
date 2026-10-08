@@ -641,6 +641,18 @@ class ManifestExportController extends Controller
                         'TEMPERATURA',
                         $this->numericText($container->set_temperature)
                     );
+
+                    $reeferActivo = data_get(
+                        $container->webservice_data,
+                        'tfp.reefer_activo'
+                    );
+                    if ($reeferActivo !== null) {
+                        $lines[] = $this->tfpLine(
+                            'REEFERACTIVO',
+                            $reeferActivo
+                        );
+                    }
+
                     $tfpSeals = preg_replace(
                         '/\s*,\s*/',
                         ' ',
@@ -651,8 +663,28 @@ class ManifestExportController extends Controller
                         'NUMERO',
                         $container->container_number
                     );
-                    $lines[] = $this->tfpLine('PESO', '');
-                    $lines[] = $this->tfpLine('CANTIDAD', '');
+                    // TFP declara PESO y CANTIDAD por contenedor.
+                    // El pivote conserva esos valores del archivo fuente; si el
+                    // peso no está en el pivote se usa el peso bruto real del
+                    // contenedor. Nunca se copia el total del ítem a cada caja.
+                    $containerGross = $container->pivot?->gross_weight_kg;
+                    if ($containerGross === null) {
+                        $containerGross = $container->current_gross_weight_kg;
+                    }
+                    $containerPackages = $container->pivot?->package_quantity;
+
+                    $lines[] = $this->tfpLine(
+                        'PESO',
+                        $containerGross !== null
+                            ? $this->numericText($containerGross)
+                            : ''
+                    );
+                    $lines[] = $this->tfpLine(
+                        'CANTIDAD',
+                        $containerPackages !== null
+                            ? $this->numericText($containerPackages)
+                            : ''
+                    );
                     $lines[] = $this->tfpLine(
                         'OBS',
                         $bill->permiso_embarque ?? ''
@@ -661,91 +693,102 @@ class ManifestExportController extends Controller
                 $lines[] = '    **FIN CONTENEDORES**';
 
                 $lines[] = '    **LINEAS**';
+                $billHasContainers = $this->uniqueBillContainers($bill)->isNotEmpty();
+
                 foreach ($bill->shipmentItems as $item) {
-                    $occurrences = $item->containers->isEmpty()
-                        ? collect([null])
-                        : $item->containers->values();
-                    $occurrenceCount = $occurrences->count();
+                    $description = $this->requiredText(
+                        $item->item_description,
+                        "Descripción TFP del BL {$bill->bill_number}"
+                    );
 
-                    foreach ($occurrences as $container) {
-                        $pivot = $container?->pivot;
-                        $isEmptyContainer = strtoupper(trim((string) ($container?->condition ?? ''))) === 'V';
+                    $normalizedDescription = mb_strtoupper(trim($description));
+                    $isEmptyCargo = in_array(
+                        $normalizedDescription,
+                        ['VACIO', 'VACIOS'],
+                        true
+                    );
 
-                        $packages = $pivot?->package_quantity;
-                        $gross = $pivot?->gross_weight_kg;
-                        $volume = $pivot?->volume_m3;
+                    $packages = $item->package_quantity;
+                    $gross = $item->gross_weight_kg;
+                    $volume = $item->volume_m3;
 
-                        if ($occurrenceCount === 1) {
-                            $packages ??= $item->package_quantity;
-                            $gross ??= $item->gross_weight_kg;
-                            $volume ??= $item->volume_m3;
+                    if (!$isEmptyCargo) {
+                        if (!is_numeric($packages) || (float) $packages <= 0) {
+                            throw new RuntimeException(
+                                "El ítem {$item->line_number} del BL {$bill->bill_number} "
+                                . 'no tiene cantidad de bultos válida para TFP.'
+                            );
                         }
 
-                        if ($occurrenceCount > 1 && !$isEmptyContainer) {
-                            if ($packages === null || $gross === null) {
-                                throw new RuntimeException(
-                                    "El ítem {$item->line_number} del BL {$bill->bill_number} "
-                                    . 'tiene varios contenedores pero no tiene distribución de bultos/peso por contenedor.'
-                                );
-                            }
+                        if (!is_numeric($gross) || (float) $gross <= 0) {
+                            throw new RuntimeException(
+                                "El ítem {$item->line_number} del BL {$bill->bill_number} "
+                                . 'no tiene peso bruto válido para TFP.'
+                            );
                         }
+                    }
 
-                        if (!$isEmptyContainer) {
-                            if (!is_numeric($packages) || (float) $packages <= 0) {
-                                throw new RuntimeException(
-                                    "El ítem {$item->line_number} del BL {$bill->bill_number} "
-                                    . 'no tiene cantidad de bultos válida para TFP.'
-                                );
-                            }
+                    // TFP tiene un bloque de mercadería por ítem. Los contenedores
+                    // se declaran aparte y no deben multiplicar bultos/peso del ítem.
+                    // Si la fuente preservó una asociación explícita CONTENEDOR, se
+                    // vuelve a emitir; de lo contrario queda vacío.
+                    $sourceContainerRaw = data_get(
+                        $item->webservice_data,
+                        'tfp.contenedor'
+                    );
+                    $sourceContainer = trim((string) ($sourceContainerRaw ?? ''));
 
-                            if (!is_numeric($gross) || (float) $gross <= 0) {
-                                throw new RuntimeException(
-                                    "El ítem {$item->line_number} del BL {$bill->bill_number} "
-                                    . 'no tiene peso bruto válido para TFP.'
-                                );
-                            }
-                        }
+                    if (
+                        $sourceContainer !== ''
+                        && !$item->containers->contains(
+                            fn ($container) => strcasecmp(
+                                (string) $container->container_number,
+                                $sourceContainer
+                            ) === 0
+                        )
+                    ) {
+                        throw new RuntimeException(
+                            "El ítem {$item->line_number} del BL {$bill->bill_number} "
+                            . "declara el contenedor {$sourceContainer}, pero no está asociado."
+                        );
+                    }
 
-                        $description = $this->requiredText(
-                            $item->item_description,
-                            "Descripción TFP del BL {$bill->bill_number}"
-                        );
-
-                        $lines[] = $this->tfpLine('CANTPARCIALBULTOS', $packages);
-                        $lines[] = $this->tfpLine('CANTTOTALBULTOS', $packages);
-                        $lines[] = $this->tfpLine(
-                            'CODARMONIZADO',
-                            $item->commodity_code ?: $item->tariff_position ?: ''
-                        );
-                        $lines[] = $this->tfpLine(
-                            'NATURALEZAMERCADERIA',
-                            $description
-                        );
-                        $lines[] = $this->tfpLine(
-                            'OBS',
-                            $item->permit_number ?: $bill->permiso_embarque ?: ''
-                        );
-                        $lines[] = $this->tfpLine('PESOPARCIALBULTOS', $gross);
-                        $lines[] = $this->tfpLine('PESOTOTALBULTOS', $gross);
-                        $lines[] = $this->tfpLine('VOLUMENPARCIAL', $volume);
-                        $lines[] = $this->tfpLine('VOLUMENTOTAL', $volume);
-                        $lines[] = $this->tfpLine(
-                            'TIPOEMBALAJE',
-                            $this->packagingText($item)
-                        );
-                        $lines[] = $this->tfpLine(
-                            'MERCADERIASUELTA',
-                            $container ? 'NO' : 'SI'
-                        );
-                        $lines[] = $this->tfpLine('ESCOMBUSTIBLE', '');
-                        $lines[] = $this->tfpLine(
-                            'IMDG',
-                            $item->imdg_class ?: $item->cargoType?->imdg_class ?: ''
-                        );
-                        $lines[] = $this->tfpLine(
-                            'CONTENEDOR',
-                            $container?->container_number ?? ''
-                        );
+                    $lines[] = $this->tfpLine('CANTPARCIALBULTOS', $packages);
+                    $lines[] = $this->tfpLine('CANTTOTALBULTOS', $packages);
+                    $lines[] = $this->tfpLine(
+                        'CODARMONIZADO',
+                        $item->commodity_code ?: $item->tariff_position ?: ''
+                    );
+                    $lines[] = $this->tfpLine(
+                        'NATURALEZAMERCADERIA',
+                        $description
+                    );
+                    $lines[] = $this->tfpLine(
+                        'OBS',
+                        $item->permit_number ?: $bill->permiso_embarque ?: ''
+                    );
+                    $lines[] = $this->tfpLine('PESOPARCIALBULTOS', $gross);
+                    $lines[] = $this->tfpLine('PESOTOTALBULTOS', $gross);
+                    $lines[] = $this->tfpLine('VOLUMENPARCIAL', $volume);
+                    $lines[] = $this->tfpLine('VOLUMENTOTAL', $volume);
+                    $lines[] = $this->tfpLine(
+                        'TIPOEMBALAJE',
+                        $this->packagingText($item)
+                    );
+                    $lines[] = $this->tfpLine(
+                        'MERCADERIASUELTA',
+                        $billHasContainers ? 'NO' : 'SI'
+                    );
+                    $lines[] = $this->tfpLine(
+                        'ESCOMBUSTIBLE',
+                        data_get($item->webservice_data, 'tfp.es_combustible') ?? ''
+                    );
+                    $lines[] = $this->tfpLine(
+                        'IMDG',
+                        $item->imdg_class ?: $item->cargoType?->imdg_class ?: ''
+                    );
+                    if ($sourceContainerRaw !== null) {
+                        $lines[] = $this->tfpLine('CONTENEDOR', $sourceContainer);
                     }
                 }
                 $lines[] = '    **FIN LINEAS**';
