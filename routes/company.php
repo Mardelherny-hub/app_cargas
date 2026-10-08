@@ -172,15 +172,9 @@ Route::prefix('voyage-wizard')->name('voyage-wizard.')->group(function () {
     
     // PASO 2: Conocimientos de Embarque  
     Route::get('/step2', [VoyageWizardController::class, 'step2'])->name('step2');
-    Route::post('/step2', [VoyageWizardController::class, 'storeStep2'])->name('store-step2');
-    
-    // PASO 3: Mercadería y Contenedores
-    Route::get('/step3', [VoyageWizardController::class, 'step3'])->name('step3');
-    Route::post('/step3', [VoyageWizardController::class, 'storeStep3'])->name('store-step3');
     
     // UTILIDADES
     Route::get('/cancel', [VoyageWizardController::class, 'cancel'])->name('cancel');
-    Route::get('/summary', [VoyageWizardController::class, 'summary'])->name('summary');
     Route::get('/', [VoyageWizardController::class, 'start'])->name('start'); // Página de inicio
 });
 
