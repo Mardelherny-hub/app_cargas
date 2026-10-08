@@ -64,11 +64,6 @@ Route::prefix('shipments')->name('company.shipments.')->group(function () {
     Route::post('/{shipment}/duplicate', [ShipmentController::class, 'duplicate'])->name('duplicate');
     Route::get('/{shipment}/pdf', [ShipmentController::class, 'generatePdf'])->name('pdf');
 
-    // Adjuntos
-    Route::get('/{shipment}/attachments', [ShipmentController::class, 'attachments'])->name('attachments');
-    Route::post('/{shipment}/attachments', [ShipmentController::class, 'uploadAttachment'])->name('upload-attachment');
-    Route::delete('/{shipment}/attachments/{attachment}', [ShipmentController::class, 'deleteAttachment'])->name('delete-attachment');
-
     // Búsqueda y filtros
     Route::get('/search', [ShipmentController::class, 'search'])->name('search');
     Route::post('/search', [ShipmentController::class, 'searchResults'])->name('search-results');

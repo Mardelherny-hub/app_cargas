@@ -542,9 +542,6 @@ class ShipmentController extends Controller
             ->orderBy('sequence_in_voyage')
             ->get(['id', 'vessel_id', 'captain_id', 'shipment_number', 'status', 'sequence_in_voyage']);
 
-        // TODO: Implementar funcionalidad de attachments en el futuro
-        $hasAttachments = false;
-
         // Preparar opciones para cambio de estado (según permisos)
         $statusTransitions = $this->getAvailableStatusTransitions($shipment);
 
@@ -554,15 +551,12 @@ class ShipmentController extends Controller
             'can_delete' => $this->canDeleteShipment($shipment),
             'can_change_status' => $this->canChangeShipmentStatus($shipment),
             'can_manage_items' => $this->canManageShipmentItems($shipment),
-            'can_view_attachments' => true,
-            'can_add_attachments' => $this->canEditShipment($shipment),
         ];
 
         return view('company.shipments.show', compact(
             'shipment', 
             'stats', 
             'voyageShipments', 
-            'hasAttachments',
             'statusTransitions',
             'userPermissions',
             'company'
