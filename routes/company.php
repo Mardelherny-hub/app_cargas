@@ -83,7 +83,6 @@ Route::prefix('shipment-items')->name('company.shipment-items.')->group(function
     
     // Búsqueda y filtros
     Route::get('/search', [ShipmentItemController::class, 'search'])->name('search');
-    Route::post('/search', [ShipmentItemController::class, 'searchResults'])->name('search-results');
 });
 
 // Gestión de Conocimientos de Embarque
