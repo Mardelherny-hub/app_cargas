@@ -511,11 +511,6 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
     // NUEVO: Ruta específica para vista MANE
     Route::get('/mane', [ManifestCustomsController::class, 'maneIndex'])->name('mane');
 
-    Route::get('/{voyage}/attachments', [ManifestCustomsController::class, 'attachmentsIndex'])->name('attachments');
-    Route::get('/{voyage}/attachments-list', [ManifestCustomsController::class, 'getAttachmentsList'])->name('attachments-list');
-    Route::post('/{voyage}/upload-attachments', [ManifestCustomsController::class, 'uploadAttachments'])->name('upload-attachments');
-    Route::get('/attachments/{attachment}/download', [ManifestCustomsController::class, 'downloadAttachment'])->name('attachment-download');
-    Route::delete('/attachments/{attachment}', [ManifestCustomsController::class, 'deleteAttachment'])->name('attachment-delete');
 });
 
     // === 🧪 TESTING DE ENVÍOS A ADUANA - NUEVA SECCIÓN ===
