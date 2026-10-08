@@ -84,22 +84,34 @@ class EmptyContainerOriginTest extends TestCase
         $this->render($this->bill(['origin_loading_date' => '2026-09-17']));
     }
 
-    public function test_origin_place_requires_country(): void
+    public function test_origin_place_without_origin_date_is_not_serialized(): void
     {
-        $this->expectExceptionMessage('CodigoPaisLugarOrigen es obligatorio');
-        $this->render($this->bill(['origin_location' => 'CCPMI']));
+        $xml = $this->render($this->bill(['origin_location' => 'CCPMI']));
+
+        foreach (['FechaCargaLugarOrigen', 'CodigoLugarOrigen', 'CodigoPaisLugarOrigen'] as $tag) {
+            $this->assertStringNotContainsString('<'.$tag.'>', $xml);
+        }
     }
 
-    public function test_origin_place_and_country_require_origin_date(): void
+    public function test_origin_place_and_country_without_origin_date_are_not_serialized(): void
     {
-        $this->expectExceptionMessage('FechaCargaLugarOrigen es obligatoria cuando se informa CodigoLugarOrigen');
-        $this->render($this->bill(['origin_location' => 'CCPMI', 'origin_country_code' => 'PY']));
+        $xml = $this->render($this->bill([
+            'origin_location' => 'CCPMI',
+            'origin_country_code' => 'PY',
+        ]));
+
+        foreach (['FechaCargaLugarOrigen', 'CodigoLugarOrigen', 'CodigoPaisLugarOrigen'] as $tag) {
+            $this->assertStringNotContainsString('<'.$tag.'>', $xml);
+        }
     }
 
-    public function test_country_alone_is_not_a_coherent_block(): void
+    public function test_origin_country_without_origin_date_is_not_serialized(): void
     {
-        $this->expectExceptionMessage('CodigoLugarOrigen es obligatorio');
-        $this->render($this->bill(['origin_country_code' => 'PY']));
+        $xml = $this->render($this->bill(['origin_country_code' => 'PY']));
+
+        foreach (['FechaCargaLugarOrigen', 'CodigoLugarOrigen', 'CodigoPaisLugarOrigen'] as $tag) {
+            $this->assertStringNotContainsString('<'.$tag.'>', $xml);
+        }
     }
 
     public function test_complete_origin_serializes_real_values_in_order_without_mutation(): void
