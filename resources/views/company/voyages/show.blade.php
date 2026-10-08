@@ -277,14 +277,7 @@
                                     Nueva Carga
                                 </a>
                                 
-                                <!-- Botón Agregar Contenedores 
-                                <a href="{{ route('company.voyages.containers', $voyage) }}" 
-                                class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                                    </svg>
-                                    Gestionar Contenedores
-                                </a>-->
+
                             </div>
                         @endif
                     </div>
