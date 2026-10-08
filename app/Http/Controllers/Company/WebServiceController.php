@@ -312,8 +312,8 @@ class WebserviceController extends Controller
                 'last_30d' => $total,
                 'anticipada' => $this->getStatsForType($transactions, 'anticipada'),
                 'micdta' => $this->getStatsForType($transactions, 'micdta'),
-                'desconsolidados' => $this->getStatsForType($transactions, 'desconsolidados'),
-                'transbordos' => $this->getStatsForType($transactions, 'transbordos'),
+                'desconsolidados' => $this->getStatsForType($transactions, 'desconsolidado'),
+                'transbordos' => $this->getStatsForType($transactions, 'transbordo'),
                 'paraguay' => $this->getStatsForType($transactions, 'paraguay'),
             ];
 
@@ -415,11 +415,11 @@ class WebserviceController extends Controller
         }
 
         if (in_array('Desconsolidador', $roles)) {
-            $types['desconsolidados'] = 'Desconsolidados';
+            $types['desconsolidado'] = 'Desconsolidados';
         }
 
         if (in_array('Transbordos', $roles)) {
-            $types['transbordos'] = 'Transbordos';
+            $types['transbordo'] = 'Transbordos';
         }
 
         if ($company->country === 'PY' || in_array($company->country, ['AR', 'PY'])) {
