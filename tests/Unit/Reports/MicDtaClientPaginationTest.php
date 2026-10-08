@@ -66,18 +66,24 @@ class MicDtaClientPaginationTest extends TestCase
         ];
     }
 
-    private function pageCount(array $data): int
+    /** @return array{logical:int, physical:int} */
+    private function pageCounts(array $data): array
     {
-        $pdf = Pdf::loadView('company.reports.pdf.micdta-client', $data)
-            ->setPaper('A4', 'portrait');
+        $html = view('company.reports.pdf.micdta-client', $data)->render();
+        $logicalPages = substr_count($html, '<div class="page">');
+
+        $pdf = Pdf::loadHTML($html)->setPaper('A4', 'portrait');
         $pdf->render();
 
-        return $pdf->getDomPDF()->getCanvas()->get_page_count();
+        return [
+            'logical' => $logicalPages,
+            'physical' => $pdf->getDomPDF()->getCanvas()->get_page_count(),
+        ];
     }
 
     public function test_fifty_containers_do_not_create_blank_pages(): void
     {
-        $pages = $this->pageCount($this->data(
+        $pages = $this->pageCounts($this->data(
             $this->containers(50),
             'VACIO',
             '001PASU018626'
@@ -85,14 +91,14 @@ class MicDtaClientPaginationTest extends TestCase
 
         $this->assertGreaterThanOrEqual(
             2,
-            $pages,
+            $pages['logical'],
             'Un BL con 50 contenedores debe continuar en hojas siguientes cuando el detalle no entra.'
         );
 
-        $this->assertLessThanOrEqual(
-            4,
-            $pages,
-            'El pie fijo de Aduana reduce el area util, pero no debe provocar una proliferacion de paginas vacias.'
+        $this->assertSame(
+            $pages['logical'],
+            $pages['physical'],
+            'La paginacion fisica no debe agregar hojas vacias respecto de las paginas logicas del MIC/DTA.'
         );
     }
 
@@ -105,16 +111,22 @@ class MicDtaClientPaginationTest extends TestCase
 
         $this->assertGreaterThan(3500, mb_strlen($description));
 
-        $pages = $this->pageCount($this->data(
+        $pages = $this->pageCounts($this->data(
             $this->containers(10),
             $description,
             '109TJSM35026'
         ));
 
-        $this->assertLessThanOrEqual(
-            3,
-            $pages,
-            'Una descripcion larga debe poder partirse entre hojas sin reservar filas imposibles ni insertar paginas vacias.'
+        $this->assertGreaterThan(
+            1,
+            $pages['logical'],
+            'Una descripcion larga debe dividirse en las hojas necesarias.'
+        );
+
+        $this->assertSame(
+            $pages['logical'],
+            $pages['physical'],
+            'Una descripcion larga no debe generar hojas fisicas vacias fuera de la paginacion logica.'
         );
     }
 }
