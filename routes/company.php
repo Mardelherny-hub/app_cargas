@@ -120,13 +120,6 @@ Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(functi
     Route::get('/search', [BillOfLadingController::class, 'search'])->name('search');
     Route::post('/search', [BillOfLadingController::class, 'searchResults'])->name('search-results');
     
-    // Exportación
-    Route::post('/export', [BillOfLadingController::class, 'export'])->name('export');
-    Route::get('/export/{format}', [BillOfLadingController::class, 'exportByFormat'])->name('export-format');
-
-    // Historial y auditoría
-    Route::get('/{bill_of_lading}/history', [BillOfLadingController::class, 'history'])->name('history');
-    Route::get('/{bill_of_lading}/audit', [BillOfLadingController::class, 'auditLog'])->name('audit');
 });
 
 // Gestión de Viajes

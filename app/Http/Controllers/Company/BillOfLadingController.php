@@ -1553,67 +1553,6 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
         return redirect()->route('company.bills-of-lading.index', $request->all());
     }
 
-    /**
-     * Exportar conocimientos
-     */
-    public function export(Request $request)
-    {
-        // TODO: Implementar exportación
-        return redirect()->back()
-            ->with('info', 'Función de exportación en desarrollo.');
-    }
-
-    /**
-     * Exportar en formato específico
-     */
-    public function exportByFormat(Request $request, $format)
-    {
-        // TODO: Implementar exportación por formato
-        return redirect()->back()
-            ->with('info', 'Función de exportación en desarrollo.');
-    }
-
-    /**
-     * Historial de cambios
-     */
-    public function history(BillOfLading $billOfLading)
-    {
-        // Verificar permisos básicos
-        if (!$this->canPerform('view_cargas') && !$this->hasCompanyRole('Desconsolidador') && !$this->hasCompanyRole('Transbordos')) {
-            abort(403, 'No tiene permisos para ver el historial.');
-        }
-
-        // Verificar que pertenece a la empresa
-        if (!$this->canAccessCompanyResource($billOfLading, 'shipment.voyage.company_id')) {
-            abort(403, 'No tiene permisos para ver el historial de este conocimiento.');
-        }
-
-        // TODO: Implementar historial de cambios
-        // Esto requeriría un sistema de auditoría
-        
-        return view('company.bills-of-lading.history', compact('billOfLading'));
-    }
-
-    /**
-     * Log de auditoría
-     */
-    public function auditLog(BillOfLading $billOfLading)
-    {
-        // Verificar permisos administrativos
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'No tiene permisos para ver el log de auditoría.');
-        }
-
-        // Verificar que pertenece a la empresa
-        if (!$this->canAccessCompanyResource($billOfLading, 'shipment.voyage.company_id')) {
-            abort(403, 'No tiene permisos para ver la auditoría de este conocimiento.');
-        }
-
-        // TODO: Implementar log de auditoría
-        
-        return view('company.bills-of-lading.audit', compact('billOfLading'));
-    }
-
     // ========================================
     // MÉTODOS AUXILIARES PARA VALIDACIONES
     // ========================================
