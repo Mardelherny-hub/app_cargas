@@ -253,7 +253,6 @@ Route::prefix('operators')->name('company.operators.')->group(function () {
 
     // Acciones específicas de operadores
     Route::patch('/{operator}/toggle-status', [OperatorController::class, 'toggleStatus'])->name('toggle-status');
-    Route::put('/{operator}/permissions', [OperatorController::class, 'updatePermissions'])->name('update-permissions');
 });
 
 // Importación/Exportación (según permisos del operador)
