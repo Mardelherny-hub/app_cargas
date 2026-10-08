@@ -155,8 +155,6 @@ Route::prefix('voyages')->name('company.voyages.')->group(function () {
 
     // Acciones específicas de viajes
     Route::patch('/{voyage}/status', [VoyageController::class, 'updateStatus'])->name('update-status');
-    Route::patch('/{voyage}/close', [VoyageController::class, 'close'])->name('close');
-    Route::post('/{voyage}/duplicate', [VoyageController::class, 'duplicate'])->name('duplicate');
     Route::post('/{voyage}/transfer', [VoyageController::class, 'transfer'])->name('transfer');
     Route::get('/{voyage}/pdf', [VoyageController::class, 'generatePdf'])->name('pdf');
 
