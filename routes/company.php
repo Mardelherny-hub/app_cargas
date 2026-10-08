@@ -129,6 +129,7 @@ Route::prefix('bills-of-lading')->name('company.bills-of-lading.')->group(functi
     // Adjuntos
     Route::get('/{bill_of_lading}/attachments', [BillOfLadingController::class, 'attachments'])->name('attachments');
     Route::post('/{bill_of_lading}/attachments', [BillOfLadingController::class, 'uploadAttachment'])->name('upload-attachment');
+    Route::get('/{bill_of_lading}/attachments/{attachment}/download', [BillOfLadingController::class, 'downloadAttachment'])->name('download-attachment');
     Route::delete('/{bill_of_lading}/attachments/{attachment}', [BillOfLadingController::class, 'deleteAttachment'])->name('delete-attachment');
 
     // Búsqueda y filtros
