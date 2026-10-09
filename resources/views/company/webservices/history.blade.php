@@ -977,13 +977,6 @@ function showErrorModal(message) {
             `;
         }
 
-        function retryTransaction(transactionId) {
-            if (confirm('¿Está seguro que desea reintentar esta transacción?')) {
-                // Aquí iría la lógica de reintento
-                alert('Funcionalidad de reintento en desarrollo');
-            }
-        }
-
         function closeModal() {
             document.getElementById('transactionModal').classList.add('hidden');
         }
