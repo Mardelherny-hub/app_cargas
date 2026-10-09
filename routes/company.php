@@ -9,7 +9,6 @@ use App\Http\Controllers\Company\OperatorController;
 use App\Http\Controllers\Company\ReportController;
 use App\Http\Controllers\Company\CertificateController;
 use App\Http\Controllers\Company\WebServiceController as WebserviceController;
-use App\Http\Controllers\Company\ExportController;
 use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Company\ClientController;
 use App\Http\Controllers\Company\VesselOwnerController;
@@ -211,21 +210,6 @@ Route::prefix('operators')->name('company.operators.')->group(function () {
 });
 
 // Exportación (según permisos del operador)
-Route::prefix('export')->name('company.export.')->group(function () {
-    Route::get('/', [ExportController::class, 'index'])->name('index');
-    Route::get('/excel', [ExportController::class, 'excel'])->name('excel');
-    Route::post('/excel', [ExportController::class, 'generateExcel'])->name('generate-excel');
-    Route::get('/xml', [ExportController::class, 'xml'])->name('xml');
-    Route::post('/xml', [ExportController::class, 'generateXml'])->name('generate-xml');
-    Route::get('/edi', [ExportController::class, 'edi'])->name('edi');
-    Route::post('/edi', [ExportController::class, 'generateEdi'])->name('generate-edi');
-
-    // Historial de exportaciones
-    Route::get('/history', [ExportController::class, 'history'])->name('history');
-    Route::get('/history/{export}', [ExportController::class, 'showExport'])->name('show-export');
-});
-
-
 // Webservices - USAR WebserviceController (sin 'S')
 Route::prefix('webservices')->name('company.webservices.')->group(function () {
     Route::get('/', [WebserviceController::class, 'index'])->name('index');
