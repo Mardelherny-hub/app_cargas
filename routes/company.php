@@ -18,7 +18,6 @@ use App\Http\Controllers\Company\CaptainController;
 use App\Http\Controllers\Company\DashboardEstadosController;
 use App\Http\Controllers\Company\Manifests\TestingCustomsController;
 use App\Http\Controllers\Company\ManeFileController;
-use App\Http\Controllers\Company\VoyageWizardController;
 use App\Http\Controllers\Company\Simple\SimpleManifestController;
 
 // ImporterController para KLine.DAT
@@ -144,24 +143,6 @@ Route::prefix('voyages')->name('company.voyages.')->group(function () {
     // Validador
     Route::post('/{voyage}/validate-customs', [VoyageController::class, 'validateForCustoms'])->name('validate-customs');
 });
-
-
-// ========================================
-// WIZARD DE VIAJES COMPLETOS - INDEPENDIENTE
-// ========================================
-Route::prefix('voyage-wizard')->name('voyage-wizard.')->group(function () {
-    // PASO 1: Datos del Viaje
-    Route::get('/step1', [VoyageWizardController::class, 'step1'])->name('step1');
-    Route::post('/step1', [VoyageWizardController::class, 'storeStep1'])->name('store-step1');
-    
-    // PASO 2: Conocimientos de Embarque  
-    Route::get('/step2', [VoyageWizardController::class, 'step2'])->name('step2');
-    
-    // UTILIDADES
-    Route::get('/cancel', [VoyageWizardController::class, 'cancel'])->name('cancel');
-    Route::get('/', [VoyageWizardController::class, 'start'])->name('start'); // Página de inicio
-});
-
 
 
 // Gestión de Propietarios de Embarcaciones
