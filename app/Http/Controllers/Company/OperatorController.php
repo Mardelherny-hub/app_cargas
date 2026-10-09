@@ -493,54 +493,6 @@ class OperatorController extends Controller
         }
     }
 
-    /**
-     * Restablecer contraseña del operador.
-     * SOLO COMPANY-ADMIN puede restablecer contraseñas.
-     */
-    public function resetPassword(Request $request, Operator $operator)
-    {
-        // 1. Verificar que sea company-admin
-        if (!$this->isCompanyAdmin()) {
-            abort(403, 'Solo los administradores de empresa pueden restablecer contraseñas de operadores.');
-        }
-
-        // 2. CORRECCIÓN: Comentar verificación problemática
-        // if (!$this->canPerform('reset_operator_password')) {
-        //     abort(403, 'No tiene permisos para restablecer contraseñas de operadores.');
-        // }
-
-        $company = $this->getUserCompany();
-
-        // 3. Verificar empresa y acceso
-        if (!$company || !$this->canAccessCompany($company->id)) {
-            abort(403, 'No tiene permisos para acceder a esta empresa.');
-        }
-
-        // 4. Verificar que el operador pertenece a la empresa
-        if ($operator->company_id !== $company->id) {
-            abort(403, 'No tiene permisos para gestionar este operador.');
-        }
-
-        // Validar nueva contraseña
-        $request->validate([
-            'password' => 'required|string|min:8|confirmed',
-        ]);
-
-        try {
-            if ($operator->user) {
-                $operator->user->update([
-                    'password' => Hash::make($request->password),
-                ]);
-
-                return back()->with('success', 'Contraseña restablecida exitosamente.');
-            } else {
-                return back()->with('error', 'El operador no tiene usuario asociado.');
-            }
-
-        } catch (\Exception $e) {
-            return back()->with('error', 'Error al restablecer la contraseña: ' . $e->getMessage());
-        }
-    }
 
     // =========================================================================
     // MÉTODOS AUXILIARES
@@ -742,7 +694,6 @@ private function getOperatorDetailStats($operator): array
             'canEdit' => true,
             'canDelete' => true,
             'canManageStatus' => true,
-            'canResetPassword' => true,
         ];
     }
 
@@ -756,7 +707,6 @@ private function getOperatorDetailStats($operator): array
             'canEdit' => true,
             'canDelete' => !$this->operatorHasCriticalData($operator), // Solo verificar datos críticos
             'canToggleStatus' => true,
-            'canResetPassword' => true,
             'canViewActivity' => true,
         ];
     }

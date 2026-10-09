@@ -338,15 +338,6 @@
                                     </div>
                                 @endif
 
-                                @if($permissions['canResetPassword'])
-                                    <div class="pt-4 border-t border-gray-200">
-                                        <button type="button"
-                                                onclick="resetPassword('{{ $operator->id }}')"
-                                                class="text-sm text-red-600 hover:text-red-800">
-                                            {{ __('Restablecer Contraseña') }}
-                                        </button>
-                                    </div>
-                                @endif
                             </div>
                         </div>
                     @endif
@@ -481,12 +472,6 @@
             }
         }
 
-        function resetPassword(operatorId) {
-            if (confirm('¿Está seguro de que desea restablecer la contraseña de este operador?\n\nSe enviará un email con las nuevas credenciales.')) {
-                // Implementar reset de password
-                alert('Funcionalidad en desarrollo');
-            }
-        }
 
     </script>
     @endpush
