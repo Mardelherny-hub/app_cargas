@@ -213,13 +213,6 @@
                         <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
                             <div class="flex items-center justify-between">
                                 <h3 class="text-lg font-medium text-gray-900">{{ __('Permisos Operativos') }}</h3>
-                                @if($permissions['canManagePermissions'])
-                                    <button type="button"
-                                            onclick="togglePermissionsEdit()"
-                                            class="text-sm text-blue-600 hover:text-blue-800">
-                                        {{ __('Gestionar') }}
-                                    </button>
-                                @endif
                             </div>
                         </div>
 
@@ -495,10 +488,6 @@
             }
         }
 
-        function togglePermissionsEdit() {
-            // Implementar edición de permisos
-            alert('Funcionalidad en desarrollo - usar el botón Editar');
-        }
     </script>
     @endpush
 </x-app-layout>
