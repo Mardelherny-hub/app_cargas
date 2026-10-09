@@ -9,7 +9,6 @@ use App\Http\Controllers\Company\OperatorController;
 use App\Http\Controllers\Company\ReportController;
 use App\Http\Controllers\Company\CertificateController;
 use App\Http\Controllers\Company\WebServiceController as WebserviceController;
-use App\Http\Controllers\Company\ImportController;
 use App\Http\Controllers\Company\ExportController;
 use App\Http\Controllers\Company\SettingsController;
 use App\Http\Controllers\Company\ClientController;
@@ -211,21 +210,7 @@ Route::prefix('operators')->name('company.operators.')->group(function () {
     Route::patch('/{operator}/toggle-status', [OperatorController::class, 'toggleStatus'])->name('toggle-status');
 });
 
-// Importación/Exportación (según permisos del operador)
-Route::prefix('import')->name('company.import.')->group(function () {
-    Route::get('/', [ImportController::class, 'index'])->name('index');
-    Route::get('/excel', [ImportController::class, 'excel'])->name('excel');
-    Route::post('/excel', [ImportController::class, 'processExcel'])->name('process-excel');
-    Route::get('/xml', [ImportController::class, 'xml'])->name('xml');
-    Route::post('/xml', [ImportController::class, 'processXml'])->name('process-xml');
-    Route::get('/edi', [ImportController::class, 'edi'])->name('edi');
-    Route::post('/edi', [ImportController::class, 'processEdi'])->name('process-edi');
-
-    // Historial de importaciones
-    Route::get('/history', [ImportController::class, 'history'])->name('history');
-    Route::get('/history/{import}', [ImportController::class, 'showImport'])->name('show-import');
-});
-
+// Exportación (según permisos del operador)
 Route::prefix('export')->name('company.export.')->group(function () {
     Route::get('/', [ExportController::class, 'index'])->name('index');
     Route::get('/excel', [ExportController::class, 'excel'])->name('excel');
