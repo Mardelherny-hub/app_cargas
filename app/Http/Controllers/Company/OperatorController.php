@@ -742,7 +742,6 @@ private function getOperatorDetailStats($operator): array
             'canEdit' => true,
             'canDelete' => true,
             'canManageStatus' => true,
-            'canManagePermissions' => true,
             'canResetPassword' => true,
         ];
     }
@@ -757,7 +756,6 @@ private function getOperatorDetailStats($operator): array
             'canEdit' => true,
             'canDelete' => !$this->operatorHasCriticalData($operator), // Solo verificar datos críticos
             'canToggleStatus' => true,
-            'canManagePermissions' => true,
             'canResetPassword' => true,
             'canViewActivity' => true,
         ];
