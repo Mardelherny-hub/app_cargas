@@ -373,8 +373,6 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
         Route::get('/', [TestingCustomsController::class, 'index'])->name('index');
         Route::post('/{voyageId}/test', [TestingCustomsController::class, 'test'])->name('test');
         Route::post('/test-batch', [TestingCustomsController::class, 'testBatch'])->name('testBatch');
-        Route::get('/results/{testId}', [TestingCustomsController::class, 'showResults'])->name('results');
-        Route::post('/export-results', [TestingCustomsController::class, 'exportResults'])->name('exportResults');
     });
 
     // === RUTAS CON PARÁMETROS AL FINAL (para evitar conflictos) ===
