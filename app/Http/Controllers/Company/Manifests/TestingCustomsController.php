@@ -229,31 +229,6 @@ class TestingCustomsController extends Controller
         }
     }
 
-    /**
-     * Vista detallada de resultados de una prueba específica
-     */
-    public function showResults($testId)
-    {
-        // Esta funcionalidad podría implementarse más adelante
-        // para mostrar resultados históricos de testing
-        return back()->with('info', 'Vista de resultados detallados pendiente de implementación.');
-    }
-
-    /**
-     * Exportar resultados de testing a Excel/PDF
-     */
-    public function exportResults(Request $request)
-    {
-        $request->validate([
-            'format' => 'required|in:excel,pdf',
-            'date_from' => 'nullable|date',
-            'date_to' => 'nullable|date|after_or_equal:date_from'
-        ]);
-
-        // Esta funcionalidad podría implementarse más adelante
-        return back()->with('info', 'Exportación de resultados pendiente de implementación.');
-    }
-
     // ========================================
     // MÉTODOS PRIVADOS DE APOYO
     // ========================================
