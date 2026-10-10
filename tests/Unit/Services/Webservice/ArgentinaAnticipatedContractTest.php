@@ -351,13 +351,17 @@ XML;
         );
     }
 
-    public function test_cerrar_viaje_requires_real_foreign_forwarder(): void
+    public function test_forwarder_is_required_only_for_consolidated_titles(): void
     {
         $service = $this->source(
             'app/Services/Simple/ArgentinaAnticipatedService.php'
         );
 
         $this->assertStringContainsString(
+            '$bill->is_consolidated && $forwarders->isEmpty()',
+            $service
+        );
+        $this->assertStringNotContainsString(
             '($closing || $bill->is_consolidated) && $forwarders->isEmpty()',
             $service
         );
