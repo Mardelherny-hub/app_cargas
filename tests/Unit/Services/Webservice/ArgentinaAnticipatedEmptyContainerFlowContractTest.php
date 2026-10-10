@@ -64,50 +64,68 @@ class ArgentinaAnticipatedEmptyContainerFlowContractTest extends TestCase
             ->invoke($generator, $writer, $voyage);
     }
 
-    public function test_prevalidation_keeps_arca_11387_contract(): void
+    public function test_registrar_viaje_does_not_send_empty_containers_and_titles_keep_them(): void
     {
-        $service = (new ReflectionClass(ArgentinaAnticipatedService::class))
-            ->newInstanceWithoutConstructor();
-
-        $voyage = new Voyage();
-        $shipment = new Shipment();
-        $bill = new BillOfLading();
-        $item = new ShipmentItem();
-        $container = (new Container())->forceFill([
-            'container_number' => 'BMOU5955186',
-            'condition' => 'V',
-            'container_condition' => 'V',
-        ]);
-
-        $item->setRelation('containers', collect([$container]));
-        $bill->setRelation('shipmentItems', collect([$item]));
-        $shipment->setRelation('billsOfLading', collect([$bill]));
-        $voyage->setRelation('shipments', collect([$shipment]));
-
-        $hasEmpty = (new ReflectionMethod(
-            $service,
-            'voyageHasEmptyOrMailContainers'
-        ))->invoke($service, $voyage);
-
-        $this->assertTrue($hasEmpty);
-
-        $source = file_get_contents(
+        $generator = file_get_contents(
+            dirname(__DIR__, 4)
+            . '/app/Services/Simple/SimpleXmlGenerator.php'
+        );
+        $service = file_get_contents(
             dirname(__DIR__, 4)
             . '/app/Services/Simple/ArgentinaAnticipatedService.php'
         );
 
-        $this->assertIsString($source);
-        $this->assertStringContainsString(
-            '$isEmptyTransport === \'S\'',
-            $source
+        $this->assertIsString($generator);
+        $this->assertIsString($service);
+
+        $registrarViajeStart = strpos(
+            $generator,
+            'public function createRegistrarViajeXml'
+        );
+        $rectificarViajeStart = strpos(
+            $generator,
+            'public function createRectificarViajeXml'
+        );
+        $registrarTitulosStart = strpos(
+            $generator,
+            'public function createRegistrarTitulosCbcXml'
+        );
+        $cerrarViajeStart = strpos(
+            $generator,
+            'public function generateCerrarViajeXml'
+        );
+
+        $this->assertNotFalse($registrarViajeStart);
+        $this->assertNotFalse($rectificarViajeStart);
+        $this->assertNotFalse($registrarTitulosStart);
+        $this->assertNotFalse($cerrarViajeStart);
+
+        $registrarViaje = substr(
+            $generator,
+            $registrarViajeStart,
+            $rectificarViajeStart - $registrarViajeStart
+        );
+        $registrarTitulos = substr(
+            $generator,
+            $registrarTitulosStart,
+            $cerrarViajeStart - $registrarTitulosStart
+        );
+
+        $this->assertStringNotContainsString(
+            '$this->addContainersInformation($w, $voyage);',
+            $registrarViaje
         );
         $this->assertStringContainsString(
-            '$this->voyageHasEmptyOrMailContainers($voyage)',
-            $source
+            '$this->addContainersInformation($w, $voyage, \'ar:\');',
+            $registrarTitulos
         );
         $this->assertStringContainsString(
-            'ARCA 11387',
-            $source
+            '$this->validateEmptyContainerOrigins($voyage)',
+            $service
+        );
+        $this->assertStringContainsString(
+            'ContenedoresVaciosCorreo (ARCA 11326)',
+            $service
         );
     }
 

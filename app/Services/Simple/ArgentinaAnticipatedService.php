@@ -158,17 +158,12 @@ class ArgentinaAnticipatedService
         $isEmptyTransport = strtoupper(trim((string) $voyage->is_empty_transport));
         $hasCargoOnboard = strtoupper(trim((string) $voyage->has_cargo_onboard));
 
-        if (
-            $isEmptyTransport === 'S'
-            && $this->voyageHasEmptyOrMailContainers($voyage)
-        ) {
-            $validation['errors'][] =
-                'IndicadorTransporteVacio no puede ser S cuando el viaje informa contenedores vacíos o de correo (ARCA 11387)';
-        }
-
-        foreach ($this->validateRegistrarViajeEmptyContainerOrigins($voyage) as $error) {
-            $validation['errors'][] = $error;
-        }
+        /*
+         * RegistrarViaje transmite únicamente la cabecera del viaje.
+         * Los contenedores vacíos/correo se registran posteriormente en
+         * RegistrarTitulosCbc. Por eso sus datos específicos no deben bloquear
+         * esta primera operación.
+         */
 
         if (array_key_exists('ata_cbc_cuits', $options)) {
             if ($isEmptyTransport === 'N' && $hasCargoOnboard === 'S' && empty($ataCbcTaxIds)) {
@@ -854,6 +849,12 @@ class ArgentinaAnticipatedService
             }
         }
 
+        if (!$closing) {
+            foreach ($this->validateEmptyContainerOrigins($voyage) as $error) {
+                $validation['errors'][] = $error;
+            }
+        }
+
         $summary = [
             [$missingOrigin, 'conocimientos sin LugarOrigen'],
             [$missingOriginCountry, 'conocimientos sin código de país de origen válido para Aduana'],
@@ -877,28 +878,7 @@ class ArgentinaAnticipatedService
         return $validation;
     }
 
-    private function voyageHasEmptyOrMailContainers(Voyage $voyage): bool
-    {
-        foreach ($voyage->shipments as $shipment) {
-            foreach ($shipment->billsOfLading as $bill) {
-                foreach ($bill->shipmentItems as $item) {
-                    foreach ($item->containers as $container) {
-                        if (in_array(
-                            $this->anticipatedContainerCondition($container, $item),
-                            ['V', 'C'],
-                            true
-                        )) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private function validateRegistrarViajeEmptyContainerOrigins(Voyage $voyage): array
+    private function validateEmptyContainerOrigins(Voyage $voyage): array
     {
         $errors = [];
         $seen = [];
@@ -923,7 +903,7 @@ class ArgentinaAnticipatedService
 
                         if (!$bill->origin_loading_date) {
                             $errors[] =
-                                "Contenedor {$label}: falta FechaCargaLugarOrigen requerida por Aduana para RegistrarViaje (ARCA 11326)";
+                                "Contenedor {$label}: falta FechaCargaLugarOrigen requerida por Aduana para ContenedoresVaciosCorreo (ARCA 11326)";
                             continue;
                         }
 
