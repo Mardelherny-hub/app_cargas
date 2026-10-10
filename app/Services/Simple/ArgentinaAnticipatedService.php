@@ -455,6 +455,25 @@ class ArgentinaAnticipatedService
             if (!$bill->loading_date) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: falta FechaEmbarque";
             }
+
+            if (
+                $bill->loading_date
+                && $bill->discharge_date
+                && $bill->loading_date->gte($bill->discharge_date)
+            ) {
+                $validation['errors'][] =
+                    "Conocimiento {$billLabel}: FechaEmbarque debe ser menor a FechaDescarga (ARCA 11424)";
+            }
+
+            if (
+                $bill->origin_loading_date
+                && $bill->discharge_date
+                && $bill->origin_loading_date->gte($bill->discharge_date)
+            ) {
+                $validation['errors'][] =
+                    "Conocimiento {$billLabel}: FechaCargaLugarOrigen debe ser menor a FechaDescarga (ARCA 11421)";
+            }
+
             if (!$bill->loadingPort || mb_strlen(trim((string) $bill->loadingPort?->code)) !== 5) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: CodigoPuertoEmbarque inválido";
             }
