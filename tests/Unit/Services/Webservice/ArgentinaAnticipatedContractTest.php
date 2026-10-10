@@ -351,6 +351,22 @@ XML;
         );
     }
 
+    public function test_cerrar_viaje_requires_real_foreign_forwarder(): void
+    {
+        $service = $this->source(
+            'app/Services/Simple/ArgentinaAnticipatedService.php'
+        );
+
+        $this->assertStringContainsString(
+            '($closing || $bill->is_consolidated) && $forwarders->isEmpty()',
+            $service
+        );
+        $this->assertStringContainsString(
+            "'conocimientos sin RazonSocialFowarderExterior'",
+            $service
+        );
+    }
+
     public function test_container_operator_is_rejected_early_without_eleven_digit_tax_id(): void
     {
         $controller = $this->source(
