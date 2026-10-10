@@ -725,10 +725,35 @@ class ArgentinaMicDtaService extends BaseWebserviceService
              //   $validation['details'][] = "CUIT empresa: {$this->company->tax_id} ✓";
             //}
 
-            if (!$this->company->legal_name) {
-                $validation['errors'][] = 'Empresa sin razón social configurada';
+            $companyName = trim((string) $this->company->legal_name);
+            $companyAddress = trim((string) $this->company->address);
+            $companyCountry = strtoupper(trim((string) $this->company->country));
+            $companyTaxId = preg_replace(
+                '/\D+/',
+                '',
+                (string) $this->company->tax_id
+            );
+
+            if ($companyName === '' || mb_strlen($companyName) > 50) {
+                $validation['errors'][] =
+                    'RegistrarMicDta: nombre del transportista ausente o mayor a 50 caracteres.';
             } else {
-                $validation['details'][] = "Empresa: {$this->company->legal_name} ✓";
+                $validation['details'][] = "Empresa: {$companyName} ✓";
+            }
+
+            if ($companyAddress === '' || mb_strlen($companyAddress) > 150) {
+                $validation['errors'][] =
+                    'RegistrarMicDta: domicilio del transportista ausente o mayor a 150 caracteres.';
+            }
+
+            if (!preg_match('/^[A-Z]{2}$/', $companyCountry)) {
+                $validation['errors'][] =
+                    'RegistrarMicDta: codPais del transportista debe ser ISO alfa-2.';
+            }
+
+            if ($companyTaxId === '' || strlen($companyTaxId) > 14) {
+                $validation['errors'][] =
+                    'RegistrarMicDta: idFiscal del transportista ausente o mayor a 14 dígitos.';
             }
 
             // Validar certificado
@@ -767,10 +792,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                         $validation['details'][] = "Embarcación: {$vessel->name} ✓";
                     }
                     
-                    if (!$vessel->registration_number) {
-                        $validation['warnings'][] = "Embarcación '{$vessel->name}' sin número de registro";
-                    } else {
-                        $validation['details'][] = "Registro embarcación: {$vessel->registration_number} ✓";
+                    if ($vessel->registration_number) {
+                        $validation['details'][] =
+                            "Registro embarcación: {$vessel->registration_number} ✓";
                     }
                 }
             }
@@ -808,6 +832,10 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // 4. VALIDACIÓN SHIPMENTS
             $shipments = $voyage->shipments()->with([
+                'vessel.vesselType',
+                'vessel.flagCountry',
+                'vessel.owner.country',
+                'captain',
                 'billsOfLading.shipper.country',
                 'billsOfLading.shipper.primaryContact',
                 'billsOfLading.consignee.country',
@@ -829,6 +857,15 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     
                     if (!$shipment->shipment_number) {
                         $shipmentErrors[] = "Shipment " . ($index + 1) . " sin número de embarque";
+                    }
+
+                    foreach (
+                        $this->validateRegistrarMicDtaShipmentHeader(
+                            $shipment,
+                            $voyage
+                        ) as $headerError
+                    ) {
+                        $shipmentErrors[] = $headerError;
                     }
 
                     // Determinar si este shipment es remolcador/líder en convoy (va en lastre, sin carga)
@@ -947,9 +984,24 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
             // 6. VALIDACIÓN FECHAS
             if (!$voyage->departure_date) {
-                $validation['warnings'][] = 'Viaje sin fecha de salida configurada';
+                $validation['errors'][] =
+                    'RegistrarMicDta: fecha de partida obligatoria para rutasInf.';
             } else {
-                $validation['details'][] = "Fecha salida: {$voyage->departure_date->format('Y-m-d')} ✓";
+                $validation['details'][] =
+                    "Fecha salida: {$voyage->departure_date->format('Y-m-d')} ✓";
+            }
+
+            if (!$voyage->estimated_arrival_date) {
+                $validation['errors'][] =
+                    'RegistrarMicDta: fecha estimada de arribo obligatoria para rutasInf.';
+            } elseif (
+                $voyage->departure_date
+                && $voyage->estimated_arrival_date->lt(
+                    $voyage->departure_date
+                )
+            ) {
+                $validation['errors'][] =
+                    'RegistrarMicDta: FechaArribo no puede ser anterior a FechaInicioViaje.';
             }
 
             // 7. VALIDACIÓN CONFIGURACIÓN WEBSERVICE
@@ -984,6 +1036,172 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         }
 
         return $validation;
+    }
+
+    private function validateRegistrarMicDtaShipmentHeader(
+        $shipment,
+        Voyage $voyage
+    ): array {
+        $errors = [];
+        $label = $shipment->shipment_number ?: '#' . $shipment->id;
+
+        $vessel = $shipment->vessel ?: $voyage->leadVessel;
+        $captain = $shipment->captain ?: $voyage->captain;
+
+        if (!$vessel) {
+            return [
+                "Shipment {$label}: RegistrarMicDta requiere una embarcación.",
+            ];
+        }
+
+        $vesselName = trim((string) $vessel->name);
+        if ($vesselName === '' || mb_strlen($vesselName) > 50) {
+            $errors[] =
+                "Shipment {$label}: nombre de embarcación ausente o mayor a 50 caracteres.";
+        }
+
+        $registration = trim((string) $vessel->registration_number);
+        if ($registration === '' || mb_strlen($registration) > 10) {
+            $errors[] =
+                "Shipment {$label}: matrícula de embarcación ausente o mayor a 10 caracteres.";
+        }
+
+        $flagCountry = strtoupper(trim((string) (
+            $vessel->flagCountry?->alpha2_code
+            ?: $vessel->flagCountry?->iso2_code
+        )));
+        if (!preg_match('/^[A-Z]{2}$/', $flagCountry)) {
+            $errors[] =
+                "Shipment {$label}: país de bandera de la embarcación ausente o inválido.";
+        }
+
+        $vesselType = strtoupper(trim((string) $vessel->vesselType?->code));
+        $bargeCodes = [
+            'BAR',
+            'BARCAZA',
+            'BARGE_STD_001',
+            'BARGE_BULK_001',
+            'BARGE_TANK_001',
+            'BARGE_MULTI_001',
+        ];
+        $supportedVesselCodes = array_merge(
+            [
+                'EMP',
+                'EMPUJE',
+                'EMPUJADOR',
+                'PUSHER_STD_001',
+                'PUSHER_HEAVY_001',
+                'REM',
+                'REMOLCADOR',
+                'TUG_HARBOR_001',
+                'TUG_RIVER_001',
+                'BUM',
+                'BUQUE',
+                'BUQUE_MOTOR',
+                'SELF_CARGO_001',
+            ],
+            $bargeCodes
+        );
+
+        if (!in_array($vesselType, $supportedVesselCodes, true)) {
+            $errors[] =
+                "Shipment {$label}: tipo de embarcación '{$vesselType}' no soportado por RegistrarMicDta.";
+        }
+
+        $owner = $vessel->owner;
+        if (!$owner) {
+            $errors[] =
+                "Shipment {$label}: la embarcación no tiene propietario asociado.";
+        } else {
+            $ownerName = trim((string) (
+                $owner->legal_name ?: $owner->commercial_name
+            ));
+            $ownerAddress = trim((string) $owner->address);
+            $ownerCountry = strtoupper(trim((string) (
+                $owner->country?->alpha2_code
+                ?: $owner->country?->iso2_code
+            )));
+            $ownerTaxId = preg_replace(
+                '/\D+/',
+                '',
+                (string) $owner->tax_id
+            );
+
+            if ($ownerName === '' || mb_strlen($ownerName) > 50) {
+                $errors[] =
+                    "Shipment {$label}: nombre del propietario ausente o mayor a 50 caracteres.";
+            }
+            if ($ownerAddress === '' || mb_strlen($ownerAddress) > 150) {
+                $errors[] =
+                    "Shipment {$label}: domicilio del propietario ausente o mayor a 150 caracteres.";
+            }
+            if (!preg_match('/^[A-Z]{2}$/', $ownerCountry)) {
+                $errors[] =
+                    "Shipment {$label}: país del propietario debe ser ISO alfa-2.";
+            }
+            if ($ownerTaxId === '' || strlen($ownerTaxId) > 14) {
+                $errors[] =
+                    "Shipment {$label}: idFiscal del propietario ausente o mayor a 14 dígitos.";
+            }
+        }
+
+        if (!in_array($vesselType, $bargeCodes, true)) {
+            if (!$captain) {
+                $errors[] =
+                    "Shipment {$label}: RegistrarMicDta requiere capitán para esta embarcación.";
+            } else {
+                $captainName = trim((string) (
+                    $captain->full_name
+                    ?: trim(
+                        (string) $captain->first_name
+                        . ' '
+                        . (string) $captain->last_name
+                    )
+                ));
+                if (
+                    $captainName === ''
+                    || mb_strlen($captainName) > 150
+                ) {
+                    $errors[] =
+                        "Shipment {$label}: nombre del capitán ausente o mayor a 150 caracteres.";
+                }
+
+                $documentType = strtoupper(trim((string) $captain->document_type));
+                if (!in_array(
+                    $documentType,
+                    [
+                        'DNI',
+                        'PASSPORT',
+                        'PASAPORTE',
+                        'PAS',
+                        'CI',
+                        'CEDULA',
+                        'LE',
+                        'LIBRETA',
+                        'LC',
+                    ],
+                    true
+                )) {
+                    $errors[] =
+                        "Shipment {$label}: tipo de documento del capitán '{$documentType}' no soportado.";
+                }
+
+                $documentNumber = preg_replace(
+                    '/[^0-9A-Za-z]/',
+                    '',
+                    (string) $captain->document_number
+                );
+                if (
+                    $documentNumber === ''
+                    || strlen($documentNumber) > 16
+                ) {
+                    $errors[] =
+                        "Shipment {$label}: documento del capitán ausente o mayor a 16 caracteres.";
+                }
+            }
+        }
+
+        return $errors;
     }
 
     private function isMicDtaEmptyOnlyBill($bill): bool
