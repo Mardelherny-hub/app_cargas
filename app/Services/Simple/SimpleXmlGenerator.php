@@ -335,6 +335,26 @@ class SimpleXmlGenerator
                                     $w->startElement('destinaciones');
                                     
                                     $idDecla = trim((string) $bol->id_decla);
+
+                                    /*
+                                     * Compatibilidad con importaciones CUSCAR
+                                     * anteriores al alta explícita de id_decla.
+                                     * Históricamente la app transmitía RFF+EP
+                                     * desde permiso_embarque como idDecla.
+                                     * No se trunca ni se acepta VACIO.
+                                     */
+                                    if ($idDecla === '') {
+                                        $legacyIdDecla = trim((string) $bol->permiso_embarque);
+
+                                        if (
+                                            $legacyIdDecla !== ''
+                                            && strtoupper($legacyIdDecla) !== 'VACIO'
+                                            && mb_strlen($legacyIdDecla) <= 16
+                                        ) {
+                                            $idDecla = $legacyIdDecla;
+                                        }
+                                    }
+
                                     if ($idDecla === '' || mb_strlen($idDecla) > 16) {
                                         throw new \Exception(
                                             "RegistrarTitEnvios: BL {$billNumber} no tiene idDecla real de hasta 16 caracteres."
