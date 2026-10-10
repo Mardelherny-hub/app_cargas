@@ -1041,6 +1041,45 @@ class CmspEdiParserClientIdentityTest extends TestCase
         );
     }
 
+    public function test_cuscar_free_text_party_splits_only_on_explicit_company_suffix(): void
+    {
+        $parser = new CmspEdiParser();
+
+        $dhl = $this->invoke(
+            $parser,
+            'splitCuscarPartyNameAndAddress',
+            ['DHL (PARAGUAY) S.R.L. AV. GENERAL SANTOS 1170 ASUNCION PARAGUAY']
+        );
+
+        $this->assertSame('DHL (PARAGUAY) S.R.L.', $dhl[0]);
+        $this->assertSame(
+            'AV. GENERAL SANTOS 1170 ASUNCION PARAGUAY',
+            $dhl[1]
+        );
+
+        $bigness = $this->invoke(
+            $parser,
+            'splitCuscarPartyNameAndAddress',
+            ['BIGNESS S.A CURUPAYTY C/ RIO YHAGUY. NEMBY. PARAGUAY']
+        );
+
+        $this->assertSame('BIGNESS S.A', $bigness[0]);
+        $this->assertSame(
+            'CURUPAYTY C/ RIO YHAGUY. NEMBY. PARAGUAY',
+            $bigness[1]
+        );
+
+        $person = 'JORGE GABRIEL OCAMPOS PEREZ MARISCAL LOPEZ C/INGAVI PARAGUAY';
+        $individual = $this->invoke(
+            $parser,
+            'splitCuscarPartyNameAndAddress',
+            [$person]
+        );
+
+        $this->assertSame($person, $individual[0]);
+        $this->assertNull($individual[1]);
+    }
+
     public function test_blank_adz_does_not_erase_tax_id_extracted_from_nad(): void
     {
         $parser = new class extends CmspEdiParserCompat {
