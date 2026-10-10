@@ -750,6 +750,20 @@ class CmspEdiParserCompat extends CmspEdiParser
             $name = trim((string) $partyData['name']);
             $normalizedName = mb_strtoupper($name);
 
+            $client = $this->findClientByCuscarNamePrefix(
+                $name,
+                $countryId
+            );
+
+            if ($client) {
+                $this->persistClientAddress(
+                    $client,
+                    $partyData['address'] ?? null
+                );
+
+                return $client;
+            }
+
             if ($taxType !== null) {
                 $matches = Client::query()
                     ->where('country_id', $countryId)
@@ -841,6 +855,41 @@ class CmspEdiParserCompat extends CmspEdiParser
             $warningStart,
             $partyData
         );
+
+        if ($taxId !== null) {
+            $legacyClient = $this->findUnidentifiedClientByNameIdentity(
+                trim((string) $partyData['name']),
+                $countryId
+            );
+
+            if ($legacyClient) {
+                $updates = ['tax_id' => $taxId];
+
+                if ($documentTypeId !== null) {
+                    $updates['document_type_id'] = $documentTypeId;
+                }
+
+                $legacyClient->updateQuietly($updates);
+
+                $this->persistClientAddress(
+                    $legacyClient,
+                    $partyData['address'] ?? null
+                );
+
+                Log::info(
+                    'CMSP compat: ficha histórica enriquecida con identidad fiscal',
+                    [
+                        'client_id' => $legacyClient->id,
+                        'name' => $partyData['name'],
+                        'tax_id' => $taxId,
+                        'country_id' => $countryId,
+                        'document_type_id' => $documentTypeId,
+                    ]
+                );
+
+                return $legacyClient;
+            }
+        }
 
         $client = Client::create([
             'created_by_company_id' => $companyId,
