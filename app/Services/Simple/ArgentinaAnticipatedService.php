@@ -525,7 +525,7 @@ class ArgentinaAnticipatedService
                 ->map(fn ($value) => trim((string) $value))
                 ->unique()
                 ->values();
-            if ($bill->is_consolidated && $forwarders->isEmpty()) {
+            if (($closing || $bill->is_consolidated) && $forwarders->isEmpty()) {
                 $missingForwarder++;
             } elseif ($forwarders->count() > 1) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: RazonSocialFowarderExterior difiere entre ítems";
