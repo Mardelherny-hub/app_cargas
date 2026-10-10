@@ -317,6 +317,25 @@ XML;
         );
     }
 
+    public function test_containerized_lines_force_arca_packaging_05(): void
+    {
+        $generator = $this->source(
+            'app/Services/Simple/SimpleXmlGenerator.php'
+        );
+        $validation = $this->source(
+            'app/Services/Simple/ArgentinaAnticipatedService.php'
+        );
+
+        $this->assertStringContainsString(
+            "\$packCode = \$item->containers->isNotEmpty()\n                ? '05'",
+            $generator
+        );
+        $this->assertStringContainsString(
+            "\$packagingCode = \$item->containers->isNotEmpty()\n                    ? '05'",
+            $validation
+        );
+    }
+
     public function test_package_numbers_is_mass_assignable_for_manual_completion(): void
     {
         $item = new \App\Models\ShipmentItem();
