@@ -809,7 +809,48 @@ class BillOfLadingEditForm extends Component
             $this->discharge_date = $this->normalizeDate($this->discharge_date);
 
             \Log::info('SUBMIT - about to validate');
-           // $this->validate();
+
+            if ($this->billHasEmptyContainer()) {
+                $this->origin_location = trim((string) $this->origin_location);
+                $this->origin_country_code = strtoupper(
+                    trim((string) $this->origin_country_code)
+                );
+
+                $this->validate([
+                    'origin_loading_date' => ['required', 'date'],
+                    'origin_location' => ['required', 'string', 'max:5'],
+                    'origin_country_code' => [
+                        'required',
+                        'string',
+                        function ($attribute, $value, $fail) {
+                            $value = strtoupper(trim((string) $value));
+
+                            $valid = strlen($value) === 2
+                                ? Country::where('alpha2_code', $value)->exists()
+                                : (
+                                    preg_match('/^\\d{3}$/', $value)
+                                    && Country::where('codigo_afip', $value)->exists()
+                                );
+
+                            if (!$valid) {
+                                $fail(
+                                    'El país de origen debe ser un código válido para Aduana.'
+                                );
+                            }
+                        },
+                    ],
+                ], [
+                    'origin_loading_date.required' =>
+                        'La fecha de carga en lugar de origen es obligatoria para contenedores vacíos.',
+                    'origin_location.required' =>
+                        'El código de lugar de origen es obligatorio para contenedores vacíos.',
+                    'origin_location.max' =>
+                        'El código de lugar de origen no puede superar 5 caracteres.',
+                    'origin_country_code.required' =>
+                        'El país de origen es obligatorio para contenedores vacíos.',
+                ]);
+            }
+
             \Log::info('SUBMIT - validation passed');
 
             \Log::info('SUBMIT - starting transaction');
@@ -1299,6 +1340,30 @@ private function initializeAfipSelectors()
     }
 }
 
+    private function billHasEmptyContainer(): bool
+    {
+        $this->billOfLading->loadMissing('shipmentItems.containers');
+
+        foreach ($this->billOfLading->shipmentItems as $item) {
+            foreach ($item->containers as $container) {
+                if (strtoupper(trim((string) $container->condition)) === 'V') {
+                    return true;
+                }
+
+                $condition = strtoupper(trim((string) (
+                    $container->pivot?->container_condition
+                    ?: $item->container_condition
+                    ?: $container->container_condition
+                )));
+
+                if ($condition === 'V') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     public function render()
     {

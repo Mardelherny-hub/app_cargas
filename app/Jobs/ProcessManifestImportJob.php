@@ -220,13 +220,24 @@ class ProcessManifestImportJob implements ShouldQueue
         $bills = \App\Models\BillOfLading::whereIn(
             'shipment_id',
             $shipmentIds
-        )->get();
+        )
+            ->with('shipmentItems.containers')
+            ->get();
 
         foreach ($bills as $bill) {
             $changed = false;
 
             if ($this->loadingDate !== null) {
                 $bill->loading_date = $this->loadingDate;
+
+                // Roberto confirmó en las pruebas de Información Anticipada
+                // que la Fecha de Carga ingresada al importar es también la
+                // FechaCargaLugarOrigen de los contenedores vacíos. Persistir
+                // el mismo dato real evita perderlo entre importación y XML.
+                if ($this->billHasEmptyContainer($bill)) {
+                    $bill->origin_loading_date = $this->loadingDate;
+                }
+
                 $changed = true;
             }
 
@@ -240,6 +251,25 @@ class ProcessManifestImportJob implements ShouldQueue
                 $bill->save();
             }
         }
+    }
+
+    private function billHasEmptyContainer(\App\Models\BillOfLading $bill): bool
+    {
+        foreach ($bill->shipmentItems as $item) {
+            foreach ($item->containers as $container) {
+                $condition = strtoupper(trim((string) (
+                    $container->condition
+                    ?: $container->pivot?->container_condition
+                    ?: $container->container_condition
+                )));
+
+                if ($condition === 'V') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

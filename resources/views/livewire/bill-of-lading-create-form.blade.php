@@ -697,10 +697,10 @@
                             <select wire:model="origin_country_code" id="origin_country_code"
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                 <option value="">Seleccionar país</option>
-                                <option value="ARG">🇦🇷 Argentina</option>
-                                <option value="PRY">🇵🇾 Paraguay</option>
-                                <option value="BRA">🇧🇷 Brasil</option>
-                                <option value="URY">🇺🇾 Uruguay</option>
+                                <option value="AR">🇦🇷 Argentina</option>
+                                <option value="PY">🇵🇾 Paraguay</option>
+                                <option value="BR">🇧🇷 Brasil</option>
+                                <option value="UY">🇺🇾 Uruguay</option>
                             </select>
                             @error('origin_country_code')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -729,10 +729,10 @@
                             <select wire:model="destination_country_code" id="destination_country_code"
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                 <option value="">Seleccionar país</option>
-                                <option value="ARG">🇦🇷 Argentina</option>
-                                <option value="PRY">🇵🇾 Paraguay</option>
-                                <option value="BRA">🇧🇷 Brasil</option>
-                                <option value="URY">🇺🇾 Uruguay</option>
+                                <option value="AR">🇦🇷 Argentina</option>
+                                <option value="PY">🇵🇾 Paraguay</option>
+                                <option value="BR">🇧🇷 Brasil</option>
+                                <option value="UY">🇺🇾 Uruguay</option>
                             </select>
                             @error('destination_country_code')
                                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
