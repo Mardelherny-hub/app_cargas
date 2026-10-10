@@ -23,7 +23,7 @@ trait ExtractsEmbeddedTaxId
 
         // Prefijos conocidos. Los CUSCAR reales también usan variantes
         // RUC NO, R.U.C, TAX-, TAX NO y TAX ID NUMBER.
-        $prefixes = 'RUT\s*\/\s*VAT|RUC\s*\/\s*TAX\s?ID|TAX\s*ID|TAXID|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
+        $prefixes = 'RUT\s*\/\s*VAT|RUT|RUC\s*\/\s*TAX\s?ID|TAX\s*ID|TAXID|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
         $qualifier = '(?:\s*(?:NUMBER|NBR\.?|NRO\.?|NO\.?))?';
 
         // No se acepta un número sin marcador fiscal explícito.
