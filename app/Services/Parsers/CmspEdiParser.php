@@ -1159,6 +1159,17 @@ class CmspEdiParser implements ManifestParserInterface
                 ? $this->cleanEdifactText(implode(' ', array_slice($partyParts, 1)))
                 : null;
 
+            [$resolvedPartyName, $embeddedAddress] =
+                $this->splitCuscarPartyNameAndAddress($partyName);
+
+            if ($embeddedAddress !== null) {
+                $partyName = $resolvedPartyName;
+                $partyAddress = trim(
+                    $embeddedAddress
+                    . ($partyAddress !== null ? ' ' . $partyAddress : '')
+                );
+            }
+
             // Roles EDIFACT (verificado contra CMSP.EDI y 250-22_316S-CUSCAR.EDI,
             // y confirmado por Roberto 20/07):
             //   CN = consignatario  |  CZ = cargador  |  CX = notificatario
@@ -1223,6 +1234,45 @@ class CmspEdiParser implements ManifestParserInterface
         $clean = str_replace("\xC2\xA0", ' ', $clean);
 
         return trim(preg_replace('/\s+/', ' ', $clean));
+    }
+
+    /**
+     * Algunos emisores CMSP concatenan razón social y domicilio sin usar el
+     * separador de componentes EDIFACT. Sólo se parte cuando existe un sufijo
+     * societario explícito en el propio NAD; si no, se conserva el texto
+     * completo para no inventar dónde termina el nombre.
+     *
+     * @return array{0:string,1:?string}
+     */
+    protected function splitCuscarPartyNameAndAddress(string $value): array
+    {
+        $value = trim(preg_replace('/\s+/u', ' ', $value));
+
+        $companySuffix =
+            '(?:S\.?\s*A\.?\s*C\.?\s*I\.?'
+            . '|S\.?\s*A\.?\s*I\.?\s*C\.?'
+            . '|S\.?\s*R\.?\s*L\.?'
+            . '|S\.?\s*A\.?\s*S\.?'
+            . '|S\.?\s*A\.?'
+            . '|SACI|SAIC|SRL|SAS|SA|LTDA\.?)';
+
+        if (
+            preg_match(
+                '/^(.+?\b' . $companySuffix . ')(?=\s|$)(.*)$/iu',
+                $value,
+                $matches
+            ) !== 1
+        ) {
+            return [$value, null];
+        }
+
+        $name = trim((string) ($matches[1] ?? ''));
+        $address = trim((string) ($matches[2] ?? ''));
+
+        return [
+            $name !== '' ? $name : $value,
+            $address !== '' ? $address : null,
+        ];
     }
 
     /**
@@ -3290,6 +3340,58 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * Si el CUSCAR aporta un identificador fiscal real para una ficha histórica
+     * que todavía no lo tiene, reutilizar esa ficha sólo cuando nombre y país
+     * la identifican inequívocamente.
+     */
+    protected function findUnidentifiedClientByNameIdentity(
+        string $name,
+        int $countryId
+    ): ?Client {
+        $wanted = $this->normalizeClientIdentityName($name);
+
+        if ($wanted === '') {
+            return null;
+        }
+
+        $matches = DB::table('clients')
+            ->where('country_id', $countryId)
+            ->whereNull('tax_id')
+            ->get([
+                'id',
+                'legal_name',
+                'commercial_name',
+            ])
+            ->filter(function ($row) use ($wanted) {
+                foreach ([$row->legal_name, $row->commercial_name] as $candidate) {
+                    if (
+                        $candidate !== null
+                        && $this->normalizeClientIdentityName(
+                            (string) $candidate
+                        ) === $wanted
+                    ) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->values();
+
+        if ($matches->count() === 1) {
+            return Client::find($matches->first()->id);
+        }
+
+        if ($matches->count() > 1) {
+            throw new \DomainException(
+                "CMSP: existen múltiples clientes sin identificador fiscal para '{$name}'."
+            );
+        }
+
+        return null;
+    }
+
+    /**
      * Buscar o crear cliente
      */
     protected function extractExplicitTaxTypeFromText(
@@ -3652,6 +3754,41 @@ class CmspEdiParser implements ManifestParserInterface
                     "CMSP: no existe un tipo documental {$taxType} "
                     . 'activo y compatible con el país resuelto.'
                 );
+            }
+        }
+
+        if ($taxId !== null) {
+            $legacyClient = $this->findUnidentifiedClientByNameIdentity(
+                trim((string) $partyData['name']),
+                $countryId
+            );
+
+            if ($legacyClient) {
+                $updates = ['tax_id' => $taxId];
+
+                if ($documentTypeId !== null) {
+                    $updates['document_type_id'] = $documentTypeId;
+                }
+
+                $legacyClient->updateQuietly($updates);
+
+                $this->persistClientAddress(
+                    $legacyClient,
+                    $partyData['address'] ?? null
+                );
+
+                Log::info(
+                    'CMSP: ficha histórica enriquecida con identidad fiscal',
+                    [
+                        'client_id' => $legacyClient->id,
+                        'name' => $partyData['name'],
+                        'tax_id' => $taxId,
+                        'country_id' => $countryId,
+                        'document_type_id' => $documentTypeId,
+                    ]
+                );
+
+                return $legacyClient;
             }
         }
 
