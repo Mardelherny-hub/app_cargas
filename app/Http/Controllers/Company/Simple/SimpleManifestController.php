@@ -1382,13 +1382,17 @@ public function micDtaSend(Request $request, Voyage $voyage)
                 return response()->json(['error' => 'No hay shipments para previsualizar'], 400);
             }
 
-            $xmlTitEnvios = $xmlGenerator->createRegistrarTitEnviosXml($shipment, 'PREVIEW_' . time());
-            $xmlEnvios = $xmlGenerator->createRegistrarEnviosXml($shipment, 'PREVIEW_' . time());
+            $xmlTitEnvios = $xmlGenerator->createRegistrarTitEnviosXml(
+                $shipment,
+                'PREVIEW_' . time()
+            );
 
             return response()->json([
                 'preview' => [
                     'titenvios_xml' => $xmlTitEnvios,
-                    'envios_xml' => $xmlEnvios,
+                    // RegistrarEnvios no forma parte del alta inicial. Requiere
+                    // el idTitTrans real devuelto previamente por RegistrarTitEnvios.
+                    'envios_xml' => null,
                     'shipment_id' => $shipment->id,
                     'generated_at' => now()->toISOString(),
                 ],
