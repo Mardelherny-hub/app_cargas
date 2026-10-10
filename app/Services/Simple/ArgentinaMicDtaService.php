@@ -807,7 +807,16 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             }
 
             // 4. VALIDACIÓN SHIPMENTS
-            $shipments = $voyage->shipments()->with('billsOfLading.shipmentItems')->get();
+            $shipments = $voyage->shipments()->with([
+                'billsOfLading.shipper.country',
+                'billsOfLading.shipper.primaryContact',
+                'billsOfLading.consignee.country',
+                'billsOfLading.consignee.primaryContact',
+                'billsOfLading.notifyParty.country',
+                'billsOfLading.notifyParty.primaryContact',
+                'billsOfLading.specificContacts.contactData',
+                'billsOfLading.shipmentItems.containers',
+            ])->get();
             
             if ($shipments->isEmpty()) {
                 $validation['errors'][] = 'Viaje sin Cargas asociadas';
@@ -852,25 +861,48 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                                 $shipmentWarnings[] = "BL sin descripción de carga en shipment '{$shipment->shipment_number}'";
                             }
                             
-                            // Validar peso y cantidad
-                            $totalWeight = $bol->shipmentItems->sum('gross_weight_kg');
-                            $totalPackages = $bol->shipmentItems->sum('package_quantity');
-                            
-                            if ($totalWeight <= 0) {
-                                $shipmentErrors[] = "BL '{$bol->bill_number}' sin peso válido (actual: {$totalWeight} kg)";
+                            $isEmptyOnlyBill = $this->isMicDtaEmptyOnlyBill($bol);
+
+                            if ($isEmptyOnlyBill) {
+                                $validation['details'][] =
+                                    "BL '{$bol->bill_number}': título de contenedores vacíos ✓";
+                            } else {
+                                $totalWeight = $bol->shipmentItems->sum('gross_weight_kg');
+                                $totalPackages = $bol->shipmentItems->sum('package_quantity');
+
+                                if ($totalWeight <= 0) {
+                                    $shipmentErrors[] = "BL '{$bol->bill_number}' sin peso válido (actual: {$totalWeight} kg)";
+                                }
+
+                                if ($totalPackages <= 0) {
+                                    $shipmentErrors[] = "BL '{$bol->bill_number}' sin cantidad de bultos válida (actual: {$totalPackages})";
+                                }
+
+                                $idDecla = trim((string) $bol->id_decla);
+                                if ($idDecla === '') {
+                                    $legacyIdDecla = trim((string) $bol->permiso_embarque);
+
+                                    if (
+                                        $legacyIdDecla !== ''
+                                        && strtoupper($legacyIdDecla) !== 'VACIO'
+                                        && mb_strlen($legacyIdDecla) <= 16
+                                    ) {
+                                        $idDecla = $legacyIdDecla;
+                                    }
+                                }
+
+                                if ($idDecla === '' || mb_strlen($idDecla) > 16) {
+                                    $shipmentErrors[] =
+                                        "BL '{$bol->bill_number}' sin idDecla real de hasta 16 caracteres.";
+                                }
+
+                                if ($totalWeight > 0 && $totalPackages > 0) {
+                                    $validation['details'][] = "BL '{$bol->bill_number}': {$totalPackages} bultos, {$totalWeight} kg ✓";
+                                }
                             }
 
-                            // Validar permiso_embarque (TRP) obligatorio para AFIP
-                            if (empty($bol->permiso_embarque)) {
-                                $shipmentErrors[] = "BL '{$bol->bill_number}' no tiene permiso de embarque (TRP). Campo obligatorio para AFIP.";
-                            }
-                            
-                            if ($totalPackages <= 0) {
-                                $shipmentErrors[] = "BL '{$bol->bill_number}' sin cantidad de bultos válida (actual: {$totalPackages})";
-                            }
-                            
-                            if ($totalWeight > 0 && $totalPackages > 0) {
-                                $validation['details'][] = "BL '{$bol->bill_number}': {$totalPackages} bultos, {$totalWeight} kg ✓";
+                            foreach ($this->validateMicDtaBillParties($bol) as $partyError) {
+                                $shipmentErrors[] = $partyError;
                             }
                         }
                     }
@@ -952,6 +984,193 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         }
 
         return $validation;
+    }
+
+    private function isMicDtaEmptyOnlyBill($bill): bool
+    {
+        if ($bill->shipmentItems->isEmpty()) {
+            return false;
+        }
+
+        $hasContainer = false;
+
+        foreach ($bill->shipmentItems as $item) {
+            if ($item->containers->isEmpty()) {
+                return false;
+            }
+
+            foreach ($item->containers as $container) {
+                $hasContainer = true;
+
+                if (strtoupper(trim((string) $container->condition)) === 'V') {
+                    continue;
+                }
+
+                $condition = strtoupper(trim((string) $container->container_condition));
+
+                if (!in_array($condition, ['V', 'C'], true)) {
+                    return false;
+                }
+            }
+        }
+
+        return $hasContainer;
+    }
+
+    /**
+     * Replica los límites documentados que aplica SimpleXmlGenerator para las
+     * partes de RegistrarTitEnvios, de modo que el operador vea el faltante
+     * antes de crear una transacción SOAP.
+     */
+    private function validateMicDtaBillParties($bill): array
+    {
+        $errors = [];
+        $billNumber = $bill->bill_number ?: (string) $bill->id;
+
+        $shipper = $bill->shipper;
+        if (!$shipper) {
+            $errors[] = "BL '{$billNumber}' sin remitente asociado.";
+        } else {
+            $data = $this->micDtaPartySnapshot($bill, 'shipper', $shipper);
+
+            if (!preg_match('/^[A-Z]{2}$/', $data['country'])) {
+                $errors[] = "BL '{$billNumber}' remitente sin país ISO alfa-2.";
+            }
+            if ($data['tax_id'] === '' || mb_strlen($data['tax_id']) > 14) {
+                $errors[] = "BL '{$billNumber}' remitente sin idFiscal válido.";
+            }
+            if ($data['name'] !== '' && mb_strlen($data['name']) > 50) {
+                $errors[] = "BL '{$billNumber}' nombre del remitente supera 50 caracteres.";
+            }
+            if ($data['country'] !== 'AR' && $data['name'] === '') {
+                $errors[] = "BL '{$billNumber}' remitente extranjero sin razón social.";
+            }
+            if ($data['country'] !== 'AR') {
+                $this->appendMicDtaAddressErrors(
+                    $errors,
+                    $data,
+                    "BL '{$billNumber}' remitente"
+                );
+            }
+        }
+
+        $consignee = $bill->consignee;
+        if (!$consignee) {
+            $errors[] = "BL '{$billNumber}' sin consignatario asociado.";
+        } else {
+            $data = $this->micDtaPartySnapshot($bill, 'consignee', $consignee);
+
+            if ($data['name'] === '' || mb_strlen($data['name']) > 50) {
+                $errors[] = "BL '{$billNumber}' consignatario sin razón social válida.";
+            }
+            if ($data['tax_id'] === '' || mb_strlen($data['tax_id']) > 14) {
+                $errors[] = "BL '{$billNumber}' consignatario sin idFiscal válido.";
+            }
+
+            $this->appendMicDtaAddressErrors(
+                $errors,
+                $data,
+                "BL '{$billNumber}' consignatario"
+            );
+        }
+
+        $notify = $bill->notifyParty ?: $consignee;
+        if (!$notify) {
+            $errors[] = "BL '{$billNumber}' sin notificado asociado.";
+        } else {
+            $role = $bill->notifyParty ? 'notify_party' : 'consignee';
+            $data = $this->micDtaPartySnapshot($bill, $role, $notify);
+
+            if ($data['name'] === '' || mb_strlen($data['name']) > 50) {
+                $errors[] = "BL '{$billNumber}' notificado sin razón social válida.";
+            }
+            if ($data['tax_id'] !== '' && mb_strlen($data['tax_id']) > 14) {
+                $errors[] = "BL '{$billNumber}' idFiscal del notificado supera 14 caracteres.";
+            }
+
+            $this->appendMicDtaAddressErrors(
+                $errors,
+                $data,
+                "BL '{$billNumber}' notificado"
+            );
+        }
+
+        return $errors;
+    }
+
+    private function micDtaPartySnapshot($bill, string $role, $client): array
+    {
+        $specific = $bill->specificContacts
+            ->first(fn ($contact) =>
+                $contact->role === $role
+                && (bool) $contact->use_specific_data
+            );
+
+        $contact = $specific?->contactData ?: $client?->primaryContact;
+
+        $pick = static function ($specificValue, $contactValue): string {
+            $specificValue = trim((string) $specificValue);
+
+            return $specificValue !== ''
+                ? $specificValue
+                : trim((string) $contactValue);
+        };
+
+        return [
+            'name' => $pick(
+                $specific?->specific_company_name,
+                $client?->legal_name ?: $client?->commercial_name
+            ),
+            'address_line_1' => $pick(
+                $specific?->specific_address_line_1,
+                $contact?->address_line_1
+            ),
+            'address_line_2' => $pick(
+                $specific?->specific_address_line_2,
+                $contact?->address_line_2
+            ),
+            'city' => $pick(
+                $specific?->specific_city,
+                $contact?->city
+            ),
+            'state' => $pick(
+                $specific?->specific_state_province,
+                $contact?->state_province
+            ),
+            'postal_code' => $pick(
+                $specific?->specific_postal_code,
+                $contact?->postal_code
+            ),
+            'tax_id' => trim((string) $client?->tax_id),
+            'country' => strtoupper(trim((string) (
+                $client?->country?->alpha2_code
+                ?: $client?->country?->iso2_code
+            ))),
+        ];
+    }
+
+    private function appendMicDtaAddressErrors(
+        array &$errors,
+        array $data,
+        string $context
+    ): void {
+        $limits = [
+            'address_line_2' => 50,
+            'city' => 50,
+            'postal_code' => 8,
+            'state' => 50,
+            'address_line_1' => 150,
+        ];
+
+        foreach ($limits as $field => $max) {
+            if (mb_strlen((string) ($data[$field] ?? '')) > $max) {
+                $errors[] = "{$context} {$field} supera {$max} caracteres.";
+            }
+        }
+
+        if (trim((string) ($data['address_line_1'] ?? '')) === '') {
+            $errors[] = "{$context} no tiene nombreCalle/domicilio real.";
+        }
     }
 
     /**
