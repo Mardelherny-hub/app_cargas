@@ -2201,6 +2201,27 @@ class CmspEdiParser implements ManifestParserInterface
             $cargoDescription = implode(' | ', $cargoDescriptions);
         }
 
+        $exportPermit = trim((string) (
+            $containerGroup['references']['export_permit'] ?? ''
+        ));
+
+        /*
+         * RFF+EP es el permiso/destinación informado por el CUSCAR. Roberto ya
+         * confirmó este dato para RegistrarTitEnvios y el contrato histórico
+         * de la app lo utilizaba como idDecla. Se conserva también en
+         * permiso_embarque porque ese campo sigue teniendo uso documental.
+         *
+         * VACIO no es una destinación y nunca debe convertirse en idDecla.
+         * Tampoco se truncan valores: si la fuente excede C(16), la validación
+         * de MIC/DTA debe bloquearlo en vez de transmitir un identificador
+         * alterado.
+         */
+        $idDecla = $exportPermit !== ''
+            && strtoupper($exportPermit) !== 'VACIO'
+            && mb_strlen($exportPermit) <= 16
+                ? $exportPermit
+                : null;
+
         $bill = BillOfLading::create([
             'shipment_id'               => $shipment->id,
             'bill_number'               => (string) $billNumber,
@@ -2227,8 +2248,9 @@ class CmspEdiParser implements ManifestParserInterface
             'documentation_complete'    => false,
             'customs_cleared'           => false,
 
-            // RFF+EP del CUSCAR: número de permiso de exportación.
-            'permiso_embarque'          => $containerGroup['references']['export_permit'] ?? null,
+            // RFF+EP del CUSCAR: permiso/destinación informado por la fuente.
+            'permiso_embarque'          => $exportPermit !== '' ? $exportPermit : null,
+            'id_decla'                  => $idDecla,
 
             // Descripción real informada en los GID/FTX de este CNI.
             'cargo_description'         => $cargoDescription,
