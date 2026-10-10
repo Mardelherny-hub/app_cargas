@@ -3652,7 +3652,7 @@ class SimpleXmlGenerator
      * MÉTODO PRINCIPAL: RegistrarViaje - Información Anticipada del viaje
      * 
      * Genera XML para registro de información anticipada marítima según especificación AFIP.
-     * Incluye datos de cabecera del viaje, embarcación, capitán y contenedores vacíos/correo.
+     * RegistrarViaje envía la cabecera; los vacíos/correo se registran después con RegistrarTitulosCbc.
      * 
      * @param Voyage $voyage Viaje con relaciones cargadas
      * @param string $transactionId ID único de transacción (máx 15 chars)
@@ -3699,7 +3699,19 @@ class SimpleXmlGenerator
                     // Información Anticipada Marítima (estructura principal)
                     $w->startElement('InformacionAnticipadaMaritimaDoc');
                         $this->addVoyageInformation($w, $voyage, $voyageData);
-                        $this->addContainersInformation($w, $voyage);
+
+                        /*
+                         * RegistrarViaje transmite únicamente la cabecera.
+                         *
+                         * Caso real ARCA 09/10/2026, transacción 492:
+                         * con IndicadorTransporteVacio=N e
+                         * IndicadorMercaderiaAbordo=S, incluir
+                         * ContenedoresVaciosCorreo fue rechazado con 11387.
+                         *
+                         * Los contenedores vacíos/correo se mantienen en
+                         * RegistrarTitulosCbc, que es donde existe además el
+                         * precedente histórico aceptado por ARCA.
+                         */
                     $w->endElement(); // InformacionAnticipadaMaritimaDoc
 
                 $w->endElement(); // argRegistrarViaje
