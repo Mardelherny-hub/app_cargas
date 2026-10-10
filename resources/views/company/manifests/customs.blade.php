@@ -285,17 +285,19 @@
                                         @endif
                                     </div>
                                     
-                                    <!-- ✅ NUEVA: Segunda fila con botón específico MIC/DTA Completo -->
+                                    {{-- MIC/DTA: una única puerta operativa.
+                                         Evita el flujo paso-a-paso legado y lleva al módulo
+                                         Simple, que usa prevalidación + TRACKs persistidos. --}}
                                     @if($voyage->destinationPort->country->alpha2_code === 'AR' || 
                                         ($voyage->originPort->country->alpha2_code === 'AR' && $voyage->destinationPort->country->alpha2_code === 'PY'))
                                     <div class="flex space-x-2">
-                                        <button onclick="showMicDtaCompleteModal({{ $voyage->id }}, '{{ $voyage->voyage_number }}')"
-                                                class="inline-flex items-center px-3 py-1 border border-purple-300 rounded-md text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1">
+                                        <a href="{{ route('company.simple.micdta.show', $voyage) }}"
+                                           class="inline-flex items-center px-3 py-1 border border-purple-300 rounded-md text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1">
                                             <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                                             </svg>
-                                            📋 MIC/DTA Completo
-                                        </button>
+                                            📋 MIC/DTA
+                                        </a>
                                     </div>
                                     @endif
                                     
