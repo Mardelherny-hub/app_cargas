@@ -367,6 +367,38 @@ class ArgentinaMicDtaContractTest extends TestCase
         $this->assertSame([], $result['results_per_shipment']);
     }
 
+    public function test_preview_does_not_invent_registrar_envios_title_id(): void
+    {
+        $source = file_get_contents(
+            base_path(
+                'app/Http/Controllers/Company/Simple/SimpleManifestController.php'
+            )
+        );
+
+        $this->assertIsString($source);
+
+        $start = strpos($source, 'public function micDtaPreviewXml');
+        $end = strpos($source, 'private function getMicDtaStatus', $start);
+
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+
+        $preview = substr($source, $start, $end - $start);
+
+        $this->assertStringContainsString(
+            'createRegistrarTitEnviosXml',
+            $preview
+        );
+        $this->assertStringNotContainsString(
+            'createRegistrarEnviosXml',
+            $preview
+        );
+        $this->assertStringContainsString(
+            "'envios_xml' => null",
+            $preview
+        );
+    }
+
     public function test_real_xml_writers_keep_cargo_and_empty_container_tracks_separate(): void
     {
         $loose = (new ShipmentItem())->setRelation('containers', new Collection());
