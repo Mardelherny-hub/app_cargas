@@ -287,15 +287,49 @@ class ManifestCustomsController extends Controller
                     continue;
                 }
 
-                // Los demás webservices conservan su flujo existente.
+                if ($request->webservice_type === 'micdta') {
+                    $service = $this->getWebserviceByType(
+                        'micdta',
+                        $voyage,
+                        ['environment' => $request->environment]
+                    );
+
+                    $validation = $service->canProcessVoyage($voyage);
+                    if (!$validation['can_process']) {
+                        $results['failed']++;
+                        $results['errors'][] = "Viaje {$voyageId}: "
+                            . implode('; ', $validation['errors']);
+                        continue;
+                    }
+
+                    $response = $service->sendWebservice($voyage, [
+                        'environment' => $request->environment,
+                        'batch_mode' => true,
+                    ]);
+
+                    if ($response['success'] ?? false) {
+                        $results['success']++;
+                    } else {
+                        $results['failed']++;
+                        $results['errors'][] = "Viaje {$voyageId}: "
+                            . ($response['error_message'] ?? 'Error en MIC/DTA');
+                    }
+
+                    continue;
+                }
+
+                // Paraguay conserva su flujo existente.
                 $transaction = $this->createWebserviceTransaction($voyage, $request->all());
 
                 Log::info('DEBUG - Transacción creada', [
                     'transaction_id' => $transaction->id
                 ]);
                 
-                Log::info('🔥 ANTES DE LLAMAR sendToWebservice');
-                $service = $this->getWebserviceByType($request->webservice_type, $voyage);
+                $service = $this->getWebserviceByType(
+                    $request->webservice_type,
+                    $voyage,
+                    ['environment' => $request->environment]
+                );
                 $response = $service->send($voyage, [
                     'transaction_id' => $transaction->transaction_id,
                     'environment' => $request->environment,
@@ -303,7 +337,14 @@ class ManifestCustomsController extends Controller
                 ]);
 
                 $this->updateTransactionWithResponse($transaction, $response);
-                $results['success']++;
+
+                if ($response['success'] ?? false) {
+                    $results['success']++;
+                } else {
+                    $results['failed']++;
+                    $results['errors'][] = "Viaje {$voyageId}: "
+                        . ($response['error_message'] ?? 'Error en webservice');
+                }
 
             } catch (\Exception $e) {
                 $results['failed']++;
@@ -765,26 +806,14 @@ class ManifestCustomsController extends Controller
                         'success' => $response['success'] ?? 'no_definido',
                     ]);
                     return $response;
-                    
-                    // ✅ NUEVO: Usar automáticamente sistema TRACKs para MIC/DTA
-                    Log::info('🔥 CASO MIC/DTA - Usando SISTEMA TRACKs automáticamente');
-                    
-                    // Obtener primer shipment del voyage para TRACKs
-                    $shipment = $voyage->shipments()->first();
-                    if (!$shipment) {
-                        throw new Exception("El voyage {$voyage->voyage_number} no tiene shipments para procesar con TRACKs");
-                    }
-                    
-                    // Ejecutar flujo TRACKs completo automáticamente
-                    $response = $service->sendMicDtaWithTracks($shipment);
-                    
-                    Log::info('🔥 RESPUESTA TRACKs MIC/DTA', [
-                        'success' => $response['success'] ?? false,
-                        'tracks_used' => count($response['tracks_used'] ?? []),
-                        'transaction_id' => $response['transaction_id'] ?? null,
-                    ]);
-                    
-                    return $response;
+
+                case 'micdta':
+                    return [
+                        'success' => false,
+                        'error_code' => 'INVALID_MICDTA_FLOW',
+                        'error_message' =>
+                            'MIC/DTA debe utilizar el flujo dedicado con prevalidación y TRACKs persistidos.',
+                    ];
 
                 case 'desconsolidado':
                     $tituloMadre = $voyage->shipments()->first();
@@ -988,6 +1017,44 @@ class ManifestCustomsController extends Controller
                 return back()->with(
                     'error',
                     'Error en envío anticipada a AR: '
+                    . $this->buildErrorMessage($response)
+                );
+            }
+
+            if ($request->webservice_type === 'micdta') {
+                $service = $this->getWebserviceByType(
+                    'micdta',
+                    $voyage,
+                    ['environment' => $request->environment]
+                );
+
+                $validation = $service->canProcessVoyage($voyage);
+                if (!$validation['can_process']) {
+                    return back()->with(
+                        'error',
+                        'No se puede enviar MIC/DTA: '
+                        . implode('; ', $validation['errors'])
+                    );
+                }
+
+                $response = $service->sendWebservice($voyage, [
+                    'environment' => $request->environment,
+                    'priority' => $request->priority ?? 'normal',
+                ]);
+
+                if ($response['success'] ?? false) {
+                    return redirect()->route(
+                        'company.simple.micdta.show',
+                        $voyage->id
+                    )->with(
+                        'success',
+                        'MIC/DTA enviado correctamente.'
+                    );
+                }
+
+                return back()->with(
+                    'error',
+                    'Error en envío MIC/DTA: '
                     . $this->buildErrorMessage($response)
                 );
             }
@@ -1565,30 +1632,36 @@ private function buildErrorMessage(array $response): string
             $config = ['environment' => $request->environment];
             $service = new \App\Services\Simple\ArgentinaMicDtaService($company, $user, $config);
 
-            // Ejecutar SOLO RegistrarTitEnvios
-            $result = $service->processRegistrarTitEnvios($voyage, []);
+            // Ejecutar SOLO RegistrarTitEnvios mediante la API pública del servicio.
+            $result = $service->executeMethod(
+                'RegistrarTitEnvios',
+                $voyage,
+                []
+            );
 
             Log::info('🔥 RESULTADO PASO 1', [
-                'success' => $result['success'],
-                'transaction_id' => $result['transaction_id'],
+                'success' => $result['success'] ?? false,
+                'transaction_id' => $result['transaction_id'] ?? null,
                 'tracks_count' => count($result['tracks'] ?? []),
             ]);
 
-            if ($result['success']) {
+            if ($result['success'] ?? false) {
                 return response()->json([
                     'success' => true,
                     'message' => 'Paso 1 completado: Títulos y Envíos registrados',
-                    'transaction_id' => $result['transaction_id'],
+                    'transaction_id' => $result['transaction_id'] ?? null,
                     'tracks' => $result['tracks'] ?? [],
                     'tracks_count' => count($result['tracks'] ?? []),
                 ]);
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'error_message' => implode('. ', $result['errors']),
-                    'transaction_id' => $result['transaction_id'],
-                ]);
             }
+
+            return response()->json([
+                'success' => false,
+                'error_message' => $result['error_message']
+                    ?? implode('. ', $result['validation_errors'] ?? $result['errors'] ?? [])
+                    ?: 'Error desconocido en RegistrarTitEnvios',
+                'transaction_id' => $result['transaction_id'] ?? null,
+            ]);
 
         } catch (\Exception $e) {
             Log::error('Error en Paso 1 - RegistrarTitEnvios', [
@@ -1647,35 +1720,71 @@ private function buildErrorMessage(array $response): string
                 ]);
             }
 
-            // Crear servicio MIC/DTA
+            // Crear servicio MIC/DTA usando el mismo ambiente del Paso 1.
             $company = auth()->user()->getUserCompany();
             $user = auth()->user();
-            $service = new \App\Services\Simple\ArgentinaMicDtaService($company, $user);
 
-            // Ejecutar MIC/DTA usando TRACKs específicos
-            $result = $service->sendMicDtaWithTracks($shipment, $trackNumbers);
+            $step1Transaction = WebserviceTransaction::query()
+                ->where('company_id', $company->id)
+                ->where('voyage_id', $voyage->id)
+                ->where('transaction_id', $request->step1_transaction_id)
+                ->where('soap_action', 'like', '%RegistrarTitEnvios%')
+                ->latest()
+                ->first();
+
+            if (!$step1Transaction) {
+                return response()->json([
+                    'success' => false,
+                    'error_message' =>
+                        'No se encontró la transacción real de RegistrarTitEnvios correspondiente al Paso 1.',
+                ]);
+            }
+
+            $service = new \App\Services\Simple\ArgentinaMicDtaService(
+                $company,
+                $user,
+                ['environment' => $step1Transaction->environment]
+            );
+
+            /*
+             * Los TRACKs recibidos por la UI son sólo informativos. El servicio
+             * recupera los TRACKs reales persistidos y separados por shipment,
+             * evitando confiar en una lista enviada por el navegador.
+             */
+            $result = $service->executeMethod(
+                'RegistrarMicDta',
+                $voyage,
+                []
+            );
 
             Log::info('🔥 RESULTADO PASO 2', [
-                'success' => $result['success'],
-                'transaction_id' => $result['transaction_id'],
-                'tracks_used' => count($result['tracks_used'] ?? []),
+                'success' => $result['success'] ?? false,
+                'transaction_id' => $result['transaction_id'] ?? null,
+                'micdta_ids' => $result['micdta_ids'] ?? [],
             ]);
 
-            if ($result['success']) {
+            if ($result['success'] ?? false) {
+                $micDtaIds = array_values(array_filter(
+                    (array) ($result['micdta_ids'] ?? [])
+                ));
+
                 return response()->json([
                     'success' => true,
                     'message' => 'Proceso completo: MIC/DTA enviado con TRACKs validados',
-                    'transaction_id' => $result['transaction_id'],
-                    'tracks_used' => $result['tracks_used'] ?? [],
-                    'confirmation_number' => $result['confirmation_number'] ?? null,
-                ]);
-            } else {
-                return response()->json([
-                    'success' => false,
-                    'error_message' => implode('. ', $result['errors']),
-                    'transaction_id' => $result['transaction_id'],
+                    'transaction_id' => $result['transaction_id'] ?? null,
+                    'tracks_used' => $trackNumbers,
+                    'confirmation_number' => $micDtaIds[0] ?? null,
+                    'micdta_ids' => $micDtaIds,
                 ]);
             }
+
+            return response()->json([
+                'success' => false,
+                'error_message' => $result['error_message']
+                    ?? implode('. ', $result['validation_errors'] ?? $result['errors'] ?? [])
+                    ?: 'Error desconocido en RegistrarMicDta',
+                'transaction_id' => $result['transaction_id'] ?? null,
+            ]);
 
         } catch (\Exception $e) {
             Log::error('Error en Paso 2 - RegistrarMicDta', [
