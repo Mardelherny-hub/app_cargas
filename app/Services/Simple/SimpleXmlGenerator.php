@@ -4155,6 +4155,17 @@ class SimpleXmlGenerator
             return;
         }
 
+        $isEmptyTransport = $this->iaYesNoRequired(
+            $voyage->is_empty_transport,
+            'IndicadorTransporteVacio'
+        );
+
+        if ($isEmptyTransport === 'S') {
+            throw new Exception(
+                'Información Anticipada: un transporte en lastre no puede informar ContenedoresVaciosCorreo.'
+            );
+        }
+
         $w->startElement($prefix . 'ContenedoresVaciosCorreo');
         foreach ($entries as $entry) {
             $this->writeIaContainer($w, $entry['container'], $entry['bill'], $entry['item'], $voyage, $prefix);

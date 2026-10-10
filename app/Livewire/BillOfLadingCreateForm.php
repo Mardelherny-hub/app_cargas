@@ -281,11 +281,11 @@ class BillOfLadingCreateForm extends Component
         'loading_date' => 'required|date|after_or_equal:bill_date',
         'discharge_date' => 'nullable|date|after_or_equal:loading_date',
         'origin_location' => 'nullable|string|max:50',
-        'origin_country_code' => 'nullable|string|size:3',
+        'origin_country_code' => 'nullable|string|size:2|regex:/^[A-Z]{2}$/',
         'origin_loading_date' => 'nullable|date',
         'origin_customs_code' => 'nullable|string|max:10',
         'origin_operative_code' => 'nullable|string|max:10',
-        'destination_country_code' => 'nullable|string|size:3',
+        'destination_country_code' => 'nullable|string|size:2|regex:/^[A-Z]{2}$/',
         'discharge_customs_code' => 'nullable|string|max:10',
         'operational_discharge_code' => 'nullable|string|max:10',
         'freight_terms' => 'required|in:prepaid,collect',
@@ -316,6 +316,13 @@ class BillOfLadingCreateForm extends Component
         'documentation_complete' => 'boolean',
         'id_decla' => 'nullable|string|max:16|regex:/^[A-Z0-9]+$/',
     ];
+
+    private function normalizeCountryCode($value): ?string
+    {
+        $value = strtoupper(trim((string) $value));
+
+        return $value === '' ? null : $value;
+    }
 
     public function updatedIsOwnTransport($value)
     {
@@ -776,7 +783,14 @@ public function selectForeignLocationDischarge($locationCode)
                 $this->addError('consignee_id', 'El consignatario debe ser diferente al cargador (o active "Transporte propio").');
                 return;
             }
-            
+
+            $this->origin_country_code = $this->normalizeCountryCode(
+                $this->origin_country_code
+            );
+            $this->destination_country_code = $this->normalizeCountryCode(
+                $this->destination_country_code
+            );
+
             $this->validate();
 
             DB::beginTransaction();
@@ -799,9 +813,6 @@ public function selectForeignLocationDischarge($locationCode)
                 'bill_number' => $this->bill_number,
                 'bill_date' => $this->bill_date,
                 'loading_date' => $this->loading_date,
-                'origin_location' => $this->origin_location ?: null,
-                'origin_country_code' => $this->origin_country_code ?: null,
-                'origin_loading_date' => $this->origin_loading_date ?: null,
                 'discharge_date' => $this->discharge_date ?: null,
                 // Campos AFIP origen/destino
                 'origin_location' => $this->origin_location ?: null,
@@ -812,7 +823,6 @@ public function selectForeignLocationDischarge($locationCode)
                 'destination_country_code' => $this->destination_country_code ?: null,
                 'discharge_customs_code' => $this->discharge_customs_code ?: null,
                 'operational_discharge_code' => $this->operational_discharge_code ?: null,
-                'discharge_date' => $this->discharge_date ?: null,
                 'freight_terms' => $this->freight_terms,
                 'payment_terms' => $this->payment_terms,
                 'currency_code' => $this->currency_code,

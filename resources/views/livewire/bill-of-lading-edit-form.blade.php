@@ -792,21 +792,44 @@
                         </div>
 
                         {{-- Campos adicionales --}}
+                        @php
+                            $hasEmptyContainers = $billOfLading->shipmentItems
+                                ->flatMap(fn ($item) => $item->containers)
+                                ->contains(function ($container) {
+                                    $condition = strtoupper(trim((string) (
+                                        $container->condition
+                                        ?: $container->pivot?->container_condition
+                                        ?: $container->container_condition
+                                    )));
+
+                                    return $condition === 'V';
+                                });
+                        @endphp
+
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
-                                <label for="origin_location" class="block text-sm font-medium text-gray-700">Lugar de Origen (descripción)</label>
-                                <input wire:model="origin_location" type="text" id="origin_location" maxlength="50" placeholder="Ej: Depósito Central"
+                                <label for="origin_location" class="block text-sm font-medium text-gray-700">
+                                    {{ $hasEmptyContainers ? 'Código Lugar de Origen' : 'Lugar de Origen (descripción)' }}
+                                </label>
+                                <input wire:model="origin_location" type="text" id="origin_location"
+                                    maxlength="{{ $hasEmptyContainers ? 5 : 50 }}"
+                                    placeholder="{{ $hasEmptyContainers ? 'Código de origen' : 'Ej: Depósito Central' }}"
                                     class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                @if($hasEmptyContainers)
+                                    <p class="mt-1 text-xs text-gray-500">
+                                        Para contenedores vacíos, Información Anticipada exige un código de lugar de origen de hasta 5 caracteres.
+                                    </p>
+                                @endif
                             </div>
                             <div>
                                 <label for="origin_country_code" class="block text-sm font-medium text-gray-700">País Origen</label>
                                 <select wire:model="origin_country_code" id="origin_country_code"
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     <option value="">Seleccionar</option>
-                                    <option value="ARG">🇦🇷 Argentina</option>
-                                    <option value="PRY">🇵🇾 Paraguay</option>
-                                    <option value="BRA">🇧🇷 Brasil</option>
-                                    <option value="URY">🇺🇾 Uruguay</option>
+                                    <option value="AR">🇦🇷 Argentina</option>
+                                    <option value="PY">🇵🇾 Paraguay</option>
+                                    <option value="BR">🇧🇷 Brasil</option>
+                                    <option value="UY">🇺🇾 Uruguay</option>
                                 </select>
                             </div>
                             <div>
@@ -819,10 +842,10 @@
                                 <select wire:model="destination_country_code" id="destination_country_code"
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
                                     <option value="">Seleccionar</option>
-                                    <option value="ARG">🇦🇷 Argentina</option>
-                                    <option value="PRY">🇵🇾 Paraguay</option>
-                                    <option value="BRA">🇧🇷 Brasil</option>
-                                    <option value="URY">🇺🇾 Uruguay</option>
+                                    <option value="AR">🇦🇷 Argentina</option>
+                                    <option value="PY">🇵🇾 Paraguay</option>
+                                    <option value="BR">🇧🇷 Brasil</option>
+                                    <option value="UY">🇺🇾 Uruguay</option>
                                 </select>
                             </div>
                         </div>

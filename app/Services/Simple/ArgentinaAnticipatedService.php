@@ -89,7 +89,7 @@ class ArgentinaAnticipatedService
             'destinationPort.primaryCustomsOffice',
             'originCustoms',
             'destinationCustoms',
-            'shipments.billsOfLading',
+            'shipments.billsOfLading.shipmentItems.containers',
         ]);
 
         if ((int) $voyage->company_id !== (int) $this->company->id) {
@@ -157,6 +157,18 @@ class ArgentinaAnticipatedService
 
         $isEmptyTransport = strtoupper(trim((string) $voyage->is_empty_transport));
         $hasCargoOnboard = strtoupper(trim((string) $voyage->has_cargo_onboard));
+
+        if (
+            $isEmptyTransport === 'S'
+            && $this->voyageHasEmptyOrMailContainers($voyage)
+        ) {
+            $validation['errors'][] =
+                'IndicadorTransporteVacio no puede ser S cuando el viaje informa contenedores vacíos o de correo (ARCA 11387)';
+        }
+
+        foreach ($this->validateRegistrarViajeEmptyContainerOrigins($voyage) as $error) {
+            $validation['errors'][] = $error;
+        }
 
         if (array_key_exists('ata_cbc_cuits', $options)) {
             if ($isEmptyTransport === 'N' && $hasCargoOnboard === 'S' && empty($ataCbcTaxIds)) {
@@ -863,6 +875,77 @@ class ArgentinaAnticipatedService
 
         $validation['errors'] = array_values(array_unique($validation['errors']));
         return $validation;
+    }
+
+    private function voyageHasEmptyOrMailContainers(Voyage $voyage): bool
+    {
+        foreach ($voyage->shipments as $shipment) {
+            foreach ($shipment->billsOfLading as $bill) {
+                foreach ($bill->shipmentItems as $item) {
+                    foreach ($item->containers as $container) {
+                        if (in_array(
+                            $this->anticipatedContainerCondition($container, $item),
+                            ['V', 'C'],
+                            true
+                        )) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function validateRegistrarViajeEmptyContainerOrigins(Voyage $voyage): array
+    {
+        $errors = [];
+        $seen = [];
+
+        foreach ($voyage->shipments as $shipment) {
+            foreach ($shipment->billsOfLading as $bill) {
+                foreach ($bill->shipmentItems as $item) {
+                    foreach ($item->containers as $container) {
+                        if ($this->anticipatedContainerCondition($container, $item) !== 'V') {
+                            continue;
+                        }
+
+                        $number = trim((string) $container->container_number);
+                        $key = $number !== '' ? $number : 'id:' . (string) $container->id;
+
+                        if (isset($seen[$key])) {
+                            continue;
+                        }
+                        $seen[$key] = true;
+
+                        $label = $number !== '' ? $number : '#' . (string) $container->id;
+
+                        if (!$bill->origin_loading_date) {
+                            $errors[] =
+                                "Contenedor {$label}: falta FechaCargaLugarOrigen requerida por Aduana para RegistrarViaje (ARCA 11326)";
+                            continue;
+                        }
+
+                        $originLocation = trim((string) $bill->origin_location);
+                        if ($originLocation === '') {
+                            $errors[] =
+                                "Contenedor {$label}: falta CodigoLugarOrigen requerido junto con FechaCargaLugarOrigen";
+                        } elseif (mb_strlen($originLocation) > 5) {
+                            $errors[] =
+                                "Contenedor {$label}: CodigoLugarOrigen supera 5 caracteres";
+                        }
+
+                        if (!$this->hasAfipCountryValue($bill->origin_country_code)) {
+                            $errors[] =
+                                "Contenedor {$label}: falta CodigoPaisLugarOrigen válido para Aduana";
+                        }
+                    }
+                }
+            }
+        }
+
+        return $errors;
     }
 
     private function anticipatedContainerCondition($container, $item = null): string
