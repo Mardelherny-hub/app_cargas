@@ -600,10 +600,9 @@ class ArgentinaAnticipatedService
                 }
                 $seenLines[$line] = true;
 
-                $packagingCode = trim((string) $item->packaging_code);
-                if ($packagingCode === '' && $item->containers->isNotEmpty()) {
-                    $packagingCode = '05';
-                }
+                $packagingCode = $item->containers->isNotEmpty()
+                    ? '05'
+                    : trim((string) $item->packaging_code);
                 if (mb_strlen($packagingCode) !== 2) {
                     $missingPackaging++;
                 }
