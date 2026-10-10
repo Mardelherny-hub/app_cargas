@@ -367,6 +367,69 @@ class ArgentinaMicDtaContractTest extends TestCase
         $this->assertSame([], $result['results_per_shipment']);
     }
 
+    public function test_prevalidation_blocks_micdta_header_missing_after_cuscar_import(): void
+    {
+        $vessel = (new \App\Models\Vessel())->forceFill([
+            'name' => '250-22/300-1',
+            'registration_number' => null,
+        ]);
+        $vessel->setRelation(
+            'vesselType',
+            (new \App\Models\VesselType())->forceFill([
+                'code' => 'SELF_CARGO_001',
+            ])
+        );
+        $vessel->setRelation(
+            'flagCountry',
+            (new \App\Models\Country())->forceFill([
+                'alpha2_code' => 'PY',
+            ])
+        );
+
+        $owner = (new \App\Models\Client())->forceFill([
+            'legal_name' => 'MSG',
+            'address' => null,
+            'tax_id' => '30712412093',
+        ]);
+        $owner->setRelation(
+            'country',
+            (new \App\Models\Country())->forceFill([
+                'alpha2_code' => 'PY',
+            ])
+        );
+        $vessel->setRelation('owner', $owner);
+
+        $shipment = (new Shipment())->forceFill([
+            'id' => 386,
+            'shipment_number' => 'CMSP-QA',
+        ]);
+        $shipment->setRelation('vessel', $vessel);
+        $shipment->setRelation('captain', null);
+
+        $voyage = (new Voyage())->forceFill(['id' => 380]);
+        $voyage->setRelation('leadVessel', $vessel);
+        $voyage->setRelation('captain', null);
+
+        $errors = $this->invoke(
+            'validateRegistrarMicDtaShipmentHeader',
+            $shipment,
+            $voyage
+        );
+
+        $this->assertContains(
+            'Shipment CMSP-QA: matrícula de embarcación ausente o mayor a 10 caracteres.',
+            $errors
+        );
+        $this->assertContains(
+            'Shipment CMSP-QA: domicilio del propietario ausente o mayor a 150 caracteres.',
+            $errors
+        );
+        $this->assertContains(
+            'Shipment CMSP-QA: RegistrarMicDta requiere capitán para esta embarcación.',
+            $errors
+        );
+    }
+
     public function test_preview_does_not_invent_registrar_envios_title_id(): void
     {
         $source = file_get_contents(
