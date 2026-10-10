@@ -21,13 +21,14 @@ trait ExtractsEmbeddedTaxId
             return null;
         }
 
-        // Prefijos conocidos. Los más específicos van primero
-        // (RUC / TAX ID antes que RUC suelto).
-        $prefixes = 'RUT\s*\/\s*VAT|RUC\s*\/\s*TAX\s?ID|TAX\s?ID|TAXID|VAT|R\.U\.C\.|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
+        // Prefijos conocidos. Los CUSCAR reales también usan variantes
+        // RUC NO, R.U.C, TAX-, TAX NO y TAX ID NUMBER.
+        $prefixes = 'RUT\s*\/\s*VAT|RUC\s*\/\s*TAX\s?ID|TAX\s*ID|TAXID|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
+        $qualifier = '(?:\s*(?:NUMBER|NBR\.?|NRO\.?|NO\.?))?';
 
-        // prefijo + separadores EDIFACT opcionales (: # . ? - espacios)
-        // + dígitos con . - /. Ejemplo real: RUC:? 80052134-0.
-        $pattern = '/(?:' . $prefixes . ')\s*[:#.?-]*\s*([0-9][0-9.\-\/]{5,})/i';
+        // No se acepta un número sin marcador fiscal explícito.
+        $pattern = '/(?:' . $prefixes . ')' . $qualifier
+            . '\s*[:#.?-]*\s*([0-9][0-9.\-\/]{5,})/i';
 
         if (!preg_match($pattern, $text, $m)) {
             return null;
