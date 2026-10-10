@@ -3203,6 +3203,93 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * Identidad nominal estable, equivalente al criterio ya usado por TFP.
+     */
+    protected function normalizeClientIdentityName(string $name): string
+    {
+        $normalized = mb_strtoupper(trim($name), 'UTF-8');
+
+        return preg_replace('/[^\p{L}\p{N}]+/u', '', $normalized) ?? '';
+    }
+
+    /**
+     * CUSCAR puede concatenar razón social y domicilio dentro del NAD.
+     * Sólo se reutiliza una ficha cuando su nombre es un prefijo inequívoco
+     * del texto fuente dentro del mismo país. Si existen varias fichas, una
+     * única identificada fiscalmente tiene prioridad; cualquier otra
+     * ambigüedad bloquea la creación de un duplicado.
+     */
+    protected function findClientByCuscarNamePrefix(
+        string $sourceName,
+        int $countryId
+    ): ?Client {
+        $sourceNormalized = $this->normalizeClientIdentityName($sourceName);
+
+        if ($sourceNormalized === '') {
+            return null;
+        }
+
+        $rows = DB::table('clients')
+            ->where('country_id', $countryId)
+            ->get([
+                'id',
+                'legal_name',
+                'commercial_name',
+                'tax_id',
+            ]);
+
+        $matches = $rows->filter(function ($row) use ($sourceNormalized) {
+            foreach ([$row->legal_name, $row->commercial_name] as $candidate) {
+                if ($candidate === null) {
+                    continue;
+                }
+
+                $candidateNormalized = $this->normalizeClientIdentityName(
+                    (string) $candidate
+                );
+
+                if (
+                    mb_strlen($candidateNormalized) >= 6
+                    && str_starts_with(
+                        $sourceNormalized,
+                        $candidateNormalized
+                    )
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        })->values();
+
+        if ($matches->isEmpty()) {
+            return null;
+        }
+
+        $identified = $matches
+            ->filter(fn ($row) => trim((string) $row->tax_id) !== '')
+            ->values();
+
+        if ($identified->count() === 1) {
+            return Client::find($identified->first()->id);
+        }
+
+        if ($identified->count() > 1) {
+            throw new \DomainException(
+                "CMSP: existen múltiples clientes identificados compatibles con '{$sourceName}'."
+            );
+        }
+
+        if ($matches->count() === 1) {
+            return Client::find($matches->first()->id);
+        }
+
+        throw new \DomainException(
+            "CMSP: existen múltiples clientes compatibles con '{$sourceName}' y ninguno tiene identificador fiscal inequívoco."
+        );
+    }
+
+    /**
      * Buscar o crear cliente
      */
     protected function extractExplicitTaxTypeFromText(
@@ -3496,10 +3583,33 @@ class CmspEdiParser implements ManifestParserInterface
                 return $client;
             }
         } else {
-            // Sin identificador fiscal sólo reutilizar otra ficha también
-            // sin tax_id, mismo país y mismo nombre.
             $name = trim((string) $partyData['name']);
 
+            /*
+             * Algunos CUSCAR entregan razón social + domicilio en un único NAD,
+             * sin separador estructural ni RFF+ADZ fiscal. Antes de crear una
+             * ficha nueva, reutilizar únicamente una identidad inequívoca del
+             * maestro cuyo nombre real sea prefijo del texto fuente.
+             *
+             * Es el mismo criterio conservador usado por TFP: si hay más de una
+             * identidad posible no se elige una arbitrariamente.
+             */
+            $client = $this->findClientByCuscarNamePrefix(
+                $name,
+                $countryId
+            );
+
+            if ($client) {
+                $this->persistClientAddress(
+                    $client,
+                    $partyData['address'] ?? null
+                );
+
+                return $client;
+            }
+
+            // Sin coincidencia por prefijo, conservar la búsqueda exacta
+            // histórica entre fichas también carentes de tax_id.
             $client = Client::query()
                 ->whereNull('tax_id')
                 ->where('country_id', $countryId)
