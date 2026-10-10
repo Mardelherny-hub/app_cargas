@@ -19,7 +19,7 @@
         position: relative;
     }
     .page + .page { page-break-before: always; }
-    .page-content { padding-bottom: 92mm; }
+    .page-content { padding-bottom: 0; }
     .page-footer {
         position: absolute;
         left: 0;
@@ -45,6 +45,7 @@
     .small { font-size: 5.7pt; }
     .cargo td, .cargo th { padding-top: .8mm; padding-bottom: .8mm; }
     .cargo-row { page-break-inside: avoid; }
+    .cargo-row td { height: 128mm; }
     .cargo-heading { font-weight: normal; text-align: left; }
     .container-line { white-space: pre-line; overflow-wrap: anywhere; word-wrap: break-word; }
     .item-line { margin-bottom: .45mm; }
