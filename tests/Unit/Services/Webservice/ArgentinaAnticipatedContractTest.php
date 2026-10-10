@@ -370,6 +370,30 @@ XML;
         );
     }
 
+    public function test_title_dates_are_blocked_before_arca_when_chronology_is_invalid(): void
+    {
+        $service = $this->source(
+            'app/Services/Simple/ArgentinaAnticipatedService.php'
+        );
+
+        $this->assertStringContainsString(
+            '$bill->loading_date->gte($bill->discharge_date)',
+            $service
+        );
+        $this->assertStringContainsString(
+            'FechaEmbarque debe ser menor a FechaDescarga (ARCA 11424)',
+            $service
+        );
+        $this->assertStringContainsString(
+            '$bill->origin_loading_date->gte($bill->discharge_date)',
+            $service
+        );
+        $this->assertStringContainsString(
+            'FechaCargaLugarOrigen debe ser menor a FechaDescarga (ARCA 11421)',
+            $service
+        );
+    }
+
     public function test_forwarder_is_required_only_for_consolidated_titles(): void
     {
         $service = $this->source(
