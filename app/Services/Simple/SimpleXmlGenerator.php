@@ -353,16 +353,32 @@ class SimpleXmlGenerator
                                         );
                                     }
 
+                                    /*
+                                     * Contrato histórico validado contra AFIP:
+                                     * cuando el archivo no informa estos importes,
+                                     * RegistrarTitEnvios los transmite en cero.
+                                     * Hay transacciones exitosas reales de enero,
+                                     * febrero y marzo de 2026 con este criterio.
+                                     */
                                     $montoFob = $this->micDtaDecimal(
-                                        $bol->declared_value,
+                                        $bol->declared_value === null
+                                            || $bol->declared_value === ''
+                                                ? 0
+                                                : $bol->declared_value,
                                         "RegistrarTitEnvios: BL {$billNumber} montoFob"
                                     );
                                     $montoFlete = $this->micDtaDecimal(
-                                        $bol->freight_amount,
+                                        $bol->freight_amount === null
+                                            || $bol->freight_amount === ''
+                                                ? 0
+                                                : $bol->freight_amount,
                                         "RegistrarTitEnvios: BL {$billNumber} montoFlete"
                                     );
                                     $montoSeguro = $this->micDtaDecimal(
-                                        $bol->insurance_amount,
+                                        $bol->insurance_amount === null
+                                            || $bol->insurance_amount === ''
+                                                ? 0
+                                                : $bol->insurance_amount,
                                         "RegistrarTitEnvios: BL {$billNumber} montoSeg"
                                     );
 
