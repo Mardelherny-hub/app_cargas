@@ -5001,14 +5001,14 @@ class SimpleXmlGenerator
             }
             $usedLines[$line] = true;
 
-            $packCode = trim((string) $item->packaging_code);
-            if ($packCode === '' && $item->containers->isNotEmpty()) {
-                // En el contrato ARCA, 05 representa mercadería contenedorizada.
-                // Los envíos CBC exitosos existentes de la aplicación usan este
-                // código y ARCA exige que CantidadManifestada coincida con la
-                // cantidad de contenedores (error 11372).
-                $packCode = '05';
-            }
+            // Si la línea tiene contenedores, el contrato operativo
+            // confirmado para ARCA usa siempre embalaje 05 (CONTENEDOR),
+            // independientemente del embalaje interno declarado por el CUSCAR
+            // (BG, CT, etc.). Roberto confirmó el mismo criterio funcional:
+            // carga con contenedores => embalaje CONTENEDOR.
+            $packCode = $item->containers->isNotEmpty()
+                ? '05'
+                : trim((string) $item->packaging_code);
             $packCode = $this->iaRequired(
                 $packCode,
                 "Conocimiento {$number}, línea {$line}: código de embalaje",
