@@ -456,14 +456,16 @@ class SimpleXmlGenerator
                                             )
                                         );
 
-                                        if ($bol->is_transit_transshipment) {
-                                            $ncm = trim((string) $item->tariff_position);
-                                            if ($ncm === '' || mb_strlen($ncm) > 10) {
-                                                throw new \Exception(
-                                                    "RegistrarTitEnvios: BL {$billNumber}, línea {$line}: indNCM es obligatorio para transbordo y debe tener hasta 10 caracteres."
-                                                );
+                                        if ($this->iaYesNo($bol->is_transit_transshipment) === 'S') {
+                                            $ncm = $this->micDtaItemNcm($item, $bol);
+                                            if ($ncm !== null) {
+                                                if (mb_strlen($ncm) > 10) {
+                                                    throw new \Exception(
+                                                        "RegistrarTitEnvios: BL {$billNumber}, línea {$line}: indNCM supera 10 caracteres."
+                                                    );
+                                                }
+                                                $w->writeElement('indNCM', $ncm);
                                             }
-                                            $w->writeElement('indNCM', $ncm);
                                         }
 
                                         $imo = trim((string) $item->imdg_class);
@@ -1130,6 +1132,26 @@ class SimpleXmlGenerator
         $w->endElement();
     }
 
+    /**
+     * Conserva la prioridad del NCM visible en la edición de ítems.
+     * indNCM es opcional y solo se informa para transbordos (máx. 10).
+     */
+    private function micDtaItemNcm($item, BillOfLading $bill): ?string
+    {
+        foreach ([
+            $item->commodity_code,
+            $item->tariff_position,
+            $bill->commodity_code,
+        ] as $candidate) {
+            $ncm = trim((string) $candidate);
+            if ($ncm !== '') {
+                return $ncm;
+            }
+        }
+
+        return null;
+    }
+
     private function writeMicDtaContainer(
         \XMLWriter $w,
         $container,
@@ -1430,14 +1452,16 @@ class SimpleXmlGenerator
                     )
                 );
 
-                if ($bill->is_transit_transshipment) {
-                    $ncm = trim((string) $item->tariff_position);
-                    if ($ncm === '' || mb_strlen($ncm) > 10) {
-                        throw new \Exception(
-                            "RegistrarEnvios: BL {$idTitTrans}, línea {$line}: indNCM es obligatorio para transbordo."
-                        );
+                if ($this->iaYesNo($bill->is_transit_transshipment) === 'S') {
+                    $ncm = $this->micDtaItemNcm($item, $bill);
+                    if ($ncm !== null) {
+                        if (mb_strlen($ncm) > 10) {
+                            throw new \Exception(
+                                "RegistrarEnvios: BL {$idTitTrans}, línea {$line}: indNCM supera 10 caracteres."
+                            );
+                        }
+                        $w->writeElement('indNCM', $ncm);
                     }
-                    $w->writeElement('indNCM', $ncm);
                 }
 
                 $imo = trim((string) $item->imdg_class);
