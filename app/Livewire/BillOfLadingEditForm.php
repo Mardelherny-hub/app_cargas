@@ -956,7 +956,16 @@ class BillOfLadingEditForm extends Component
             DB::commit();
 
             session()->flash('message', 'Conocimiento de embarque actualizado exitosamente.');
-            
+
+            if ($this->billHasEmptyContainer()) {
+                return redirect()->to(
+                    route('company.bills-of-lading.show', [
+                        'bill_of_lading' => $this->billOfLading->id,
+                        'show_all_items' => '1',
+                    ]) . '#itemsTable'
+                );
+            }
+
             return redirect()->route('company.bills-of-lading.show', $this->billOfLading);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
