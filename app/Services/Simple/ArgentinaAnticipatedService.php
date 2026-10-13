@@ -535,10 +535,8 @@ class ArgentinaAnticipatedService
             if ($tariff !== '' && mb_strlen($tariff) > 16) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: PosicionArancelaria supera 16 caracteres";
             }
-            if (!$bill->is_consolidated && $tariff !== '' && (mb_strlen($tariff) < 7 || mb_strlen($tariff) > 15)) {
-                $validation['errors'][] = "Conocimiento {$billLabel}: PosicionArancelaria debe tener 7 a 15 caracteres cuando no es consolidado";
-            }
-
+            // ARCA define PosicionArancelaria como String(16), obligatorio.
+            // No agregar un mínimo local no previsto en el contrato oficial.
             $forwarders = $items->pluck('foreign_forwarder_name')
                 ->filter(fn ($value) => trim((string) $value) !== '')
                 ->map(fn ($value) => trim((string) $value))
