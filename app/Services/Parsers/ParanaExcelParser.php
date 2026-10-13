@@ -591,6 +591,20 @@ class ParanaExcelParser implements ManifestParserInterface
             'phone' => $data['CONSIGNEE_PHONE'] ?? null,
         ], $shipment->voyage->company_id, (int) $dischargePort->country_id);
 
+        $notifyParty = null;
+        $notifyPartyName = $this->nullableSourceText(
+            $data['NOTIFY_PARTY_NAME'] ?? null
+        );
+
+        if ($notifyPartyName !== null) {
+            $notifyParty = $this->findOrCreateClient([
+                'name' => $notifyPartyName,
+                'address' => $this->buildPartyAddress($data, 'NOTIFY_PARTY'),
+                'country' => $data['NOTIFY_PARTY_COUNTRY'] ?? null,
+                'phone' => $data['NOTIFY_PARTY_PHONE'] ?? null,
+            ], $shipment->voyage->company_id, (int) $dischargePort->country_id);
+        }
+
         // VALIDACIÓN: Verificar si ya existe bill of lading con este número
         $billNumber = $data['BL_NUMBER'];
         $existingBill = BillOfLading::where('bill_number', $billNumber)->first();
@@ -619,6 +633,7 @@ class ParanaExcelParser implements ManifestParserInterface
             
             'shipper_id' => $shipper->id,
             'consignee_id' => $consignee->id,
+            'notify_party_id' => $notifyParty?->id,
             'loading_port_id' => $loadingPort->id,
             'discharge_port_id' => $dischargePort->id,
             'freight_terms' => 'prepaid',
@@ -661,6 +676,14 @@ class ParanaExcelParser implements ManifestParserInterface
         $this->persistClientAddress($consignee, $consigneeAddr);
         if ($c = $this->resolveSpecificAddress($consignee, $consigneeAddr, 'consignee')) {
             $bill->specificContacts()->create($c);
+        }
+
+        if ($notifyParty) {
+            $notifyAddr = $data['NOTIFY_PARTY_ADDRESS1'] ?? null;
+            $this->persistClientAddress($notifyParty, $notifyAddr);
+            if ($c = $this->resolveSpecificAddress($notifyParty, $notifyAddr, 'notify_party')) {
+                $bill->specificContacts()->create($c);
+            }
         }
 
         return $bill;
