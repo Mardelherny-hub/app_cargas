@@ -5040,6 +5040,11 @@ class SimpleXmlGenerator
             if ($packageMarks === '') {
                 $packageMarks = trim((string) $item->package_numbers);
             }
+            if ($packageMarks === '') {
+                // Criterio operativo solicitado para líneas sin numeración
+                // declarada en el manifiesto: Sin Número (SN).
+                $packageMarks = 'SN';
+            }
             $packageMarks = $this->iaRequired($packageMarks, "Conocimiento {$number}, línea {$line}: NumeroBultos", 100);
 
             $w->startElement('ar:LineaMercaderia');
