@@ -4856,10 +4856,9 @@ class SimpleXmlGenerator
         $tariff = $bill->commodity_code
             ?: $this->iaUniqueItemValue($items, 'tariff_position')
             ?: $this->iaUniqueItemValue($items, 'commodity_code');
+        // El contrato CBC exige PosicionArancelaria de hasta 16 caracteres,
+        // sin mínimo adicional para títulos no consolidados.
         $tariff = $this->iaRequired($tariff, "Conocimiento {$number}: PosicionArancelaria", 16);
-        if ($consolidated === 'N' && (mb_strlen($tariff) < 7 || mb_strlen($tariff) > 15)) {
-            throw new Exception("Conocimiento {$number}: PosicionArancelaria debe tener entre 7 y 15 caracteres cuando no es consolidado.");
-        }
 
         $forwarder = $this->iaUniqueItemValue($items, 'foreign_forwarder_name');
         if (!$closing && $forwarder === null) {
