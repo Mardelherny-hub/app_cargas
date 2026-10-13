@@ -681,9 +681,11 @@ class SimpleXmlGenerator
                             }
                             $w->endElement();
 
-                            $this->writeRemitente($w, $emptyBill);
-                            $this->writeConsignatario($w, $emptyBill);
-                            $this->writeDestinatario($w, $emptyBill);
+                            // En TitTransContVacio las partes son opcionales.
+                            // No inventar datos fiscales ni exigir un consignatario
+                            // que el conocimiento de vacíos no declara.
+                            // Si existen datos, su incorporación requiere conservar
+                            // el contrato específico de esta estructura.
 
                             $w->startElement('origen');
                             $w->writeElement('codAdu', $emptyOriginCustoms);

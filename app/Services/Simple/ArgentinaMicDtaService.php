@@ -1242,6 +1242,12 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      */
     private function validateMicDtaBillParties($bill): array
     {
+        // Los títulos de contenedores vacíos tienen su propia estructura
+        // TitTransContVacio: no exigirles las partes de un título de mercadería.
+        if ($this->isMicDtaEmptyOnlyBill($bill)) {
+            return [];
+        }
+
         $errors = [];
         $billNumber = $bill->bill_number ?: (string) $bill->id;
 
