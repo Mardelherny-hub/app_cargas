@@ -657,8 +657,11 @@ class ArgentinaAnticipatedService
                 }
 
                 if ($lineMarks === '') {
-                    $missingLineMarks++;
-                } elseif (mb_strlen($lineMarks) > 100) {
+                    // Mismo criterio que el generador XML: Sin Número.
+                    $lineMarks = 'SN';
+                }
+
+                if (mb_strlen($lineMarks) > 100) {
                     $validation['errors'][] = "Conocimiento {$billLabel}: NumeroBultos supera 100 caracteres";
                 }
 
