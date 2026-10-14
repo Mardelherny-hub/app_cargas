@@ -1208,7 +1208,11 @@ class SimpleXmlGenerator
             }
         }
 
-        if ($seals === []) {
+        // Los ejemplos oficiales de RegistrarTitEnvios/RegistrarEnvios
+        // admiten precintos xsi:nil="true". Un vacío sin precinto real no
+        // debe recibir números ficticios; los cargados mantienen el control.
+        $isEmpty = strtoupper(trim((string) $container->condition)) === 'V';
+        if ($seals === [] && !$isEmpty) {
             throw new \Exception(
                 "{$context}: el contenedor {$number} no tiene precinto real."
             );
@@ -1226,8 +1230,13 @@ class SimpleXmlGenerator
         $w->writeElement('codMedida', $measure);
         $w->writeElement('condicion', $condition);
         $w->startElement('precintos');
-        foreach ($seals as $seal) {
-            $w->writeElement('precinto', $seal);
+        if ($seals === []) {
+            // Sólo para vacíos: arreglo nulo según el ejemplo SOAP oficial.
+            $w->writeAttribute('xsi:nil', 'true');
+        } else {
+            foreach ($seals as $seal) {
+                $w->writeElement('precinto', $seal);
+            }
         }
         $w->endElement();
         $w->endElement();
