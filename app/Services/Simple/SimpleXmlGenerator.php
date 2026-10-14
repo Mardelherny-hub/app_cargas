@@ -1208,11 +1208,20 @@ class SimpleXmlGenerator
             }
         }
 
-        // Los ejemplos oficiales de RegistrarTitEnvios/RegistrarEnvios
-        // admiten precintos xsi:nil="true". Un vacío sin precinto real no
-        // debe recibir números ficticios; los cargados mantienen el control.
+        // Convención operativa AA para contenedores vacíos sin precinto físico.
+        // ID existente: valor único, estable entre reintentos y sin consultas.
         $isEmpty = strtoupper(trim((string) $container->condition)) === 'V';
-        if ($seals === [] && !$isEmpty) {
+        if ($seals === [] && $isEmpty) {
+            $containerId = (string) $container->getKey();
+            if (!ctype_digit($containerId) || strlen($containerId) > 12) {
+                throw new \Exception(
+                    "{$context}: contenedor {$number} sin identificador válido para AA."
+                );
+            }
+            $reference = 'AA' . str_pad($containerId, 12, '0', STR_PAD_LEFT);
+            $seals[$reference] = $reference;
+        }
+        if ($seals === []) {
             throw new \Exception(
                 "{$context}: el contenedor {$number} no tiene precinto real."
             );
@@ -1230,13 +1239,8 @@ class SimpleXmlGenerator
         $w->writeElement('codMedida', $measure);
         $w->writeElement('condicion', $condition);
         $w->startElement('precintos');
-        if ($seals === []) {
-            // Sólo para vacíos: arreglo nulo según el ejemplo SOAP oficial.
-            $w->writeAttribute('xsi:nil', 'true');
-        } else {
-            foreach ($seals as $seal) {
-                $w->writeElement('precinto', $seal);
-            }
+        foreach ($seals as $seal) {
+            $w->writeElement('precinto', $seal);
         }
         $w->endElement();
         $w->endElement();
