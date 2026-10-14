@@ -578,13 +578,30 @@ class ArgentinaAnticipatedService
                     ->unique()
                     ->values();
                 $operative = trim((string) $bill->operational_discharge_code);
-                if ($operative === '') {
-                    if ($operativeValues->count() !== 1) {
-                        $validation['errors'][] = "Conocimiento {$billLabel}: CodigoLugarOperativoDescarga no puede determinarse inequívocamente";
-                        $operative = '';
-                    } else {
-                        $operative = (string) $operativeValues->first();
+                if ($operative === '' && $operativeValues->count() === 1) {
+                    $operative = (string) $operativeValues->first();
+                }
+
+                // Igual que RegistrarViaje: sólo resolver desde el puerto
+                // cuando no hay valor declarado y existe una única opción
+                // activa. Nunca elegir entre varios lugares operativos.
+                if (
+                    $operative === ''
+                    && $operativeValues->isEmpty()
+                    && $bill->dischargePort?->id
+                ) {
+                    $locations = \App\Models\AfipOperativeLocation::where(
+                        'port_id',
+                        $bill->dischargePort->id
+                    )->where('is_active', true)->get();
+
+                    if ($locations->count() === 1) {
+                        $operative = trim((string) $locations->first()->location_code);
                     }
+                }
+
+                if ($operative === '') {
+                    $validation['errors'][] = "Conocimiento {$billLabel}: CodigoLugarOperativoDescarga no puede determinarse inequívocamente";
                 }
 
                 if ($operative !== '') {
