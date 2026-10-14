@@ -4371,9 +4371,9 @@ class SimpleXmlGenerator
             }
         }
 
-        $operativeCode = $bill->operational_discharge_code ?: $item?->operational_discharge_code;
-        $operativeCode = $this->iaOperativeCode(
-            $operativeCode,
+        $operativeCode = $this->iaDischargeOperativeCode(
+            $bill,
+            $bill->operational_discharge_code ?: $item?->operational_discharge_code,
             "Contenedor {$number}: CodigoLugarOperativoDescarga"
         );
         $w->writeElement(
@@ -4617,6 +4617,32 @@ class SimpleXmlGenerator
             $codes->first(),
             'CodigoLugarOperativo'
         );
+    }
+
+    /**
+     * Resolver el lugar operativo sin fabricar códigos: primero el dato
+     * declarado, después la única ubicación activa del puerto de descarga.
+     * Nunca elegir automáticamente si el catálogo ofrece varias opciones.
+     */
+    private function iaDischargeOperativeCode(
+        BillOfLading $bill,
+        $declared,
+        string $label
+    ): string {
+        $operative = trim((string) $declared);
+
+        if ($operative === '' && $bill->dischargePort?->id) {
+            $locations = \App\Models\AfipOperativeLocation::where(
+                'port_id',
+                $bill->dischargePort->id
+            )->where('is_active', true)->get();
+
+            if ($locations->count() === 1) {
+                $operative = trim((string) $locations->first()->location_code);
+            }
+        }
+
+        return $this->iaOperativeCode($operative, $label);
     }
 
     private function iaOperativeCode($value, string $label): string
@@ -4883,10 +4909,10 @@ class SimpleXmlGenerator
         $operative = null;
 
         if (!$closing) {
-            $operative = $bill->operational_discharge_code
-                ?: $this->iaUniqueItemValue($items, 'operational_discharge_code');
-            $operative = $this->iaOperativeCode(
-                $operative,
+            $operative = $this->iaDischargeOperativeCode(
+                $bill,
+                $bill->operational_discharge_code
+                    ?: $this->iaUniqueItemValue($items, 'operational_discharge_code'),
                 "Conocimiento {$number}: CodigoLugarOperativoDescarga"
             );
 
@@ -5242,9 +5268,9 @@ class SimpleXmlGenerator
         }
 
         if (!$closing) {
-            $operative = $bill->operational_discharge_code ?: $item?->operational_discharge_code;
-            $operative = $this->iaOperativeCode(
-                $operative,
+            $operative = $this->iaDischargeOperativeCode(
+                $bill,
+                $bill->operational_discharge_code ?: $item?->operational_discharge_code,
                 "Contenedor {$number}: CodigoLugarOperativoDescarga"
             );
 
