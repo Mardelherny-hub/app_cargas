@@ -139,7 +139,9 @@ class ArgentinaAnticipatedDischargeOperativeContractTest extends TestCase
         return $writer->outputMemory();
     }
 
-    private function preflightOperativeErrors(): array
+    private function preflightOperativeErrors(
+        string $field = 'CodigoLugarOperativoDescarga'
+    ): array
     {
         $voyage = Mockery::mock(Voyage::class)->makePartial();
         $voyage->forceFill([
@@ -167,10 +169,8 @@ class ArgentinaAnticipatedDischargeOperativeContractTest extends TestCase
         ))->invoke($service, $voyage);
 
         return collect($result['errors'])
-            ->filter(fn ($error) => str_contains(
-                $error,
-                'CodigoLugarOperativoDescarga'
-            ))->values()->all();
+            ->filter(fn ($error) => str_contains($error, $field))
+            ->values()->all();
     }
 
     private function container(string $condition): Container
@@ -247,6 +247,54 @@ class ArgentinaAnticipatedDischargeOperativeContractTest extends TestCase
             $emptyContainer
         );
         $this->assertSame($before, $this->bill->getAttributes());
+    }
+
+    public function test_ncm_cbc_preflight_and_xml_match_without_padding_source(): void
+    {
+        $this->locations([$this->location()]);
+
+        foreach ([
+            ['N', '1006.4', false],
+            ['0', '1006.4', false],
+            ['N', '1006.40', true],
+            ['0', '1006.40', true],
+            ['S', '1006.4', true],
+            ['1', '1006.4', true],
+            ['N', '1234567890123456', false],
+            ['S', '1234567890123456', true],
+        ] as [$indicator, $ncm, $valid]) {
+            $this->bill->is_consolidated = $indicator;
+            $this->bill->commodity_code = $ncm;
+
+            $errors = $this->preflightOperativeErrors("el NCM '");
+            $this->assertSame($valid, $errors === [], "Prevalidación {$indicator}/{$ncm}");
+
+            $xml = null;
+            $exception = null;
+            try {
+                $xml = $this->render('writeIaTitle', [
+                    $this->bill, $this->voyage, false,
+                ]);
+            } catch (\Exception $error) {
+                $exception = $error;
+            }
+
+            if ($valid) {
+                $this->assertNull($exception, "XML {$indicator}/{$ncm}");
+                $this->assertStringContainsString(
+                    "<ar:PosicionArancelaria>{$ncm}</ar:PosicionArancelaria>",
+                    $xml
+                );
+            } else {
+                $this->assertNotNull($exception, "XML {$indicator}/{$ncm}");
+                $this->assertStringContainsString(
+                    'no se agregan ceros automáticamente',
+                    $exception->getMessage()
+                );
+            }
+
+            $this->assertSame($ncm, $this->bill->commodity_code);
+        }
     }
 
     public function test_multiple_port_locations_cannot_be_guessed(): void
