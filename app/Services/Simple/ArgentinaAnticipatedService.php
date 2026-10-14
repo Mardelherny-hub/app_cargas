@@ -841,13 +841,20 @@ class ArgentinaAnticipatedService
 
                         $label = $number !== '' ? $number : '#' . (string) $container->id;
 
-                        if (!$bill->origin_loading_date) {
-                            $errors[] =
-                                "Contenedor {$label}: falta FechaCargaLugarOrigen requerida por Aduana para ContenedoresVaciosCorreo (ARCA 11326)";
+                        $originLocation = trim((string) $bill->origin_location);
+                        $originCountry = trim((string) $bill->origin_country_code);
+
+                        // La fecha de origen es optativa. Un importador puede
+                        // haberla recibido sin códigos de lugar/país: no
+                        // informar el bloque opcional si no está identificado.
+                        // Si se declaró algún código junto con la fecha,
+                        // exigir el grupo completo conforme al contrato ARCA.
+                        if (!$bill->origin_loading_date ||
+                            ($originLocation === '' && $originCountry === '')
+                        ) {
                             continue;
                         }
 
-                        $originLocation = trim((string) $bill->origin_location);
                         if ($originLocation === '') {
                             $errors[] =
                                 "Contenedor {$label}: falta CodigoLugarOrigen requerido junto con FechaCargaLugarOrigen";
