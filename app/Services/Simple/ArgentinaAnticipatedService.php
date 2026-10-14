@@ -532,22 +532,32 @@ class ArgentinaAnticipatedService
                     $tariff = (string) $tariffs->first();
                 }
             }
-            if ($tariff !== '' && mb_strlen($tariff) > 16) {
-                $validation['errors'][] = "Conocimiento {$billLabel}: PosicionArancelaria supera 16 caracteres";
-            }
-            // ARCA define PosicionArancelaria como String(16), obligatorio.
-            // No agregar un mínimo local no previsto en el contrato oficial.
-            $forwarders = $items->pluck('foreign_forwarder_name')
-                ->filter(fn ($value) => trim((string) $value) !== '')
-                ->map(fn ($value) => trim((string) $value))
-                ->unique()
-                ->values();
-            // El indicador puede persistirse como S/N o 1/0; 'N' no es true.
+            // Los indicadores persistidos pueden ser S/N o 1/0.
             $isConsolidated = in_array(
                 strtoupper(trim((string) $bill->is_consolidated)),
                 ['S', '1'],
                 true
             );
+            if ($tariff !== '') {
+                $tariffLength = mb_strlen($tariff);
+                // SET DE DATOS IA ACUÁTICA: String(16), pero entre 7 y 15
+                // caracteres (incluidos los puntos) si no es consolidado.
+                if (!$isConsolidated && ($tariffLength < 7 || $tariffLength > 15)) {
+                    $validation['errors'][] =
+                        "Conocimiento {$billLabel}: el NCM '{$tariff}' tiene {$tariffLength} caracteres. "
+                        . "Para un conocimiento no consolidado Aduana exige entre 7 y 15 (incluidos los puntos). "
+                        . "Revise el Código de Mercancía del conocimiento; no se agregan ceros automáticamente.";
+                } elseif ($tariffLength > 16) {
+                    $validation['errors'][] =
+                        "Conocimiento {$billLabel}: PosicionArancelaria supera 16 caracteres";
+                }
+            }
+
+            $forwarders = $items->pluck('foreign_forwarder_name')
+                ->filter(fn ($value) => trim((string) $value) !== '')
+                ->map(fn ($value) => trim((string) $value))
+                ->unique()
+                ->values();
             if ($isConsolidated && $forwarders->isEmpty()) {
                 $missingForwarder++;
             } elseif ($forwarders->count() > 1) {
