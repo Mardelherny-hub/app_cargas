@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Webservice;
 
 use App\Models\BillOfLading;
+use App\Models\Client;
 use App\Models\Company;
 use App\Models\Country;
 use App\Models\Port;
@@ -405,7 +406,7 @@ XML;
         );
     }
 
-    public function test_forwarder_is_required_only_for_consolidated_titles(): void
+    public function test_cbc_requires_forwarder_for_all_titles_and_uses_real_cargador(): void
     {
         config([
             'database.default' => 'sqlite',
@@ -429,7 +430,18 @@ XML;
         $port = (new Port())->forceFill(['code' => 'ARBUE']);
         $port->setRelation('country', $country);
 
-        foreach (['N' => false, 'S' => true, '0' => false, '1' => true] as $indicator => $required) {
+        // XSD 41933 (transacciones 470/471): también requiere forwarder
+        // cuando IndicadorConsolidado=N. Roberto confirmó cargador=forwarder.
+        foreach ([
+            ['N', null, null, true],
+            ['0', null, null, true],
+            ['S', null, null, true],
+            ['1', null, null, true],
+            ['N', 'CARGADOR QA', null, false],
+            ['N', null, 'FORWARDER MANUAL', false],
+            ['S', null, 'FORWARDER MANUAL', false],
+            ['N', str_repeat('X', 80), 'FORWARDER MANUAL', false],
+        ] as [$indicator, $shipperName, $manualName, $required]) {
             $item = (new ShipmentItem())->forceFill([
                 'line_number' => 1,
                 'item_description' => 'MERCADERIA QA',
@@ -440,18 +452,22 @@ XML;
                 'is_secure_logistics_operator' => 'N',
                 'is_monitored_transit' => 'N',
                 'is_renar' => 'N',
+                'foreign_forwarder_name' => $manualName,
             ]);
             $item->setRelation('containers', new Collection());
 
             $bill = (new BillOfLading())->forceFill([
                 'bill_number' => 'QA-CBC',
-                'commodity_code' => '1006.4',
+                'commodity_code' => '1006.40',
                 'loading_date' => '2026-10-10',
                 'is_consolidated' => $indicator,
             ]);
             $bill->setRelation('loadingPort', $port);
             $bill->setRelation('dischargePort', $port);
             $bill->setRelation('shipmentItems', new Collection([$item]));
+            $bill->setRelation('shipper', $shipperName === null
+                ? null
+                : (new Client())->forceFill(['legal_name' => $shipperName]));
 
             $voyage = Mockery::mock(Voyage::class)->makePartial();
             $voyage->forceFill([
@@ -472,6 +488,11 @@ XML;
             );
 
             $this->assertSame($required, $hasForwarderError, "Indicador {$indicator}");
+
+            $hasActionableMessage = collect($validation['errors'])->contains(
+                fn ($error) => str_contains($error, 'complete el cargador del conocimiento o el forwarder del ítem')
+            );
+            $this->assertSame($required, $hasActionableMessage, "Indicador {$indicator}");
         }
     }
 
