@@ -816,14 +816,19 @@ class BillOfLadingEditForm extends Component
                     trim((string) $this->origin_country_code)
                 );
 
+                // Estos campos son opcionales durante la edición del BL.
+                // El envío aduanero valida su consistencia antes de transmitir.
                 $this->validate([
-                    'origin_loading_date' => ['required', 'date'],
-                    'origin_location' => ['required', 'string', 'max:5'],
+                    'origin_loading_date' => ['nullable', 'date'],
+                    'origin_location' => ['nullable', 'string', 'max:5'],
                     'origin_country_code' => [
-                        'required',
+                        'nullable',
                         'string',
                         function ($attribute, $value, $fail) {
                             $value = strtoupper(trim((string) $value));
+                            if ($value === '') {
+                                return;
+                            }
 
                             $valid = strlen($value) === 2
                                 ? Country::where('alpha2_code', $value)->exists()
@@ -839,15 +844,6 @@ class BillOfLadingEditForm extends Component
                             }
                         },
                     ],
-                ], [
-                    'origin_loading_date.required' =>
-                        'La fecha de carga en lugar de origen es obligatoria para contenedores vacíos.',
-                    'origin_location.required' =>
-                        'El código de lugar de origen es obligatorio para contenedores vacíos.',
-                    'origin_location.max' =>
-                        'El código de lugar de origen no puede superar 5 caracteres.',
-                    'origin_country_code.required' =>
-                        'El país de origen es obligatorio para contenedores vacíos.',
                 ]);
             }
 
@@ -958,12 +954,15 @@ class BillOfLadingEditForm extends Component
             session()->flash('message', 'Conocimiento de embarque actualizado exitosamente.');
 
             if ($this->billHasEmptyContainer()) {
-                return redirect()->to(
-                    route('company.bills-of-lading.show', [
-                        'bill_of_lading' => $this->billOfLading->id,
-                        'show_all_items' => '1',
-                    ]) . '#itemsTable'
-                );
+                $item = $this->billOfLading->shipmentItems()
+                    ->orderBy('id')
+                    ->first();
+
+                return $item
+                    ? redirect()->route('company.shipment-items.edit', $item)
+                    : redirect()->route('company.shipment-items.create', [
+                        'bill_of_lading_id' => $this->billOfLading->id,
+                    ]);
             }
 
             return redirect()->route('company.bills-of-lading.show', $this->billOfLading);
