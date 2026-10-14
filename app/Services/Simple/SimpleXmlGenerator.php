@@ -1027,17 +1027,30 @@ class SimpleXmlGenerator
         return number_format($numeric, $scale, '.', '');
     }
 
-    private function micDtaPackagingCode($item, string $billNumber): string
+    private function micDtaPackagingCode($item, string $billNumber, $container): string
     {
         $candidates = [
             trim((string) $item->packaging_code),
             trim((string) $item->packagingType?->argentina_ws_code),
+            trim((string) $item->packagingType?->unece_code),
         ];
 
         foreach ($candidates as $candidate) {
             if (mb_strlen($candidate) === 2) {
                 return $candidate;
             }
+        }
+
+        // El catálogo local usa T para CONTENEDOR (un carácter).
+        // UN/ECE Rec. 21 / EDIFACT 7065 define CN para contenedor como
+        // tipo de embalaje. Sólo se aplica cuando el ítem declara
+        // CONTENEDOR y está realmente vinculado a un contenedor.
+        if (
+            $container !== null
+            && strtoupper(trim((string) $item->packagingType?->code)) === 'T'
+            && mb_strtoupper(trim((string) $item->packagingType?->name)) === 'CONTENEDOR'
+        ) {
+            return 'CN';
         }
 
         throw new \Exception(
@@ -1065,7 +1078,7 @@ class SimpleXmlGenerator
             );
         }
 
-        $packagingCode = $this->micDtaPackagingCode($item, $billNumber);
+        $packagingCode = $this->micDtaPackagingCode($item, $billNumber, $container);
 
         if ($container) {
             $quantity = $container->pivot?->package_quantity;
