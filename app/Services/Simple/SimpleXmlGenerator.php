@@ -4903,7 +4903,10 @@ class SimpleXmlGenerator
                 $forwarder = trim((string) $bill->shipper?->commercial_name);
             }
         }
-        if ($consolidated === 'S' || $forwarder) {
+        // RegistrarTitulosCbc requiere forwarder aun si consolidado=N.
+        // Prioridad: nombre del item; si falta, cargador real del BL.
+        // No omitir el elemento requerido por el XSD (rechazo 41933).
+        if (!$closing || $consolidated === 'S' || $forwarder) {
             $forwarder = $this->iaRequired(
                 $forwarder,
                 "Conocimiento {$number}: RazonSocialFowarderExterior",
