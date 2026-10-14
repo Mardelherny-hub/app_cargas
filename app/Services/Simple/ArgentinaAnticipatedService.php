@@ -395,6 +395,7 @@ class ArgentinaAnticipatedService
         }
 
         $query = $voyage->billsOfLading()->with([
+            'shipper',
             'loadingPort.country',
             'dischargePort.country',
             'transshipmentPort.country',
@@ -558,8 +559,24 @@ class ArgentinaAnticipatedService
                 ->map(fn ($value) => trim((string) $value))
                 ->unique()
                 ->values();
-            if ($isConsolidated && $forwarders->isEmpty()) {
+
+            // Misma fuente y prioridad que el XML: forwarder declarado en
+            // el ítem; si falta en CBC, cargador real del conocimiento.
+            if (!$closing && $forwarders->isEmpty()) {
+                $shipperName = trim((string) $bill->shipper?->legal_name);
+                if ($shipperName === '') {
+                    $shipperName = trim((string) $bill->shipper?->commercial_name);
+                }
+                if ($shipperName !== '') {
+                    $forwarders->push($shipperName);
+                }
+            }
+
+            // El XSD de RegistrarTitulosCbc exige el elemento incluso con
+            // IndicadorConsolidado=N (transacciones 470/471, error 41933).
+            if ((!$closing || $isConsolidated) && $forwarders->isEmpty()) {
                 $missingForwarder++;
+                $validation['errors'][] = "Conocimiento {$billLabel}: falta RazonSocialFowarderExterior; complete el cargador del conocimiento o el forwarder del ítem";
             } elseif ($forwarders->count() > 1) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: RazonSocialFowarderExterior difiere entre ítems";
             } elseif ($forwarders->isNotEmpty() && mb_strlen((string) $forwarders->first()) > 70) {
