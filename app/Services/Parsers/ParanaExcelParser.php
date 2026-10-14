@@ -1804,7 +1804,19 @@ class ParanaExcelParser implements ManifestParserInterface
         $packType = $data['PACK_TYPE'] ?? null;
         
         if ($packType) {
-            // Mapear tipos del Excel a tipos de la BD
+            // El exportador PARANA escribe el código del catálogo (T/N/R/A).
+            // Resolverlo exactamente antes de buscar coincidencias por nombre:
+            // LIKE '%T%' confunde CONTENEDOR (T) con NO RETORNABLE.
+            $packagingByCode = \App\Models\PackagingType::where(
+                'code',
+                strtoupper(trim((string) $packType))
+            )->where('active', 1)->first();
+
+            if ($packagingByCode) {
+                return $packagingByCode->id;
+            }
+
+            // Compatibilidad con archivos que informan el nombre del embalaje.
             $packTypeMap = [
                 'PACKAGE' => 'Paquete',
                 'ROLLS' => 'Rollo', 
@@ -1813,7 +1825,17 @@ class ParanaExcelParser implements ManifestParserInterface
             ];
             
             $mappedType = $packTypeMap[$packType] ?? $packType;
-            
+
+            // Evitar que RETORNABLE coincida primero con NO RETORNABLE.
+            $packagingByName = \App\Models\PackagingType::whereRaw(
+                'UPPER(name) = ?',
+                [mb_strtoupper(trim((string) $mappedType))]
+            )->where('active', 1)->first();
+
+            if ($packagingByName) {
+                return $packagingByName->id;
+            }
+
             $packagingType = \App\Models\PackagingType::where('name', 'LIKE', '%' . $mappedType . '%')
                                                     ->where('active', 1)
                                                     ->first();
