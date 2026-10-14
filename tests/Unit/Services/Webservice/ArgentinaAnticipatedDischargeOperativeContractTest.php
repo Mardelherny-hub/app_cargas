@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Webservice;
 
 use App\Models\BillOfLading;
+use App\Models\Client;
 use App\Models\Company;
 use App\Models\Container;
 use App\Models\ContainerType;
@@ -79,7 +80,11 @@ class ArgentinaAnticipatedDischargeOperativeContractTest extends TestCase
         $this->bill->setRelation('loadingPort',
             (new Port())->forceFill(['id' => 100, 'code' => 'PYASU']));
         $this->bill->setRelation('dischargePort', $dischargePort);
-        foreach (['transshipmentPort', 'shipper', 'consignee', 'notifyParty'] as $relation) {
+        // Para CBC el cargador es el forwarder real (Roberto, 04/10).
+        // El generador debe usarlo incluso si IndicadorConsolidado=N.
+        $this->bill->setRelation('shipper',
+            (new Client())->forceFill(['legal_name' => 'CARGADOR QA']));
+        foreach (['transshipmentPort', 'consignee', 'notifyParty'] as $relation) {
             $this->bill->setRelation($relation, null);
         }
 
@@ -205,6 +210,10 @@ class ArgentinaAnticipatedDischargeOperativeContractTest extends TestCase
         );
         $this->assertStringContainsString(
             '<ar:PosicionArancelaria>1701.99.10</ar:PosicionArancelaria>',
+            $title
+        );
+        $this->assertStringContainsString(
+            '<ar:RazonSocialFowarderExterior>CARGADOR QA</ar:RazonSocialFowarderExterior>',
             $title
         );
 
