@@ -2,7 +2,18 @@
 
 namespace Tests\Unit\Services\Webservice;
 
+use App\Models\BillOfLading;
+use App\Models\Company;
+use App\Models\Country;
+use App\Models\Port;
+use App\Models\ShipmentItem;
+use App\Models\User;
+use App\Models\Voyage;
 use App\Services\Simple\ArgentinaAnticipatedService;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Support\Facades\DB;
+use Mockery;
 use ReflectionClass;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -396,22 +407,72 @@ XML;
 
     public function test_forwarder_is_required_only_for_consolidated_titles(): void
     {
-        $service = $this->source(
-            'app/Services/Simple/ArgentinaAnticipatedService.php'
-        );
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+            'database.connections.sqlite.foreign_key_constraints' => false,
+            'logging.default' => 'null',
+        ]);
+        DB::purge('sqlite');
 
-        $this->assertStringContainsString(
-            '$bill->is_consolidated && $forwarders->isEmpty()',
-            $service
-        );
-        $this->assertStringNotContainsString(
-            '($closing || $bill->is_consolidated) && $forwarders->isEmpty()',
-            $service
-        );
-        $this->assertStringContainsString(
-            "'conocimientos sin RazonSocialFowarderExterior'",
-            $service
-        );
+        $company = (new Company())->forceFill([
+            'id' => 1,
+            'ws_environment' => 'testing',
+        ]);
+        $user = (new User())->forceFill(['id' => 1]);
+        $service = new ArgentinaAnticipatedService($company, $user);
+
+        $country = (new Country())->forceFill([
+            'alpha2_code' => 'AR',
+            'codigo_afip' => '032',
+        ]);
+        $port = (new Port())->forceFill(['code' => 'ARBUE']);
+        $port->setRelation('country', $country);
+
+        foreach (['N' => false, 'S' => true, '0' => false, '1' => true] as $indicator => $required) {
+            $item = (new ShipmentItem())->forceFill([
+                'line_number' => 1,
+                'item_description' => 'MERCADERIA QA',
+                'packaging_code' => 'PK',
+                'package_quantity' => 1,
+                'gross_weight_kg' => 10,
+                'cargo_marks' => 'QA',
+                'is_secure_logistics_operator' => 'N',
+                'is_monitored_transit' => 'N',
+                'is_renar' => 'N',
+            ]);
+            $item->setRelation('containers', new Collection());
+
+            $bill = (new BillOfLading())->forceFill([
+                'bill_number' => 'QA-CBC',
+                'commodity_code' => '1006.4',
+                'loading_date' => '2026-10-10',
+                'is_consolidated' => $indicator,
+            ]);
+            $bill->setRelation('loadingPort', $port);
+            $bill->setRelation('dischargePort', $port);
+            $bill->setRelation('shipmentItems', new Collection([$item]));
+
+            $voyage = Mockery::mock(Voyage::class)->makePartial();
+            $voyage->forceFill([
+                'id' => 7,
+                'company_id' => 1,
+                'argentina_voyage_id' => '2026000000000001',
+            ]);
+            $voyage->setRelation('shipments', new Collection());
+            $query = Mockery::mock(HasManyThrough::class);
+            $query->shouldReceive('with')->once()->andReturnSelf();
+            $query->shouldReceive('whereHas')->once()->andReturnSelf();
+            $query->shouldReceive('get')->once()->andReturn(new Collection([$bill]));
+            $voyage->shouldReceive('billsOfLading')->once()->andReturn($query);
+
+            $validation = $this->invokePrivate($service, 'validateTitlesData', [$voyage]);
+            $hasForwarderError = collect($validation['errors'])->contains(
+                fn ($error) => str_contains($error, 'conocimientos sin RazonSocialFowarderExterior')
+            );
+
+            $this->assertSame($required, $hasForwarderError, "Indicador {$indicator}");
+        }
     }
 
     public function test_container_operator_is_rejected_early_without_eleven_digit_tax_id(): void
