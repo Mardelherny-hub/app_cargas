@@ -542,7 +542,13 @@ class ArgentinaAnticipatedService
                 ->map(fn ($value) => trim((string) $value))
                 ->unique()
                 ->values();
-            if ($bill->is_consolidated && $forwarders->isEmpty()) {
+            // El indicador puede persistirse como S/N o 1/0; 'N' no es true.
+            $isConsolidated = in_array(
+                strtoupper(trim((string) $bill->is_consolidated)),
+                ['S', '1'],
+                true
+            );
+            if ($isConsolidated && $forwarders->isEmpty()) {
                 $missingForwarder++;
             } elseif ($forwarders->count() > 1) {
                 $validation['errors'][] = "Conocimiento {$billLabel}: RazonSocialFowarderExterior difiere entre ítems";
