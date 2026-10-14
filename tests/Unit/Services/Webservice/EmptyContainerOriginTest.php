@@ -78,10 +78,38 @@ class EmptyContainerOriginTest extends TestCase
         $this->assertNull($bill->origin_loading_date);
     }
 
-    public function test_origin_date_requires_place(): void
+    public function test_origin_date_without_place_or_country_omits_optional_block(): void
+    {
+        $bill = $this->bill(['origin_loading_date' => '2026-09-17']);
+        $before = $bill->getAttributes();
+        $xml = $this->render($bill);
+
+        $this->assertStringContainsString(
+            '<FechaEmbarque>2026-09-18T00:00:00</FechaEmbarque>',
+            $xml
+        );
+        foreach (['FechaCargaLugarOrigen', 'CodigoLugarOrigen', 'CodigoPaisLugarOrigen'] as $tag) {
+            $this->assertStringNotContainsString('<'.$tag.'>', $xml);
+        }
+        $this->assertSame($before, $bill->getAttributes());
+    }
+
+    public function test_origin_date_with_place_still_requires_country(): void
+    {
+        $this->expectExceptionMessage('CodigoPaisLugarOrigen es obligatorio');
+        $this->render($this->bill([
+            'origin_loading_date' => '2026-09-17',
+            'origin_location' => 'CCPMI',
+        ]));
+    }
+
+    public function test_origin_date_with_country_still_requires_place(): void
     {
         $this->expectExceptionMessage('CodigoLugarOrigen es obligatorio');
-        $this->render($this->bill(['origin_loading_date' => '2026-09-17']));
+        $this->render($this->bill([
+            'origin_loading_date' => '2026-09-17',
+            'origin_country_code' => 'PY',
+        ]));
     }
 
     public function test_origin_place_without_origin_date_is_not_serialized(): void
