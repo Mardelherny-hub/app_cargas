@@ -13,6 +13,9 @@ use App\Models\Voyage;
 use App\Services\Simple\ArgentinaAnticipatedService;
 use App\Services\Simple\SimpleXmlGenerator;
 use Exception;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -123,10 +126,75 @@ class ArgentinaAnticipatedEmptyContainerFlowContractTest extends TestCase
             '$this->validateEmptyContainerOrigins($voyage)',
             $service
         );
-        $this->assertStringContainsString(
-            'ContenedoresVaciosCorreo (ARCA 11326)',
-            $service
-        );
+        // La obligatoriedad condicional se verifica ejecutando la
+        // prevalidación real en test_empty_container_origin_is_optional_but_atomic.
+    }
+
+    public function test_empty_container_origin_is_optional_but_atomic(): void
+    {
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+            'logging.default' => 'null',
+        ]);
+        DB::purge('sqlite');
+        Schema::create('countries', function (Blueprint $t) {
+            $t->id();
+            $t->string('alpha2_code');
+            $t->string('codigo_afip');
+        });
+        DB::table('countries')->insert([
+            'alpha2_code' => 'PY',
+            'codigo_afip' => '221',
+        ]);
+
+        $service = (new ReflectionClass(ArgentinaAnticipatedService::class))
+            ->newInstanceWithoutConstructor();
+        $validate = new ReflectionMethod($service, 'validateEmptyContainerOrigins');
+
+        $cases = [
+            'solo fecha' => [
+                ['origin_loading_date' => '2026-10-08'],
+                null,
+            ],
+            'sin fecha' => [
+                ['origin_location' => 'CCPMI', 'origin_country_code' => 'PY'],
+                null,
+            ],
+            'fecha y lugar' => [
+                ['origin_loading_date' => '2026-10-08', 'origin_location' => 'CCPMI'],
+                'CodigoPaisLugarOrigen',
+            ],
+            'fecha y país' => [
+                ['origin_loading_date' => '2026-10-08', 'origin_country_code' => 'PY'],
+                'CodigoLugarOrigen',
+            ],
+            'bloque completo' => [
+                [
+                    'origin_loading_date' => '2026-10-08',
+                    'origin_location' => 'CCPMI',
+                    'origin_country_code' => 'PY',
+                ],
+                null,
+            ],
+        ];
+
+        foreach ($cases as $label => [$attributes, $expectedError]) {
+            $bill = $this->billWithContainer('V', 'P');
+            $bill->forceFill($attributes);
+            $shipment = new Shipment();
+            $shipment->setRelation('billsOfLading', collect([$bill]));
+            $voyage = new Voyage();
+            $voyage->setRelation('shipments', collect([$shipment]));
+
+            $errors = $validate->invoke($service, $voyage);
+            if ($expectedError === null) {
+                $this->assertSame([], $errors, $label);
+            } else {
+                $this->assertCount(1, $errors, $label);
+                $this->assertStringContainsString($expectedError, $errors[0], $label);
+            }
+        }
     }
 
     public function test_imported_loading_date_is_promoted_only_for_empty_bills(): void
