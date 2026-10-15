@@ -520,8 +520,10 @@ class ClientController extends Controller
         $client->update(['status' => $newStatus]);
 
         $message = $newStatus === 'active' ? 'Cliente activado' : 'Cliente desactivado';
-        
-        return back()->with('success', $message);
+
+        // Al desactivar, la ficha deja de ser visible por ClientPolicy::view.
+        // Volver al listado evita un 403 después de guardar correctamente.
+        return redirect()->route('company.clients.index')->with('success', $message);
     }
 
     /**
