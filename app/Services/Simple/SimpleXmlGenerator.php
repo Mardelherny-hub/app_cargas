@@ -212,9 +212,9 @@ class SimpleXmlGenerator
 
                 // === PARÁMETROS PRINCIPALES ===
                 $transactionId = trim($transactionId);
-                if ($transactionId === '' || mb_strlen($transactionId) > 20) {
+                if ($transactionId === '' || mb_strlen($transactionId) > 15) {
                     throw new \Exception(
-                        'RegistrarTitEnvios: idTransaccion debe contener hasta 20 caracteres.'
+                        'RegistrarTitEnvios: idTransaccion debe contener hasta 15 caracteres.'
                     );
                 }
 
@@ -456,16 +456,16 @@ class SimpleXmlGenerator
                                             )
                                         );
 
-                                        if ($this->iaYesNo($bol->is_transit_transshipment) === 'S') {
-                                            $ncm = $this->micDtaItemNcm($item, $bol);
-                                            if ($ncm !== null) {
-                                                if (mb_strlen($ncm) > 10) {
-                                                    throw new \Exception(
-                                                        "RegistrarTitEnvios: BL {$billNumber}, línea {$line}: indNCM supera 10 caracteres."
-                                                    );
-                                                }
-                                                $w->writeElement('indNCM', $ncm);
-                                            }
+                                        // AFIP producción rechazó indNCM con XSD 41933
+                                        // en RegistrarTitEnvios (transacción 505), aunque
+                                        // el manual lo define como optativo para transbordos.
+                                        // El NCM original permanece guardado en el ítem.
+                                        if ($this->iaYesNo($bol->is_transit_transshipment) === 'S'
+                                            && $this->micDtaItemNcm($item, $bol) !== null) {
+                                            \Log::warning('MIC/DTA: indNCM omitido del XML por rechazo XSD AFIP 41933', [
+                                                'bill_id' => $bol->id,
+                                                'shipment_item_id' => $item->id,
+                                            ]);
                                         }
 
                                         $imo = trim((string) $item->imdg_class);
@@ -578,12 +578,9 @@ class SimpleXmlGenerator
                                     $w->endElement();
 
                                     $w->startElement('lugOperDestino');
-                                    if ($bolCodLugOperDest !== '') {
-                                        $w->writeElement(
-                                            'codLugOper',
-                                            $bolCodLugOperDest
-                                        );
-                                    }
+                                    // Es opcional como dato, pero AFIP 41933
+                                    // exige que el elemento esté presente.
+                                    $w->writeElement('codLugOper', $bolCodLugOperDest);
                                     $w->writeElement('codCiu', $codCiuDest);
                                     $w->endElement();
                                     
@@ -683,11 +680,12 @@ class SimpleXmlGenerator
                             }
                             $w->endElement();
 
-                            // En TitTransContVacio las partes son opcionales.
-                            // No inventar datos fiscales ni exigir un consignatario
-                            // que el conocimiento de vacíos no declara.
-                            // Si existen datos, su incorporación requiere conservar
-                            // el contrato específico de esta estructura.
+                            // El manual exige partes para los títulos de vacíos.
+                            // AFIP 505 rechazó omitirlas. Reutilizar exclusivamente
+                            // las relaciones y domicilios reales del conocimiento.
+                            $this->writeRemitente($w, $emptyBill);
+                            $this->writeConsignatario($w, $emptyBill);
+                            $this->writeDestinatario($w, $emptyBill);
 
                             $w->startElement('origen');
                             $w->writeElement('codAdu', $emptyOriginCustoms);
@@ -704,12 +702,9 @@ class SimpleXmlGenerator
                                 'codAdu',
                                 $emptyDestinationCustoms
                             );
-                            if ($emptyDestinationOperative !== '') {
-                                $w->writeElement(
-                                    'codLugOper',
-                                    $emptyDestinationOperative
-                                );
-                            }
+                            // Vacíos: mismo contrato XSD del destino.
+                            // Conservar el elemento aun sin código informado.
+                            $w->writeElement('codLugOper', $emptyDestinationOperative);
                             $w->writeElement('codCiu', $codCiuDest);
                             $w->endElement();
 
@@ -908,11 +903,9 @@ class SimpleXmlGenerator
             $w->writeElement('nomRazSoc', $data['name']);
         }
 
-        if ($data['country'] !== 'AR') {
-            $this->writeMicDtaAddress($w, $data, "BL {$bol->bill_number} remitente");
-        } elseif ($data['address_line_1'] !== '') {
-            $this->writeMicDtaAddress($w, $data, "BL {$bol->bill_number} remitente");
-        }
+        // AFIP 41933 rechazó el remitente AR sin domicilio en la
+        // transacción real 505. Exigir el dato existente, nunca inventarlo.
+        $this->writeMicDtaAddress($w, $data, "BL {$bol->bill_number} remitente");
 
         $w->writeElement('idFiscal', $data['tax_id']);
         $w->endElement();
@@ -1004,9 +997,9 @@ class SimpleXmlGenerator
         $w->startElement('notificado');
         $w->writeElement('nomRazSoc', $data['name']);
         $this->writeMicDtaAddress($w, $data, "BL {$bol->bill_number} notificado");
-        if ($data['tax_id'] !== '') {
-            $w->writeElement('idFiscal', $data['tax_id']);
-        }
+        // Manual: idFiscal es opcional, pero AFIP 41933 exige el nodo.
+        // Si falta el dato real, conservar su valor vacío sin inventarlo.
+        $w->writeElement('idFiscal', $data['tax_id']);
         $w->endElement();
     }
 
