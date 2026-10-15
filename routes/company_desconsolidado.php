@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Company\Simple\ArgentinaDeconsolidatedController;
 use App\Http\Controllers\Company\Simple\DeconsolidationBillController;
+use App\Http\Controllers\Company\Simple\DeconsolidationBillItemController;
 use App\Http\Controllers\Company\Simple\DeconsolidationOperationController;
 use App\Http\Controllers\Company\Simple\LegacyDeconsolidationRedirectController;
 use Illuminate\Support\Facades\Route;
@@ -39,6 +40,19 @@ Route::prefix('simple/webservices/desconsolidado')
             Route::post('/{operation}/bills', [DeconsolidationBillController::class, 'store'])
                 ->whereNumber('operation')
                 ->name('company.simple.desconsolidado.operations.bills.store');
+
+            // Mercadería del conocimiento hijo, siempre dentro del expediente.
+            // La autorización por empresa, título y estado borrador está
+            // también en el controlador: nunca resolver un BL por ID global.
+            Route::get('/{operation}/bills/{bill}/items/create', [DeconsolidationBillItemController::class, 'create'])
+                ->whereNumber('operation')
+                ->whereNumber('bill')
+                ->name('company.simple.desconsolidado.operations.bills.items.create');
+
+            Route::post('/{operation}/bills/{bill}/items', [DeconsolidationBillItemController::class, 'store'])
+                ->whereNumber('operation')
+                ->whereNumber('bill')
+                ->name('company.simple.desconsolidado.operations.bills.items.store');
         });
 
         // Circuito previo vinculado a Voyage: conservar URI y acciones.
