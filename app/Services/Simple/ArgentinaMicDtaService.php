@@ -1511,7 +1511,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     private function sendTitEnvios($soapClient, $shipment): array
     {
         try {
-            $transactionId = 'TIT_' . time() . '_' . $shipment->id;
+            // AFIP exige hasta 15 caracteres para RegistrarTitEnvios.
+            // Una referencia aleatoria evita truncamientos y colisiones entre reintentos.
+            $transactionId = 'TIT' . bin2hex(random_bytes(6));
             
             // ✅ CREAR TRANSACCIÓN EN BD ANTES DE ENVIAR
             $transaction = \App\Models\WebserviceTransaction::create([
@@ -1588,8 +1590,14 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             // ✅ Si AFIP devolvió errores (Codigo != 0), es un error bloqueante (no éxito)
             if ($hasAfipErrors) {
                 $mensajesAfip = $afipMessages['errores'];
-                $errorTexts = array_map(function($msg) {
-                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                $errorTexts = array_map(function ($msg) {
+                    $detail = trim((string) (
+                        ($msg['descripcion_adicional'] ?? '')
+                        ?: ($msg['descripcion_detallada'] ?? '')
+                    ));
+
+                    return "[{$msg['codigo']}] {$msg['descripcion']}"
+                        . ($detail !== '' ? ": {$detail}" : '');
                 }, $mensajesAfip);
                 
                 
