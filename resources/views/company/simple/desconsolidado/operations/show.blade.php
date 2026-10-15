@@ -119,6 +119,22 @@
                     </div>
 
                     @forelse($operation->billsOfLading as $bill)
+                        @php
+                            // Reflejar las mismas condiciones de edición que exige
+                            // DeconsolidationBillItemController::authorizedBill().
+                            // La autorización definitiva sigue siendo del servidor.
+                            $canAddLines = $bill->shipment_id === null
+                                && $bill->status === 'draft'
+                                && $bill->canBeEdited()
+                                && $bill->is_house_bill
+                                && (string) $bill->master_bill_number === (string) $operation->master_bill_number
+                                && (string) data_get(
+                                    $bill->webservice_data,
+                                    'argentina.desconsolidated.master_loading_port_code'
+                                ) === (string) $operation->master_loading_port_code
+                                && !in_array($bill->argentina_status, ['sent', 'approved'], true)
+                                && !in_array($bill->webservice_status, ['sent', 'processing', 'approved', 'accepted'], true);
+                        @endphp
                         <article class="border-b border-slate-100 px-5 py-5 last:border-b-0 sm:px-7">
                             <div class="flex items-start gap-4">
                                 <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
@@ -133,6 +149,22 @@
                                     <p class="mt-2 text-xs leading-5 text-slate-500">
                                         Guardado en esta operación. La presentación ante Aduana debe verificarse por separado.
                                     </p>
+                                    @if($canAddLines)
+                                        <a href="{{ route('company.simple.desconsolidado.operations.bills.items.create', [
+                                                'operation' => $operation->id,
+                                                'bill' => $bill->id,
+                                            ]) }}"
+                                           class="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-bold text-indigo-800 transition hover:border-indigo-300 hover:bg-indigo-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 sm:w-auto">
+                                            <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/>
+                                            </svg>
+                                            Agregar línea de mercadería
+                                        </a>
+                                    @else
+                                        <p class="mt-3 text-xs font-medium text-slate-500">
+                                            Este conocimiento no admite agregar líneas desde este expediente.
+                                        </p>
+                                    @endif
                                 </div>
                             </div>
                         </article>
@@ -166,9 +198,9 @@
                             <div>
                                 <p class="text-sm font-bold text-amber-900">Los conocimientos se guardan como borradores</p>
                                 <p class="mt-1 text-sm leading-6 text-amber-800">
-                                    Ya podés agregar conocimientos hijos a este expediente.
-                                    La edición, las líneas de mercadería y los contenedores se incorporarán en las próximas etapas.
-                                    Todavía no está habilitado el envío a Aduana desde este expediente.
+                                    Ya podés agregar conocimientos hijos y cargar sus líneas de mercadería mientras sigan siendo borradores editables.
+                                    La edición de conocimientos y la vinculación de contenedores todavía están pendientes.
+                                    Guardar una línea no la transmite ni significa aceptación de Aduana. El envío desde este expediente sigue deshabilitado.
                                 </p>
                             </div>
                         </div>
@@ -205,8 +237,8 @@
                             <li class="flex items-start gap-3">
                                 <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-bold text-slate-500">3</span>
                                 <div>
-                                    <p class="text-sm font-semibold text-slate-700">3. Revisar los datos</p>
-                                    <p class="mt-1 text-xs leading-5 text-slate-500">Controlar los conocimientos y completar los campos requeridos.</p>
+                                    <p class="text-sm font-semibold text-slate-700">3. Completar las líneas de mercadería</p>
+                                    <p class="mt-1 text-xs leading-5 text-slate-500">Podés agregar líneas a cada borrador editable. La revisión integral y los contenedores quedan pendientes.</p>
                                 </div>
                             </li>
                             <li class="flex items-start gap-3">
