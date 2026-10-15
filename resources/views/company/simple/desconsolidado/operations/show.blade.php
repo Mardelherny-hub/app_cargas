@@ -103,10 +103,19 @@
                             <h2 id="children-heading" class="mt-1 text-xl font-bold text-slate-900">Conocimientos hijos</h2>
                             <p class="mt-1 text-sm leading-6 text-slate-500">Los conocimientos asociados a este expediente.</p>
                         </div>
-                        <span class="inline-flex w-fit items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-800">
-                            {{ $operation->bills_of_lading_count }}
-                            {{ (int) $operation->bills_of_lading_count === 1 ? 'conocimiento' : 'conocimientos' }}
-                        </span>
+                        <div class="flex flex-col gap-3 sm:items-end">
+                            <span class="inline-flex w-fit items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-800">
+                                {{ $operation->bills_of_lading_count }}
+                                {{ (int) $operation->bills_of_lading_count === 1 ? 'conocimiento' : 'conocimientos' }}
+                            </span>
+                            <a href="{{ route('company.simple.desconsolidado.operations.bills.create', ['operation' => $operation->id]) }}"
+                               class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 sm:w-auto">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/>
+                                </svg>
+                                Agregar conocimiento hijo
+                            </a>
+                        </div>
                     </div>
 
                     @forelse($operation->billsOfLading as $bill)
@@ -137,8 +146,15 @@
                             </div>
                             <h3 class="mt-5 text-lg font-bold text-slate-900">Todavía no hay conocimientos hijos</h3>
                             <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
-                                Las referencias del título madre ya están guardadas. El siguiente paso es ingresar los conocimientos hijos que correspondan a esta operación.
+                                Las referencias del título madre ya están guardadas. Ahora podés agregar el primer conocimiento hijo y conservarlo como borrador.
                             </p>
+                            <a href="{{ route('company.simple.desconsolidado.operations.bills.create', ['operation' => $operation->id]) }}"
+                               class="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/>
+                                </svg>
+                                Agregar primer conocimiento hijo
+                            </a>
                         </div>
                     @endforelse
 
@@ -148,10 +164,11 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.8 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/>
                             </svg>
                             <div>
-                                <p class="text-sm font-bold text-amber-900">Carga de conocimientos hijos: en preparación</p>
+                                <p class="text-sm font-bold text-amber-900">Los conocimientos se guardan como borradores</p>
                                 <p class="mt-1 text-sm leading-6 text-amber-800">
-                                    Esta pantalla permite consultar el expediente y los conocimientos ya asociados.
-                                    La incorporación y edición de conocimientos hijos se habilitará en el siguiente desarrollo.
+                                    Ya podés agregar conocimientos hijos a este expediente.
+                                    La edición, las líneas de mercadería y los contenedores se incorporarán en las próximas etapas.
+                                    Todavía no está habilitado el envío a Aduana desde este expediente.
                                 </p>
                             </div>
                         </div>
@@ -180,8 +197,8 @@
                                     <p class="text-sm font-bold text-slate-900">2. Cargar conocimientos hijos</p>
                                     <p class="mt-1 text-xs leading-5 text-slate-600">
                                         {{ $operation->bills_of_lading_count > 0
-                                            ? 'Hay conocimientos guardados. La edición se habilitará próximamente.'
-                                            : 'Pendiente. La carga se habilitará en el siguiente desarrollo.' }}
+                                            ? 'Ya hay conocimientos guardados. Podés agregar otros. La edición sigue pendiente.'
+                                            : 'Podés agregar ahora el primer conocimiento hijo. Quedará guardado como borrador.' }}
                                     </p>
                                 </div>
                             </li>
