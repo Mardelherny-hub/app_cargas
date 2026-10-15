@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Company\Simple\ArgentinaDeconsolidatedController;
+use App\Http\Controllers\Company\Simple\DeconsolidationBillController;
 use App\Http\Controllers\Company\Simple\DeconsolidationOperationController;
 use App\Http\Controllers\Company\Simple\LegacyDeconsolidationRedirectController;
 use Illuminate\Support\Facades\Route;
@@ -28,6 +29,16 @@ Route::prefix('simple/webservices/desconsolidado')
             Route::get('/{operation}', [DeconsolidationOperationController::class, 'show'])
                 ->whereNumber('operation')
                 ->name('company.simple.desconsolidado.operations.show');
+
+            // Alta de títulos hijos dentro de un expediente propio.
+            // El controlador vuelve a verificar rol y pertenencia por empresa.
+            Route::get('/{operation}/bills/create', [DeconsolidationBillController::class, 'create'])
+                ->whereNumber('operation')
+                ->name('company.simple.desconsolidado.operations.bills.create');
+
+            Route::post('/{operation}/bills', [DeconsolidationBillController::class, 'store'])
+                ->whereNumber('operation')
+                ->name('company.simple.desconsolidado.operations.bills.store');
         });
 
         // Circuito previo vinculado a Voyage: conservar URI y acciones.
