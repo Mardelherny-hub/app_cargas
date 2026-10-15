@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Company\Simple\ArgentinaDeconsolidatedController;
+use App\Http\Controllers\Company\Simple\DeconsolidationOperationController;
 use App\Http\Controllers\Company\Simple\LegacyDeconsolidationRedirectController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,6 +13,24 @@ use Illuminate\Support\Facades\Route;
  */
 Route::prefix('simple/webservices/desconsolidado')
     ->group(function () {
+        // Expedientes propios de ATA-DESC: no requieren viaje ni barco local.
+        // Las rutas fijas van antes de las rutas históricas con {voyage}.
+        Route::prefix('operations')->group(function () {
+            Route::get('/', [DeconsolidationOperationController::class, 'index'])
+                ->name('company.simple.desconsolidado.operations.index');
+
+            Route::get('/create', [DeconsolidationOperationController::class, 'create'])
+                ->name('company.simple.desconsolidado.operations.create');
+
+            Route::post('/', [DeconsolidationOperationController::class, 'store'])
+                ->name('company.simple.desconsolidado.operations.store');
+
+            Route::get('/{operation}', [DeconsolidationOperationController::class, 'show'])
+                ->whereNumber('operation')
+                ->name('company.simple.desconsolidado.operations.show');
+        });
+
+        // Circuito previo vinculado a Voyage: conservar URI y acciones.
         Route::get('/{voyage}', [ArgentinaDeconsolidatedController::class, 'show'])
             ->whereNumber('voyage')
             ->name('company.simple.desconsolidado.show');
