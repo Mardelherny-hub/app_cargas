@@ -118,6 +118,20 @@
                         </div>
                     </div>
 
+                    @php
+                        // Cargar una sola vez las líneas de TODOS los BL de este
+                        // expediente y únicamente sus contenedores vinculados.
+                        // Nunca se consulta el catálogo global de contenedores.
+                        $operation->billsOfLading->loadMissing([
+                            'shipmentItems' => fn ($query) => $query
+                                ->orderBy('line_number')
+                                ->with([
+                                    'containers' => fn ($containers) => $containers
+                                        ->orderBy('containers.container_number'),
+                                ]),
+                        ]);
+                    @endphp
+
                     @forelse($operation->billsOfLading as $bill)
                         @php
                             // Reflejar las mismas condiciones de edición que exige
@@ -167,6 +181,104 @@
                                     @endif
                                 </div>
                             </div>
+
+                            <section aria-label="Líneas del conocimiento {{ $bill->bill_number }}"
+                                     class="mt-5 border-t border-slate-100 pt-5">
+                                <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+                                    <h4 class="text-sm font-bold text-slate-900">Líneas de mercadería</h4>
+                                    <span class="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                                        {{ $bill->shipmentItems->count() }}
+                                        {{ $bill->shipmentItems->count() === 1 ? 'línea' : 'líneas' }}
+                                    </span>
+                                </div>
+
+                                @forelse($bill->shipmentItems as $line)
+                                    @php
+                                        $isContainerized = trim((string) $line->packaging_code) === '05';
+                                        $lineCondition = strtoupper(trim((string) $line->container_condition));
+                                        // Mismas condiciones del controlador de vinculación.
+                                        $canLinkContainer = $canAddLines
+                                            && $line->status === 'draft'
+                                            && $isContainerized
+                                            && in_array($lineCondition, ['H', 'P'], true);
+                                    @endphp
+
+                                    <div class="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 last:mb-0 sm:p-5">
+                                        <div class="flex flex-wrap items-center justify-between gap-2">
+                                            <p class="text-sm font-bold text-slate-900">Línea {{ $line->line_number }}</p>
+                                            <span class="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600">
+                                                Embalaje {{ $line->packaging_code ?: '—' }}
+                                                · Condición {{ $lineCondition ?: '—' }}
+                                            </span>
+                                        </div>
+                                        <p class="mt-2 break-words text-sm leading-6 text-slate-700">
+                                            {{ $line->item_description ?: 'Sin descripción declarada' }}
+                                        </p>
+                                        <dl class="mt-3 grid gap-3 sm:grid-cols-2">
+                                            <div>
+                                                <dt class="text-xs text-slate-500">Bultos declarados en la línea</dt>
+                                                <dd class="mt-1 text-sm font-semibold text-slate-800">
+                                                    {{ $line->package_quantity ?? '—' }}
+                                                </dd>
+                                            </div>
+                                            <div>
+                                                <dt class="text-xs text-slate-500">Peso bruto declarado de la línea</dt>
+                                                <dd class="mt-1 text-sm font-semibold text-slate-800">
+                                                    {{ $line->gross_weight_kg ?? '—' }} kg
+                                                </dd>
+                                            </div>
+                                        </dl>
+
+                                        @if($isContainerized)
+                                            <div class="mt-4 border-t border-slate-200 pt-4">
+                                                <p class="text-xs font-bold text-slate-700">
+                                                    Contenedores vinculados: {{ $line->containers->count() }}
+                                                </p>
+                                                @if($line->containers->isNotEmpty())
+                                                    <ul aria-label="Contenedores de la línea {{ $line->line_number }}"
+                                                        class="mt-2 flex flex-wrap gap-2">
+                                                        @foreach($line->containers as $container)
+                                                            <li class="break-all rounded-lg border border-indigo-100 bg-white px-3 py-2 font-mono text-xs font-semibold text-slate-800">
+                                                                {{ $container->container_number }}
+                                                            </li>
+                                                        @endforeach
+                                                    </ul>
+                                                @else
+                                                    <p class="mt-2 text-xs leading-5 text-amber-800">
+                                                        Todavía no hay contenedores vinculados a esta línea.
+                                                    </p>
+                                                @endif
+
+                                                @if($canLinkContainer)
+                                                    <a href="{{ route('company.simple.desconsolidado.operations.bills.items.containers.create', [
+                                                            'operation' => $operation->id,
+                                                            'bill' => $bill->id,
+                                                            'item' => $line->id,
+                                                        ]) }}"
+                                                       class="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 sm:w-auto">
+                                                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/>
+                                                        </svg>
+                                                        Vincular contenedor existente
+                                                    </a>
+                                                @elseif($canAddLines && $line->status === 'draft'
+                                                    && !in_array($lineCondition, ['H', 'P'], true))
+                                                    <p class="mt-3 text-xs font-medium leading-5 text-amber-800">
+                                                        Falta una condición H/P válida antes de vincular contenedores.
+                                                    </p>
+                                                @endif
+                                            </div>
+                                        @endif
+                                    </div>
+                                @empty
+                                    <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5">
+                                        <p class="text-sm font-semibold text-slate-800">Todavía no hay líneas de mercadería.</p>
+                                        <p class="mt-1 text-xs leading-5 text-slate-500">
+                                            Agregá las líneas declaradas en este conocimiento antes de vincular contenedores.
+                                        </p>
+                                    </div>
+                                @endforelse
+                            </section>
                         </article>
                     @empty
                         <div class="px-6 py-12 text-center sm:px-8 sm:py-16">
@@ -199,8 +311,9 @@
                                 <p class="text-sm font-bold text-amber-900">Los conocimientos se guardan como borradores</p>
                                 <p class="mt-1 text-sm leading-6 text-amber-800">
                                     Ya podés agregar conocimientos hijos y cargar sus líneas de mercadería mientras sigan siendo borradores editables.
-                                    La edición de conocimientos y la vinculación de contenedores todavía están pendientes.
-                                    Guardar una línea no la transmite ni significa aceptación de Aduana. El envío desde este expediente sigue deshabilitado.
+                                    Podés vincular contenedores ya registrados desde las líneas con embalaje 05 y condición H/P válida.
+                                    La edición de conocimientos, el alta de contenedores nuevos y la revisión documental CSC/ACEP siguen pendientes.
+                                    Guardar líneas o vincular contenedores no significa aceptación de Aduana. El envío desde este expediente sigue deshabilitado.
                                 </p>
                             </div>
                         </div>
@@ -237,8 +350,8 @@
                             <li class="flex items-start gap-3">
                                 <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-bold text-slate-500">3</span>
                                 <div>
-                                    <p class="text-sm font-semibold text-slate-700">3. Completar las líneas de mercadería</p>
-                                    <p class="mt-1 text-xs leading-5 text-slate-500">Podés agregar líneas a cada borrador editable. La revisión integral y los contenedores quedan pendientes.</p>
+                                    <p class="text-sm font-semibold text-slate-700">3. Completar mercadería y contenedores</p>
+                                    <p class="mt-1 text-xs leading-5 text-slate-500">Agregá las líneas declaradas y vinculá los contenedores existentes cuando el embalaje sea 05. La revisión integral sigue pendiente.</p>
                                 </div>
                             </li>
                             <li class="flex items-start gap-3">
