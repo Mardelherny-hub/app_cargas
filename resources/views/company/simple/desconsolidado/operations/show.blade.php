@@ -95,6 +95,27 @@
                 </div>
             </section>
 
+            @if((int) $operation->bills_of_lading_count === 0)
+                <details class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <summary class="cursor-pointer text-sm font-bold text-indigo-700">Corregir referencias del expediente</summary>
+                    <p class="mt-3 text-sm text-slate-600">Solo mientras no se hayan cargado conocimientos hijos.</p>
+                    <form method="POST" action="{{ route('company.simple.desconsolidado.operations.update', ['operation' => $operation->id]) }}" class="mt-4 grid gap-4 sm:grid-cols-3">
+                        @csrf
+                        @method('PUT')
+                        <label class="text-sm font-semibold text-slate-800">Identificador del viaje AFIP
+                            <input name="argentina_voyage_id" required maxlength="16" value="{{ old('argentina_voyage_id', $operation->argentina_voyage_id) }}" class="mt-2 w-full rounded-xl border-slate-300"/>
+                        </label>
+                        <label class="text-sm font-semibold text-slate-800">Puerto del título madre
+                            <input name="master_loading_port_code" required maxlength="5" minlength="5" pattern="[A-Za-z0-9]{5}" value="{{ old('master_loading_port_code', $operation->master_loading_port_code) }}" class="mt-2 w-full rounded-xl border-slate-300 uppercase"/>
+                        </label>
+                        <label class="text-sm font-semibold text-slate-800">Conocimiento madre
+                            <input name="master_bill_number" required maxlength="18" value="{{ old('master_bill_number', $operation->master_bill_number) }}" class="mt-2 w-full rounded-xl border-slate-300"/>
+                        </label>
+                        <button type="submit" class="min-h-11 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700 sm:col-span-3 sm:justify-self-start">Guardar corrección</button>
+                    </form>
+                </details>
+            @endif
+
             <div class="grid gap-6 lg:grid-cols-12 lg:items-start">
                 <section aria-labelledby="children-heading" class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:col-span-8">
                     <div class="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-6">
@@ -164,6 +185,16 @@
                                         Guardado en esta operación. La presentación ante Aduana debe verificarse por separado.
                                     </p>
                                     @if($canAddLines)
+                                        <a href="{{ route('company.simple.desconsolidado.operations.bills.edit', ['operation' => $operation->id, 'bill' => $bill->id]) }}" class="mt-3 inline-flex min-h-11 items-center rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700">Editar conocimiento hijo</a>
+                                    @endif
+                                    @if($canAddLines && $bill->shipmentItems->isEmpty())
+                                        <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.destroy', ['operation' => $operation->id, 'bill' => $bill->id]) }}" class="mt-3" onsubmit="return confirm('¿Archivar este conocimiento hijo sin líneas?');">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button type="submit" class="min-h-11 rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Archivar conocimiento borrador</button>
+                                        </form>
+                                    @endif
+                                    @if($canAddLines)
                                         <a href="{{ route('company.simple.desconsolidado.operations.bills.items.create', [
                                                 'operation' => $operation->id,
                                                 'bill' => $bill->id,
@@ -229,6 +260,17 @@
                                             </div>
                                         </dl>
 
+                                        @if($canAddLines && $line->status === 'draft')
+                                            <a href="{{ route('company.simple.desconsolidado.operations.bills.items.edit', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id]) }}" class="mt-3 inline-flex min-h-11 items-center rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700">Editar línea</a>
+                                        @endif
+                                        @if($canAddLines && $line->status === 'draft')
+                                            <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.items.destroy', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id]) }}" class="mt-3" onsubmit="return confirm('¿Eliminar esta línea borrador y sus vínculos con contenedores? Las fichas físicas se conservarán.');">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="min-h-11 rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Eliminar línea borrador</button>
+                                            </form>
+                                        @endif
+
                                         @if($isContainerized)
                                             <div class="mt-4 border-t border-slate-200 pt-4">
                                                 <p class="text-xs font-bold text-slate-700">
@@ -240,6 +282,13 @@
                                                         @foreach($line->containers as $container)
                                                             <li class="break-all rounded-lg border border-indigo-100 bg-white px-3 py-2 font-mono text-xs font-semibold text-slate-800">
                                                                 {{ $container->container_number }}
+                                                                @if($canLinkContainer)
+                                                                    <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.items.containers.destroy', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id, 'container' => $container->id]) }}" class="mt-2" onsubmit="return confirm('¿Desvincular este contenedor sin borrar su ficha global?');">
+                                                                        @csrf
+                                                                        @method('DELETE')
+                                                                        <button type="submit" class="text-xs font-semibold text-red-700 underline">Desvincular</button>
+                                                                    </form>
+                                                                @endif
                                                             </li>
                                                         @endforeach
                                                     </ul>

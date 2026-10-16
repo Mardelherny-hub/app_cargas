@@ -11,13 +11,14 @@
                 <span aria-hidden="true">/</span>
                 <span class="text-slate-800">Nueva línea de mercadería</span>
             </nav>
-            <h1 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">Agregar línea de mercadería</h1>
+            <h1 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{{ $editingItem ? 'Editar línea de mercadería' : 'Agregar línea de mercadería' }}</h1>
             <p class="mt-1 text-sm text-slate-500">Empresa: {{ $company->legal_name }}</p>
         </div>
     </x-slot>
 
     @php
         // La cabecera guarda un booleano real, aunque el modelo lo exponga como cadena.
+        $editingItem = $editingItem ?? null;
         $isNonConsolidated = (int) $bill->getRawOriginal('is_consolidated') !== 1;
         $operationUrl = route('company.simple.desconsolidado.operations.show', ['operation' => $operation->id]);
         $indicators = [
@@ -71,9 +72,10 @@
 
             <div class="grid gap-6 lg:grid-cols-12 lg:items-start">
                 <form method="POST"
-                      action="{{ route('company.simple.desconsolidado.operations.bills.items.store', ['operation' => $operation->id, 'bill' => $bill->id]) }}"
+                      action="{{ $editingItem ? route('company.simple.desconsolidado.operations.bills.items.update', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $editingItem->id]) : route('company.simple.desconsolidado.operations.bills.items.store', ['operation' => $operation->id, 'bill' => $bill->id]) }}"
                       class="space-y-6 lg:col-span-8" autocomplete="off">
                     @csrf
+                    @if($editingItem) @method('PUT') @endif
 
                     <section aria-labelledby="line-heading" class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-100 px-5 py-5 sm:px-7">
@@ -89,7 +91,7 @@
                                         Número de línea <span class="text-red-600">*</span>
                                     </label>
                                     <input type="number" id="line_number" name="line_number"
-                                           value="{{ old('line_number') }}" min="1" max="999" step="1" required
+                                           value="{{ old('line_number', $editingItem?->line_number) }}" min="1" max="999" step="1" required
                                            placeholder="Número del documento"
                                            aria-invalid="{{ $errors->has('line_number') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
@@ -105,7 +107,7 @@
                                             class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <option value="">Seleccioná el tipo declarado</option>
                                         @foreach($cargoTypes as $type)
-                                            <option value="{{ $type->id }}" @selected((string) old('cargo_type_id') === (string) $type->id)>{{ $type->name }}</option>
+                                            <option value="{{ $type->id }}" @selected((string) old('cargo_type_id', $editingItem?->cargo_type_id) === (string) $type->id)>{{ $type->name }}</option>
                                         @endforeach
                                     </select>
                                     <p class="mt-1.5 text-xs text-slate-500">Solo tipos habilitados para desconsolidación.</p>
@@ -122,7 +124,7 @@
                                         Código de embalaje ATA-DESC <span class="text-red-600">*</span>
                                     </label>
                                     <input type="text" id="packaging_code" name="packaging_code"
-                                           value="{{ old('packaging_code') }}" minlength="2" maxlength="2" required
+                                           value="{{ old('packaging_code', $editingItem?->packaging_code) }}" minlength="2" maxlength="2" required
                                            autocomplete="off" spellcheck="false" autocapitalize="characters"
                                            placeholder="Código de 2 caracteres"
                                            aria-invalid="{{ $errors->has('packaging_code') ? 'true' : 'false' }}"
@@ -138,8 +140,8 @@
                                             aria-invalid="{{ $errors->has('container_condition') ? 'true' : 'false' }}"
                                             class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <option value="">Elegí la condición declarada</option>
-                                        <option value="H" @selected(old('container_condition') === 'H')>H</option>
-                                        <option value="P" @selected(old('container_condition') === 'P')>P</option>
+                                        <option value="H" @selected(old('container_condition', $editingItem?->container_condition) === 'H')>H</option>
+                                        <option value="P" @selected(old('container_condition', $editingItem?->container_condition) === 'P')>P</option>
                                     </select>
                                     <p class="mt-1.5 text-xs leading-5 text-slate-500">Debe coincidir con la condición informada para la línea y, si aplica, sus contenedores.</p>
                                     @error('container_condition') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
@@ -152,7 +154,7 @@
                                         Cantidad de bultos declarada <span class="text-red-600">*</span>
                                     </label>
                                     <input type="number" id="package_quantity" name="package_quantity"
-                                           value="{{ old('package_quantity') }}" min="1" max="999999999" step="1" required
+                                           value="{{ old('package_quantity', $editingItem?->package_quantity) }}" min="1" max="999999999" step="1" required
                                            placeholder="Cantidad del documento"
                                            aria-invalid="{{ $errors->has('package_quantity') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
@@ -164,7 +166,7 @@
                                         Peso bruto de esta línea (kg) <span class="text-red-600">*</span>
                                     </label>
                                     <input type="number" id="gross_weight_kg" name="gross_weight_kg"
-                                           value="{{ old('gross_weight_kg') }}" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required
+                                           value="{{ old('gross_weight_kg', $editingItem?->gross_weight_kg) }}" min="0" max="9999999999.99" step="0.01" inputmode="decimal" required
                                            placeholder="Ej.: 40.25"
                                            aria-invalid="{{ $errors->has('gross_weight_kg') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
@@ -180,7 +182,7 @@
                                 <textarea id="item_description" name="item_description" rows="3" maxlength="80" required
                                           aria-invalid="{{ $errors->has('item_description') ? 'true' : 'false' }}"
                                           placeholder="Descripción de esta línea según la documentación"
-                                          class="mt-2 block w-full rounded-xl border-slate-300 px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('item_description') }}</textarea>
+                                          class="mt-2 block w-full rounded-xl border-slate-300 px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('item_description', $editingItem?->item_description) }}</textarea>
                                 <p class="mt-1.5 text-xs text-slate-500">Máximo 80 caracteres por línea, según el contrato ATA-DESC.</p>
                                 @error('item_description') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                             </div>
@@ -190,7 +192,7 @@
                                     Marcas o números de los bultos <span class="text-red-600">*</span>
                                 </label>
                                 <input type="text" id="cargo_marks" name="cargo_marks" maxlength="100" required
-                                       value="{{ old('cargo_marks') }}"
+                                       value="{{ old('cargo_marks', $editingItem?->cargo_marks) }}"
                                        placeholder="Marcas tal como figuran en el documento"
                                        aria-invalid="{{ $errors->has('cargo_marks') ? 'true' : 'false' }}"
                                        class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
@@ -214,7 +216,7 @@
                                     Posición arancelaria declarada (NCM) <span class="text-red-600">*</span>
                                 </label>
                                 <input type="text" id="tariff_position" name="tariff_position"
-                                       value="{{ old('tariff_position') }}" maxlength="{{ $isNonConsolidated ? 15 : 16 }}"
+                                       value="{{ old('tariff_position', $editingItem?->tariff_position) }}" maxlength="{{ $isNonConsolidated ? 15 : 16 }}"
                                        @if($isNonConsolidated) minlength="7" @endif
                                        autocomplete="off" spellcheck="false" required
                                        placeholder="Posición indicada en el documento"

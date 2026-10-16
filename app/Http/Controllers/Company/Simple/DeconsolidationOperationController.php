@@ -107,6 +107,62 @@ class DeconsolidationOperationController extends Controller
             );
     }
 
+    /**
+     * Corrige las referencias del expediente exclusivamente mientras no tenga
+     * conocimientos hijos. La edición nunca crea ni modifica viajes locales.
+     */
+    public function update(Request $request, int $operation): RedirectResponse
+    {
+        $company = $this->authorizedCompany();
+
+        foreach ([
+            'argentina_voyage_id',
+            'master_loading_port_code',
+            'master_bill_number',
+        ] as $field) {
+            if (is_string($request->input($field))) {
+                $value = trim($request->input($field));
+                $request->merge([
+                    $field => $field === 'master_loading_port_code'
+                        ? strtoupper($value)
+                        : $value,
+                ]);
+            }
+        }
+
+        $data = $request->validate([
+            'argentina_voyage_id' => ['required', 'string', 'max:16'],
+            'master_loading_port_code' => [
+                'required', 'string', 'regex:/^[A-Z0-9]{5}$/',
+            ],
+            'master_bill_number' => ['required', 'string', 'max:18'],
+        ]);
+
+        \Illuminate\Support\Facades\DB::transaction(function () use (
+            $company, $operation, $data
+        ) {
+            $record = DeconsolidationOperation::query()
+                ->forCompany((int) $company->id)
+                ->lockForUpdate()
+                ->findOrFail($operation);
+
+            abort_if(
+                $record->billsOfLading()->exists(),
+                409,
+                'No se pueden modificar las referencias del expediente con conocimientos hijos. '
+                . 'Primero debe resolverse la documentación asociada.'
+            );
+
+            $record->update($data);
+        });
+
+        return redirect()
+            ->route('company.simple.desconsolidado.operations.show', [
+                'operation' => $operation,
+            ])
+            ->with('success', 'Referencias del expediente actualizadas.');
+    }
+
     public function show(int $operation): View
     {
         $company = $this->authorizedCompany();

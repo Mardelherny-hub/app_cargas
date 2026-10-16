@@ -163,6 +163,29 @@ class DeconsolidationContainerLinkController extends Controller
             );
     }
 
+    /** Desvincula únicamente de esta línea; nunca elimina el contenedor global. */
+    public function destroy(int $operation, int $bill, int $item, int $container): RedirectResponse
+    {
+        [, $operationRecord, $billRecord, $itemRecord] = $this->authorizedItem(
+            $operation, $bill, $item
+        );
+
+        DB::transaction(function () use ($operationRecord, $billRecord, $itemRecord, $container) {
+            $lockedBill = $operationRecord->billsOfLading()
+                ->whereNull('shipment_id')->lockForUpdate()->findOrFail($billRecord->id);
+            $this->assertEditableBill($lockedBill, $operationRecord);
+            $lockedItem = $lockedBill->shipmentItems()
+                ->lockForUpdate()->findOrFail($itemRecord->id);
+            $this->assertContainerizedDraft($lockedItem);
+            abort_unless($lockedItem->containers()->where('containers.id', $container)->exists(), 404);
+            $lockedItem->containers()->detach($container);
+        });
+
+        return redirect()->route('company.simple.desconsolidado.operations.show', [
+            'operation' => $operation,
+        ])->with('success', 'Contenedor desvinculado de la línea. La ficha global se conservó.');
+    }
+
     /**
      * Formulario de alta excepcional cuando el número todavía no existe
      * en el catálogo global. No modifica contenedores ya registrados.
