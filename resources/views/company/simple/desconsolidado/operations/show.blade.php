@@ -431,14 +431,14 @@
                                 <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-bold text-slate-500">3</span>
                                 <div>
                                     <p class="text-sm font-semibold text-slate-700">3. Completar mercadería y contenedores</p>
-                                    <p class="mt-1 text-xs leading-5 text-slate-500">Agregá las líneas declaradas y vinculá los contenedores existentes cuando el embalaje sea 05. La revisión integral sigue pendiente.</p>
+                                    <p class="mt-1 text-xs leading-5 text-slate-500">Agregá las líneas de mercadería y vinculá o registrá contenedores cuando el embalaje sea 05. Luego utilizá «Validar datos sin transmitir».</p>
                                 </div>
                             </li>
                             <li class="flex items-start gap-3">
                                 <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-bold text-slate-500">4</span>
                                 <div>
                                     <p class="text-sm font-semibold text-slate-700">4. Transmitir a Aduana</p>
-                                    <p class="mt-1 text-xs leading-5 text-slate-500">El envío no está habilitado desde este expediente.</p>
+                                    <p class="mt-1 text-xs leading-5 text-slate-500">Seleccioná los conocimientos, elegí Registrar, Rectificar o Eliminar y confirmá la operación. Esta acción sí se transmite a Aduana.</p>
                                 </div>
                             </li>
                         </ol>
