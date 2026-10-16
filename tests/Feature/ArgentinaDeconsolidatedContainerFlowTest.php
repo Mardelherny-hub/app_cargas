@@ -50,7 +50,10 @@ class ArgentinaDeconsolidatedContainerFlowTest extends TestCase
         );
         $controller = file_get_contents(app_path('Http/Controllers/Company/Simple/DeconsolidationOperationController.php'));
         $start = strpos($controller, 'public function preflight(');
-        $end = strpos($controller, 'private function authorizedCompany(', $start);
+        $end = strpos($controller, 'public function transmit(', $start);
+        if ($end === false) {
+            $end = strpos($controller, 'private function authorizedCompany(', $start);
+        }
         $this->assertNotFalse($start);
         $this->assertNotFalse($end);
         $body = substr($controller, $start, $end - $start);
