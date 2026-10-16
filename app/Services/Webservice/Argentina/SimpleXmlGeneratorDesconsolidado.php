@@ -5,6 +5,7 @@ namespace App\Services\Webservice\Argentina;
 use App\Models\BillOfLading;
 use App\Models\Client;
 use App\Models\Company;
+use App\Models\DeconsolidationOperation;
 use App\Models\Container;
 use App\Models\Voyage;
 use App\Models\WsaaToken;
@@ -32,11 +33,11 @@ class SimpleXmlGeneratorDesconsolidado
     private const NAMESPACE = 'Ar.Gob.Afip.Dga.Org.wgesinformacionanticipada';
     private const SERVICE_NAME = 'wgesinformacionanticipada';
 
-    private Voyage $voyage;
+    private Voyage|DeconsolidationOperation $voyage;
     private Company $company;
     private string $environment;
 
-    public function __construct(Voyage $voyage, array $config = [])
+    public function __construct(Voyage|DeconsolidationOperation $voyage, array $config = [])
     {
         $this->voyage = $voyage;
         $this->company = $voyage->company;
@@ -235,6 +236,10 @@ class SimpleXmlGeneratorDesconsolidado
                 'shipmentItems.cargoType',
                 'shipmentItems.containers.containerType',
             ]);
+
+        if ($this->voyage instanceof DeconsolidationOperation) {
+            $query->whereNull('shipment_id');
+        }
 
         if ($ids !== []) {
             $query->whereIn('bills_of_lading.id', $ids);
@@ -774,7 +779,7 @@ class SimpleXmlGeneratorDesconsolidado
         }
 
         if (!$expiry && $acep === null) {
-            $arrival = isset($this->voyage)
+            $arrival = $this->voyage instanceof Voyage
                 ? $this->voyage->estimated_arrival_date
                 : null;
 
