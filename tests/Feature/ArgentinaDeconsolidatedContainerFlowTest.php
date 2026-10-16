@@ -38,6 +38,27 @@ class ArgentinaDeconsolidatedContainerFlowTest extends TestCase
         }
     }
 
+    public function test_operation_preflight_is_local_and_never_calls_soap(): void
+    {
+        $route = app('router')->getRoutes()->match(Request::create(
+            '/company/simple/webservices/desconsolidado/operations/17/preflight', 'POST'
+        ));
+        $this->assertSame('company.simple.desconsolidado.operations.preflight', $route->getName());
+        $this->assertSame(
+            'App\\Http\\Controllers\\Company\\Simple\\DeconsolidationOperationController@preflight',
+            $route->getActionName()
+        );
+        $controller = file_get_contents(app_path('Http/Controllers/Company/Simple/DeconsolidationOperationController.php'));
+        $start = strpos($controller, 'public function preflight(');
+        $end = strpos($controller, 'private function authorizedCompany(', $start);
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $body = substr($controller, $start, $end - $start);
+        $this->assertStringContainsString('validateLocalData', $body);
+        $this->assertStringNotContainsString('ejecutarExpediente(', $body);
+        $this->assertStringNotContainsString('sendSoapRequest(', $body);
+    }
+
     public function test_linking_form_offers_registration_without_posting_to_customs(): void
     {
         $view = file_get_contents(resource_path(
