@@ -186,9 +186,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         if ($bills->count() !== count($ids)) {
             throw new Exception('Hay conocimientos que no pertenecen al expediente.');
         }
-        $generator = new SimpleXmlGeneratorDesconsolidado($operation, [
-            'environment' => $this->config['environment'],
-        ]);
+        $generator = $this->independentXmlGenerator($operation);
         $validation = $generator->validateLocalData($method, $ids);
         if (!($validation['is_valid'] ?? false)) {
             throw new Exception(implode(' | ', $validation['errors'] ?? ['Datos incompletos.']));
@@ -296,7 +294,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                 // Eliminar en Aduana no borra el historial ni restaura un
                 // borrador local: conserva evidencia de las declaraciones.
                 foreach ($bills as $bill) {
-                    $bill->update($method === 'eliminar' ? [
+                    $bill->forceFill($method === 'eliminar' ? [
                         'argentina_status' => 'deleted',
                         'webservice_status' => 'accepted',
                         'webservice_response_at' => now(),
@@ -305,7 +303,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                         'argentina_sent_at' => now(),
                         'webservice_status' => 'accepted',
                         'webservice_response_at' => now(),
-                    ]);
+                    ])->saveQuietly();
                 }
             }
             return array_merge($result, ['transaction_id' => $transaction->id]);
@@ -322,6 +320,13 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             ]);
             throw $exception;
         }
+    }
+
+    protected function independentXmlGenerator(DeconsolidationOperation $operation): SimpleXmlGeneratorDesconsolidado
+    {
+        return new SimpleXmlGeneratorDesconsolidado($operation, [
+            'environment' => $this->config['environment'],
+        ]);
     }
 
     /**
@@ -595,7 +600,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         ]);
     }
 
-    private function sendSoapRequest(
+    protected function sendSoapRequest(
         WebserviceTransaction $transaction,
         string $xml,
         string $soapMethod,
