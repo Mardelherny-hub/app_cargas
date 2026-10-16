@@ -279,6 +279,18 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                 'error_details' => $result['success'] ? null : ($result['details'] ?? []),
                 'response_at' => now(),
             ]);
+            if ($result['success'] && in_array($method, ['registrar', 'rectificar'], true)) {
+                // Impedir editar borradores que ya aceptó Aduana. No atribuir
+                // el identificador de viaje al número individual del título.
+                foreach ($bills as $bill) {
+                    $bill->update([
+                        'argentina_status' => 'sent',
+                        'argentina_sent_at' => now(),
+                        'webservice_status' => 'accepted',
+                        'webservice_response_at' => now(),
+                    ]);
+                }
+            }
             return array_merge($result, ['transaction_id' => $transaction->id]);
         } catch (\Throwable $exception) {
             // Antes de transmitir, una falla local es definitiva y no ha
