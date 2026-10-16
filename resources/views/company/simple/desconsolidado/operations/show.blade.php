@@ -358,10 +358,14 @@
                             </svg>
                             <div>
                                 <p class="text-sm font-bold text-amber-900">Los conocimientos se guardan como borradores</p>
+                                <form method="POST" action="{{ route('company.simple.desconsolidado.operations.preflight', ['operation' => $operation->id]) }}" class="mt-3">
+                                    @csrf
+                                    <button type="submit" class="min-h-11 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-bold text-amber-900">Validar datos sin transmitir</button>
+                                </form>
                                 <p class="mt-1 text-sm leading-6 text-amber-800">
                                     Ya podés agregar conocimientos hijos y cargar sus líneas de mercadería mientras sigan siendo borradores editables.
                                     Podés vincular contenedores ya registrados desde las líneas con embalaje 05 y condición H/P válida.
-                                    La edición de conocimientos, el alta de contenedores nuevos y la revisión documental CSC/ACEP siguen pendientes.
+                                    La edición y el alta de contenedores ya están disponibles; verificá la documentación CSC/ACEP.
                                     Guardar líneas o vincular contenedores no significa aceptación de Aduana. El envío desde este expediente sigue deshabilitado.
                                 </p>
                             </div>
@@ -391,7 +395,7 @@
                                     <p class="text-sm font-bold text-slate-900">2. Cargar conocimientos hijos</p>
                                     <p class="mt-1 text-xs leading-5 text-slate-600">
                                         {{ $operation->bills_of_lading_count > 0
-                                            ? 'Ya hay conocimientos guardados. Podés agregar otros. La edición sigue pendiente.'
+                                            ? 'Ya hay conocimientos guardados. Podés agregar otros. Podés editar sus borradores.'
                                             : 'Podés agregar ahora el primer conocimiento hijo. Quedará guardado como borrador.' }}
                                     </p>
                                 </div>

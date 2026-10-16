@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Company\Simple;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\DeconsolidationOperation;
+use App\Models\WebserviceTransaction;
+use App\Services\Webservice\Argentina\SimpleXmlGeneratorDesconsolidado;
+use App\Services\Simple\WebserviceEnvironment;
 use App\Traits\UserHelper;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -178,6 +181,46 @@ class DeconsolidationOperationController extends Controller
             'company',
             'operation'
         ));
+    }
+
+    /** Solo diagnóstico local; nunca obtiene WSAA ni invoca SOAP. */
+    public function preflight(int $operation): RedirectResponse
+    {
+        $company = $this->authorizedCompany();
+        $record = DeconsolidationOperation::query()
+            ->forCompany((int) $company->id)->findOrFail($operation);
+        $billIds = $record->billsOfLading()->whereNull('shipment_id')
+            ->pluck('bills_of_lading.id')->map(fn ($id) => (int) $id)->all();
+
+        $generator = new SimpleXmlGeneratorDesconsolidado($record, [
+            'environment' => WebserviceEnvironment::resolve($company),
+        ]);
+        $result = $generator->validateLocalData('registrar', $billIds);
+        $errors = $result['errors'] ?? [];
+        if (!$billIds) {
+            $errors[] = 'El expediente no tiene conocimientos hijos.';
+        }
+        $pending = WebserviceTransaction::query()
+            ->where('company_id', $company->id)
+            ->where('webservice_type', 'desconsolidado')
+            ->where('country', 'AR')
+            ->whereNull('voyage_id')
+            ->whereIn('status', ['pending', 'sending'])
+            ->get(['additional_metadata'])->contains(fn ($transaction) =>
+                (int) data_get($transaction->additional_metadata,
+                    'deconsolidation_operation_id') === (int) $record->id
+            );
+        if ($pending) {
+            $errors[] = 'Hay una transmisión pendiente o de resultado incierto; no reenviar.';
+        }
+        if ($errors) {
+            return redirect()->route('company.simple.desconsolidado.operations.show', [
+                'operation' => $record->id,
+            ])->withErrors($errors);
+        }
+        return redirect()->route('company.simple.desconsolidado.operations.show', [
+            'operation' => $record->id,
+        ])->with('success', 'Validación local aprobada. Esto NO registra títulos en Aduana.');
     }
 
     private function authorizedCompany(): Company
