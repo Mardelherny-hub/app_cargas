@@ -3,6 +3,7 @@
 namespace App\Services\Simple;
 
 use App\Models\BillOfLading;
+use App\Models\DeconsolidationOperation;
 use App\Models\Voyage;
 use App\Models\WebserviceResponse;
 use App\Models\WebserviceTransaction;
@@ -161,6 +162,127 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'EliminarTitulosDesconsolidador',
             $billIds
         );
+    }
+
+    /**
+     * Circuito ATA-DESC independiente. No construye ni guarda un Voyage.
+     * La única identidad para historial y alcance es el expediente autenticado.
+     */
+    public function ejecutarExpediente(DeconsolidationOperation $operation, string $method,
+        array $billIds = []): array
+    {
+        if (!in_array($method, ['registrar', 'rectificar', 'eliminar'], true)) {
+            throw new Exception('Operación ATA-DESC desconocida.');
+        }
+        if ((int) $operation->company_id !== (int) $this->company->id) {
+            throw new Exception('Expediente de otra empresa.');
+        }
+        $ids = $this->normalizeBillIds($billIds);
+        if (!$ids) {
+            throw new Exception('Seleccione los conocimientos del expediente.');
+        }
+        $bills = $operation->billsOfLading()->whereNull('shipment_id')
+            ->whereIn('bills_of_lading.id', $ids)->orderBy('id')->get();
+        if ($bills->count() !== count($ids)) {
+            throw new Exception('Hay conocimientos que no pertenecen al expediente.');
+        }
+        $history = WebserviceTransaction::query()
+            ->where('company_id', $this->company->id)
+            ->where('webservice_type', 'desconsolidado')
+            ->where('country', 'AR')
+            ->whereNull('voyage_id')
+            ->orderBy('id')->get();
+        $states = array_fill_keys($ids, null);
+        foreach ($history as $entry) {
+            $meta = $entry->additional_metadata ?? [];
+            if ((int) ($meta['deconsolidation_operation_id'] ?? 0) !== (int) $operation->id) {
+                continue;
+            }
+            $shared = array_intersect($ids, array_map('intval', $meta['bill_ids'] ?? []));
+            if ($shared && in_array($entry->status, ['pending', 'sending'], true)) {
+                throw new Exception('Existe un envío pendiente: consulte su resultado antes de reintentar.');
+            }
+            if ($entry->status === 'success' && in_array($meta['method'] ?? '',
+                ['registrar', 'rectificar', 'eliminar'], true)) {
+                foreach ($shared as $id) {
+                    $states[$id] = $meta['method'];
+                }
+            }
+        }
+        foreach ($states as $id => $state) {
+            $active = in_array($state, ['registrar', 'rectificar'], true);
+            if (($method === 'registrar' && $active)
+                || ($method !== 'registrar' && !$active)) {
+                throw new Exception('Secuencia aduanera inválida para el conocimiento ' . $id);
+            }
+        }
+        $generator = new SimpleXmlGeneratorDesconsolidado($operation, [
+            'environment' => $this->config['environment'],
+        ]);
+        $validation = $generator->validateLocalData($method, $ids);
+        if (!($validation['is_valid'] ?? false)) {
+            throw new Exception(implode(' | ', $validation['errors'] ?? ['Datos incompletos.']));
+        }
+
+        $transactionId = $this->generateTransactionId();
+        $soapMethod = match ($method) {
+            'registrar' => 'RegistrarTitulosDesconsolidador',
+            'rectificar' => 'RectificarTitulosDesconsolidador',
+            'eliminar' => 'EliminarTitulosDesconsolidador',
+        };
+        $transaction = WebserviceTransaction::create([
+            'company_id' => $this->company->id,
+            'user_id' => $this->user->id,
+            'voyage_id' => null,
+            'transaction_id' => $transactionId,
+            'webservice_type' => 'desconsolidado',
+            'country' => 'AR',
+            'webservice_url' => $this->config['webservice_url'],
+            'soap_action' => $this->config["soap_action_{$method}"],
+            'status' => 'pending',
+            'environment' => $this->config['environment'],
+            'certificate_used' => $this->company->certificate_path
+                ?: $this->company->getCertificatePathForCountry('argentina'),
+            'bill_of_lading_count' => $bills->count(),
+            'container_count' => $this->countContainers($bills),
+            'additional_metadata' => [
+                'deconsolidation_operation_id' => $operation->id,
+                'argentina_voyage_id' => $operation->argentina_voyage_id,
+                'method' => $method,
+                'bill_ids' => $ids,
+                'bill_numbers' => $bills->pluck('bill_number')->values()->all(),
+            ],
+        ]);
+        try {
+            $xml = match ($method) {
+                'registrar' => $generator->generateRegistrar($transactionId, $ids),
+                'rectificar' => $generator->generateRectificar($transactionId, $ids),
+                'eliminar' => $generator->generateEliminar($transactionId, $ids),
+            };
+            $transaction->update(['request_xml' => $xml, 'status' => 'sending', 'sent_at' => now()]);
+            $result = $this->sendSoapRequest($transaction, $xml, $soapMethod, $method);
+            $transaction->update([
+                'status' => $result['success'] ? 'success' : 'error',
+                'external_reference' => $result['identifier'] ?? null,
+                'confirmation_number' => $result['identifier'] ?? null,
+                'error_message' => $result['error_message'] ?? null,
+                'error_details' => $result['success'] ? null : ($result['details'] ?? []),
+                'response_at' => now(),
+            ]);
+            return array_merge($result, ['transaction_id' => $transaction->id]);
+        } catch (\Throwable $exception) {
+            // Antes de transmitir, una falla local es definitiva y no ha
+            // llegado a Aduana. Después de iniciar el transporte, el resultado
+            // puede ser incierto: nunca reintentar automáticamente.
+            $transmissionStarted = $transaction->sent_at !== null;
+            $transaction->update([
+                'status' => $transmissionStarted ? 'sending' : 'error',
+                'error_message' => ($transmissionStarted
+                    ? 'Resultado aduanero no confirmado: '
+                    : 'Error local antes de la transmisión: ') . $exception->getMessage(),
+            ]);
+            throw $exception;
+        }
     }
 
     /**
