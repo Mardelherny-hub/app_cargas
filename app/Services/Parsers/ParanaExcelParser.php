@@ -224,11 +224,9 @@ class ParanaExcelParser implements ManifestParserInterface
                 // Crear BL solo si no existe
                 $blNumber = $rowData['BL_NUMBER'];
                 if (!isset($processedBLs[$blNumber])) {
-                    // AGREGAR: Verificar si ya existe en base de datos
-                    $existingBL = BillOfLading::where('bill_number', $blNumber)->first();
-                    
-                   // VALIDACIÓN: Verificar si ya existe BL duplicado
-                    $existingBL = BillOfLading::where('bill_number', $blNumber)->first();
+                    // La unicidad se valida dentro del embarque actual, no globalmente.
+                    $existingBL = BillOfLading::where('shipment_id', $shipment->id)
+                        ->where('bill_number', $blNumber)->first();
 
                     if ($existingBL) {
                         throw new \Exception("Ya existe un conocimiento de embarque con número: {$blNumber}.");
@@ -605,9 +603,10 @@ class ParanaExcelParser implements ManifestParserInterface
             ], $shipment->voyage->company_id, (int) $dischargePort->country_id);
         }
 
-        // VALIDACIÓN: Verificar si ya existe bill of lading con este número
+        // Permitir el mismo número en otros embarques o viajes.
         $billNumber = $data['BL_NUMBER'];
-        $existingBill = BillOfLading::where('bill_number', $billNumber)->first();
+        $existingBill = BillOfLading::where('shipment_id', $shipment->id)
+            ->where('bill_number', $billNumber)->first();
         if ($existingBill) {
             throw new \Exception("Ya existe un conocimiento de embarque con número: {$billNumber}.");
         }
