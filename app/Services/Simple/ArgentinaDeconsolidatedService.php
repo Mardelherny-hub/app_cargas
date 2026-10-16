@@ -271,6 +271,19 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             };
             $transaction->update(['request_xml' => $xml, 'status' => 'sending', 'sent_at' => now()]);
             $result = $this->sendSoapRequest($transaction, $xml, $soapMethod, $method);
+            // Sin respuesta XML no hay evidencia de rechazo: Aduana pudo
+            // procesar la solicitud antes del error de transporte.
+            if (!$result['success'] && empty($transaction->response_xml)) {
+                $transaction->update([
+                    'status' => 'sending',
+                    'error_message' => 'Resultado incierto; consultar Aduana antes de reintentar.',
+                    'error_details' => $result['details'] ?? [],
+                ]);
+                return array_merge($result, [
+                    'transaction_id' => $transaction->id,
+                    'error_message' => 'Resultado incierto. No reenviar sin verificar Aduana.',
+                ]);
+            }
             $transaction->update([
                 'status' => $result['success'] ? 'success' : 'error',
                 'external_reference' => $result['identifier'] ?? null,
