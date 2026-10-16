@@ -8,6 +8,9 @@ use App\Models\DeconsolidationOperation;
 use App\Models\WebserviceTransaction;
 use App\Services\Webservice\Argentina\SimpleXmlGeneratorDesconsolidado;
 use App\Services\Simple\WebserviceEnvironment;
+use App\Services\Simple\ArgentinaDeconsolidatedService;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 use App\Traits\UserHelper;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -221,6 +224,39 @@ class DeconsolidationOperationController extends Controller
         return redirect()->route('company.simple.desconsolidado.operations.show', [
             'operation' => $record->id,
         ])->with('success', 'Validación local aprobada. Esto NO registra títulos en Aduana.');
+    }
+
+    public function transmit(Request $request, int $operation): RedirectResponse
+    {
+        $company = $this->authorizedCompany();
+        $record = DeconsolidationOperation::query()
+            ->forCompany((int) $company->id)->findOrFail($operation);
+        $data = $request->validate([
+            'method' => ['required', 'in:registrar,rectificar,eliminar'],
+            'bill_ids' => ['required', 'array', 'min:1'],
+            'bill_ids.*' => ['required', 'integer', 'distinct', 'min:1'],
+            'confirmation' => ['required', 'accepted'],
+        ]);
+        try {
+            $result = (new ArgentinaDeconsolidatedService(
+                $company, $this->getCurrentUser()
+            ))->ejecutarExpediente($record, $data['method'], $data['bill_ids']);
+            return redirect()->route('company.simple.desconsolidado.operations.show', [
+                'operation' => $record->id,
+            ])->with($result['success'] ? 'success' : 'error',
+                $result['success']
+                    ? 'Aduana aceptó la operación. Transacción: ' . $result['transaction_id']
+                    : 'Aduana rechazó la operación. Revisá el historial de transmisiones.');
+        } catch (Throwable $exception) {
+            Log::error('ATA-DESC: resultado de transmisión no confirmado', [
+                'operation_id' => $record->id,
+                'method' => $data['method'],
+                'error' => $exception->getMessage(),
+            ]);
+            return redirect()->route('company.simple.desconsolidado.operations.show', [
+                'operation' => $record->id,
+            ])->with('error', 'No se confirmó la operación. No reintentar sin revisar el historial y Aduana.');
+        }
     }
 
     private function authorizedCompany(): Company
