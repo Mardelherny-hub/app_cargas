@@ -5,21 +5,24 @@ namespace App\Http\Controllers\Company\Simple;
 use App\Http\Controllers\Controller;
 use App\Models\BillOfLading;
 use App\Models\Container;
+use App\Models\ContainerType;
 use App\Models\DeconsolidationOperation;
 use App\Models\ShipmentItem;
 use App\Traits\UserHelper;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
- * Vinculación ATA-DESC de contenedores existentes con líneas de mercadería.
+ * Vinculación ATA-DESC de contenedores con líneas de mercadería.
  *
- * El catálogo de contenedores es global. Este flujo nunca crea ni modifica
- * un contenedor físico, y no inventa pesos/cantidades para el pivote.
- * No realiza ninguna operación ante Aduana.
+ * El catálogo físico es global: se reutilizan contenedores existentes sin
+ * modificarlos y se registran los nuevos solo con datos declarados.
+ * Nunca se inventan cantidades/pesos del pivote ni se transmite a Aduana.
  */
 class DeconsolidationContainerLinkController extends Controller
 {
@@ -157,6 +160,219 @@ class DeconsolidationContainerLinkController extends Controller
                     : "El contenedor {$container->container_number} ya estaba "
                         . "vinculado a la línea {$item->line_number}; "
                         . 'no se duplicó ni se modificó su ficha.'
+            );
+    }
+
+    /**
+     * Formulario de alta excepcional cuando el número todavía no existe
+     * en el catálogo global. No modifica contenedores ya registrados.
+     */
+    public function register(int $operation, int $bill, int $item): View
+    {
+        [$company, $operation, $bill, $item] = $this->authorizedItem(
+            $operation, $bill, $item
+        );
+
+        $containerTypes = ContainerType::query()
+            ->where('active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
+
+        return view(
+            'company.simple.desconsolidado.operations.bills.items.containers.register',
+            compact('company', 'operation', 'bill', 'item', 'containerTypes')
+        );
+    }
+
+    /**
+     * Crea el contenedor físico nuevo y su vínculo a la línea en una sola
+     * transacción. Se exige estado operativo declarado expresamente para
+     * no guardar los valores V/available predeterminados como hechos reales.
+     */
+    public function storeNew(
+        Request $request,
+        int $operation,
+        int $bill,
+        int $item
+    ): RedirectResponse {
+        [, $operation, $bill, $item] = $this->authorizedItem(
+            $operation, $bill, $item
+        );
+
+        foreach (['container_number', 'argentina_container_code'] as $field) {
+            if (is_string($request->input($field))) {
+                $value = strtoupper(trim($request->input($field)));
+                $request->merge([
+                    $field => $field === 'container_number' || $value !== ''
+                        ? $value
+                        : null,
+                ]);
+            }
+        }
+
+        foreach (['acep', 'shipper_seal'] as $field) {
+            if (is_string($request->input($field))) {
+                $value = trim($request->input($field));
+                $request->merge([$field => $value === '' ? null : $value]);
+            }
+        }
+
+        $data = $request->validate([
+            'container_number' => ['required', 'string', 'max:15'],
+            'container_type_id' => [
+                'nullable', 'integer',
+                Rule::exists('container_types', 'id')
+                    ->where(fn ($query) => $query->where('active', true)),
+            ],
+            // Enums existentes en la tabla containers, no inferidos del BL.
+            'condition' => ['required', Rule::in(['V', 'D', 'S', 'P', 'L', 'R'])],
+            'operational_status' => [
+                'required',
+                Rule::in([
+                    'available', 'allocated', 'loading', 'loaded', 'in_transit',
+                    'discharging', 'empty', 'maintenance', 'inspection', 'quarantine',
+                ]),
+            ],
+            // Las columnas reales permiten NULL: desconocido nunca es cero.
+            'tare_weight_kg' => [
+                'nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:999999.99',
+            ],
+            'max_gross_weight_kg' => [
+                'nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:999999.99',
+            ],
+            // Opcionales AFIP: únicamente lo que consta en el documento.
+            'argentina_container_code' => ['nullable', 'string', 'max:4'],
+            'shipper_seal' => ['nullable', 'string', 'max:35'],
+            'csc_expiry_date' => ['nullable', 'date_format:Y-m-d'],
+            'acep' => ['nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/'],
+        ], [
+            'container_number.required' => 'Ingresá el número real del contenedor.',
+            'container_number.max' => 'El número admite hasta 15 caracteres.',
+            'container_type_id.exists' =>
+                'Seleccioná un tipo de contenedor activo del catálogo.',
+            'condition.required' =>
+                'Indicá el estado físico real del contenedor.',
+            'operational_status.required' =>
+                'Indicá el estado operativo real del contenedor.',
+            'tare_weight_kg.decimal' => 'La tara admite hasta dos decimales.',
+            'max_gross_weight_kg.decimal' =>
+                'El peso bruto máximo admite hasta dos decimales.',
+            'argentina_container_code.max' =>
+                'El código de características AFIP admite hasta 4 caracteres.',
+            'shipper_seal.max' =>
+                'El precinto de origen admite hasta 35 caracteres para ATA-DESC.',
+            'acep.regex' => 'ACEP solo puede contener letras y números.',
+            'acep.max' => 'ACEP admite hasta 20 caracteres.',
+            'csc_expiry_date.date_format' =>
+                'El vencimiento CSC debe tener una fecha válida (AAAA-MM-DD).',
+        ]);
+
+        if (!empty($data['csc_expiry_date']) && !empty($data['acep'])) {
+            throw ValidationException::withMessages([
+                'acep' =>
+                    'Para ATA-DESC informá vencimiento CSC o ACEP, nunca ambos.',
+            ]);
+        }
+
+        if (
+            isset($data['tare_weight_kg'], $data['max_gross_weight_kg'])
+            && (float) $data['tare_weight_kg']
+                > (float) $data['max_gross_weight_kg']
+        ) {
+            throw ValidationException::withMessages([
+                'max_gross_weight_kg' =>
+                    'El peso bruto máximo no puede ser menor que la tara declarada.',
+            ]);
+        }
+
+        try {
+            $container = DB::transaction(function () use (
+                $operation, $bill, $item, $data
+            ) {
+                $lockedBill = $operation->billsOfLading()
+                    ->whereNull('shipment_id')
+                    ->lockForUpdate()
+                    ->findOrFail($bill->id);
+                $this->assertEditableBill($lockedBill, $operation);
+
+                $lockedItem = $lockedBill->shipmentItems()
+                    ->lockForUpdate()
+                    ->findOrFail($item->id);
+                $this->assertContainerizedDraft($lockedItem);
+
+                // La ficha física es global. Si el número ya existe,
+                // exigir el circuito de vinculación sin tocar su contenido.
+                if (Container::query()
+                    ->where('container_number', $data['container_number'])
+                    ->exists()) {
+                    throw ValidationException::withMessages([
+                        'container_number' =>
+                            'Este contenedor ya existe en el catálogo. '
+                            . 'Usá Vincular contenedor existente; no se modificó su ficha.',
+                    ]);
+                }
+
+                $container = Container::create([
+                    'container_number' => $data['container_number'],
+                    'container_type_id' => $data['container_type_id'] ?? null,
+                    'condition' => $data['condition'],
+                    'operational_status' => $data['operational_status'],
+                    'tare_weight_kg' => $data['tare_weight_kg'] ?? null,
+                    'max_gross_weight_kg' => $data['max_gross_weight_kg'] ?? null,
+                    'argentina_container_code' =>
+                        $data['argentina_container_code'] ?? null,
+                    'shipper_seal' => $data['shipper_seal'] ?? null,
+                    'csc_expiry_date' => $data['csc_expiry_date'] ?? null,
+                    'acep' => $data['acep'] ?? null,
+                    // El único H/P declarado corresponde a esta línea.
+                    // El XML ATA-DESC usa siempre el H/P contextual del ítem.
+                    'container_condition' =>
+                        strtoupper(trim((string) $lockedItem->container_condition)),
+                    'active' => true,
+                    'blocked' => false,
+                    'created_by_user_id' => $this->getCurrentUser()?->id,
+                ]);
+
+                // Distribución física desconocida: todos los pesos/cantidades
+                // del pivote permanecen NULL por diseño del esquema actual.
+                $lockedItem->containers()->attach($container->id, [
+                    'container_condition' =>
+                        strtoupper(trim((string) $lockedItem->container_condition)),
+                    'created_by_user_id' => $this->getCurrentUser()?->id,
+                ]);
+
+                return $container;
+            });
+        } catch (QueryException $exception) {
+            // Una carrera por el índice único de container_number no debe
+            // terminar en un error genérico, ni reutilizar/alterar otra ficha.
+            if (
+                in_array((string) $exception->getCode(), ['23000', '23505', '19'], true)
+                && Container::query()
+                    ->where('container_number', $data['container_number'])
+                    ->exists()
+            ) {
+                throw ValidationException::withMessages([
+                    'container_number' =>
+                        'El contenedor fue registrado por otra operación. '
+                        . 'Volvé y vinculalo desde el catálogo existente.',
+                ]);
+            }
+
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('company.simple.desconsolidado.operations.show', [
+                'operation' => $operation->id,
+            ])
+            ->with(
+                'success',
+                "Contenedor {$container->container_number} registrado y vinculado "
+                . "a la línea {$item->line_number} como borrador. "
+                . 'No se inventaron pesos ni cantidades distribuidas. '
+                . 'La documentación y el resto de las validaciones '
+                . 'deberán completarse antes de cualquier envío.'
             );
     }
 
