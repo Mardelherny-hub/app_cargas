@@ -125,6 +125,25 @@
                                 </button>
                             </div>
                         </form>
+
+                        <div class="border-t border-slate-100 bg-slate-50 px-5 py-5 sm:px-7">
+                            <p class="text-sm font-bold text-slate-900">¿El contenedor todavía no existe en el catálogo?</p>
+                            <p class="mt-1 text-sm leading-6 text-slate-600">
+                                Si tenés su número y los estados físicos y operativos reales, podés registrarlo antes de asociarlo.
+                                El alta crea una ficha global: no la uses para un número que ya esté registrado.
+                            </p>
+                            <a href="{{ route('company.simple.desconsolidado.operations.bills.items.containers.register', [
+                                    'operation' => $operation->id,
+                                    'bill' => $bill->id,
+                                    'item' => $item->id,
+                                ]) }}"
+                               class="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 sm:w-auto">
+                                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/>
+                                </svg>
+                                Registrar contenedor nuevo
+                            </a>
+                        </div>
                     </section>
 
                     <section aria-labelledby="linked-heading" class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
