@@ -188,6 +188,106 @@ class DeconsolidationBillItemController extends Controller
             );
     }
 
+    public function edit(int $operation, int $bill, int $item): View
+    {
+        [$company, $operationRecord, $billRecord] = $this->authorizedBill($operation, $bill);
+        $line = $billRecord->shipmentItems()->findOrFail($item);
+        abort_unless($line->status === 'draft', 409);
+        $cargoTypes = CargoType::query()->where('active', true)
+            ->where('allows_deconsolidation', true)->orderBy('name')->get(['id', 'name']);
+        return view('company.simple.desconsolidado.operations.bills.items.create', [
+            'company' => $company, 'operation' => $operationRecord,
+            'bill' => $billRecord, 'cargoTypes' => $cargoTypes, 'editingItem' => $line,
+        ]);
+    }
+
+    public function update(Request $request, int $operation, int $bill, int $item): RedirectResponse
+    {
+        [, $operationRecord, $billRecord] = $this->authorizedBill($operation, $bill);
+        $line = $billRecord->shipmentItems()->findOrFail($item);
+        abort_unless($line->status === 'draft', 409);
+        $fields = ['line_number', 'cargo_type_id', 'packaging_code', 'container_condition',
+            'package_quantity', 'gross_weight_kg', 'item_description', 'cargo_marks',
+            'tariff_position', 'is_secure_logistics_operator', 'is_monitored_transit', 'is_renar'];
+        foreach ($fields as $field) {
+            if (is_string($request->input($field))) {
+                $value = trim($request->input($field));
+                $request->merge([$field => in_array($field, [
+                    'packaging_code', 'container_condition', 'tariff_position',
+                    'is_secure_logistics_operator', 'is_monitored_transit', 'is_renar',
+                ], true) ? strtoupper($value) : $value]);
+            }
+        }
+        $data = $request->validate([
+            'line_number' => ['required', 'integer', 'between:1,999'],
+            'cargo_type_id' => ['required', 'integer', Rule::exists('cargo_types', 'id')
+                ->where(fn ($query) => $query->where('active', true)->where('allows_deconsolidation', true))],
+            'packaging_code' => ['required', 'string', 'size:2'],
+            'container_condition' => ['required', 'in:H,P'],
+            'package_quantity' => ['required', 'integer', 'between:1,999999999'],
+            'gross_weight_kg' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'],
+            'item_description' => ['required', 'string', 'max:80'],
+            'cargo_marks' => ['required', 'string', 'max:100'],
+            'tariff_position' => ['required', 'string', 'max:16'],
+            'is_secure_logistics_operator' => ['required', 'in:S,N'],
+            'is_monitored_transit' => ['required', 'in:S,N'],
+            'is_renar' => ['required', 'in:S,N'],
+        ]);
+        $len = mb_strlen($data['tariff_position']);
+        if ((int) $billRecord->getRawOriginal('is_consolidated') !== 1 && ($len < 7 || $len > 15)) {
+            throw ValidationException::withMessages(['tariff_position' => 'La posición arancelaria debe tener entre 7 y 15 caracteres.']);
+        }
+        DB::transaction(function () use ($operationRecord, $billRecord, $item, $data) {
+            $lockedBill = $operationRecord->billsOfLading()->whereNull('shipment_id')
+                ->lockForUpdate()->findOrFail($billRecord->id);
+            $this->assertDraftBill($lockedBill, $operationRecord);
+            $lockedLine = $lockedBill->shipmentItems()->lockForUpdate()->findOrFail($item);
+            abort_unless($lockedLine->status === 'draft', 409);
+            abort_if($lockedBill->shipmentItems()->whereKeyNot($item)
+                ->where('line_number', $data['line_number'])->exists(), 422,
+                'El número de línea ya existe en este conocimiento.');
+            foreach (['tariff_position', 'is_secure_logistics_operator',
+                'is_monitored_transit', 'is_renar'] as $field) {
+                abort_if($lockedBill->shipmentItems()->whereKeyNot($item)
+                    ->where($field, '!=', $data[$field])->exists(), 422,
+                    'Los indicadores y la posición arancelaria deben coincidir entre líneas.');
+            }
+            abort_if($lockedLine->containers()->exists() && (
+                $data['packaging_code'] !== $lockedLine->packaging_code ||
+                $data['container_condition'] !== $lockedLine->container_condition), 409,
+                'Desvinculá primero los contenedores antes de cambiar embalaje o condición.');
+            $lockedLine->fill($data);
+            $lockedLine->last_updated_by_user_id = $this->getCurrentUser()?->id;
+            $lockedLine->saveQuietly();
+        });
+        return redirect()->route('company.simple.desconsolidado.operations.show', [
+            'operation' => $operation,
+        ])->with('success', 'Línea borrador actualizada.');
+    }
+
+    /** Elimina una línea local en borrador, sin borrar fichas globales. */
+    public function destroy(int $operation, int $bill, int $item): RedirectResponse
+    {
+        [, $operationRecord, $billRecord] = $this->authorizedBill($operation, $bill);
+
+        DB::transaction(function () use ($operationRecord, $billRecord, $item) {
+            $lockedBill = $operationRecord->billsOfLading()
+                ->whereNull('shipment_id')->lockForUpdate()
+                ->findOrFail($billRecord->id);
+            $this->assertDraftBill($lockedBill, $operationRecord);
+
+            $line = $lockedBill->shipmentItems()->lockForUpdate()->findOrFail($item);
+            abort_unless($line->status === 'draft', 409, 'La línea ya no es un borrador.');
+
+            $line->containers()->detach();
+            $line->deleteQuietly();
+        });
+
+        return redirect()->route('company.simple.desconsolidado.operations.show', [
+            'operation' => $operation,
+        ])->with('success', 'Línea borrador eliminada; los contenedores del catálogo se conservaron.');
+    }
+
     /**
      * El acceso depende del expediente autenticado, nunca de un BL global.
      *

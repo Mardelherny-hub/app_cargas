@@ -11,13 +11,14 @@
                 <span aria-hidden="true">/</span>
                 <span class="text-slate-900">Conocimiento hijo</span>
             </nav>
-            <h1 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">Agregar conocimiento hijo</h1>
+            <h1 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{{ $editingBill ? 'Editar conocimiento hijo' : 'Agregar conocimiento hijo' }}</h1>
             <p class="mt-1 text-sm text-slate-500">{{ $company->legal_name }}</p>
         </div>
     </x-slot>
 
     @php
         // Se reutilizan los buscadores reales; nunca se precarga el catálogo de puertos/clientes.
+        $editingBill = $editingBill ?? null;
         $clientSearchUrl = route('company.clients.search');
         $portSearchUrl = route('company.bills-of-lading.ports.search');
         $operationUrl = route('company.simple.desconsolidado.operations.show', ['operation' => $operation->id]);
@@ -67,9 +68,10 @@
             @endif
 
             <div class="grid gap-6 lg:grid-cols-12 lg:items-start">
-                <form id="ata-desc-house-form" action="{{ route('company.simple.desconsolidado.operations.bills.store', ['operation' => $operation->id]) }}"
+                <form id="ata-desc-house-form" action="{{ ($editingBill ? route('company.simple.desconsolidado.operations.bills.update', ['operation' => $operation->id, 'bill' => $editingBill->id]) : route('company.simple.desconsolidado.operations.bills.store', ['operation' => $operation->id])) }}"
                       method="POST" class="space-y-6 lg:col-span-8" autocomplete="off">
                     @csrf
+                    @if($editingBill) @method('PUT') @endif
 
                     <section aria-labelledby="identity-heading" class="overflow-visible rounded-3xl border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-100 px-5 py-5 sm:px-7">
@@ -83,7 +85,7 @@
                                     Número del conocimiento hijo <span class="text-red-600">*</span>
                                 </label>
                                 <input id="bill_number" name="bill_number" type="text" maxlength="18" required
-                                       value="{{ old('bill_number') }}" placeholder="Número tal como figura en el BL"
+                                       value="{{ old('bill_number', $editingBill?->bill_number) }}" placeholder="Número tal como figura en el BL"
                                        aria-invalid="{{ $errors->has('bill_number') ? 'true' : 'false' }}"
                                        class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
                                 <p class="mt-1.5 text-xs text-slate-500">Hasta 18 caracteres. El conocimiento madre ya está asociado a este expediente.</p>
@@ -99,7 +101,7 @@
                                         </label>
                                         <p id="{{ $field['name'] }}_help" class="mt-1 text-xs leading-5 text-slate-500">{{ $field['help'] }}</p>
                                         <input type="search" id="{{ $field['name'] }}_search" name="{{ $field['name'] }}_search"
-                                               value="{{ old($field['name'] . '_search') }}"
+                                               value="{{ old($field['name'] . '_search', $editingBill ? match($field['name']) { 'shipper_id' => $editingBill->shipper?->legal_name, 'consignee_id' => $editingBill->consignee?->legal_name, 'loading_port_id' => $editingBill->loadingPort?->name, 'discharge_port_id' => $editingBill->dischargePort?->name, default => null } : null) }}"
                                                role="combobox" aria-autocomplete="list" aria-expanded="false"
                                                aria-controls="{{ $field['name'] }}_options"
                                                aria-describedby="{{ $field['name'] }}_help"
@@ -107,7 +109,7 @@
                                                placeholder="{{ $field['placeholder'] }}" required autocomplete="off"
                                                class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                                                data-lookup-input/>
-                                        <input type="hidden" name="{{ $field['name'] }}" value="{{ old($field['name']) }}" data-lookup-id/>
+                                        <input type="hidden" name="{{ $field['name'] }}" value="{{ old($field['name'], $editingBill?->{$field['name']}) }}" data-lookup-id/>
                                         <div id="{{ $field['name'] }}_options" role="listbox"
                                              aria-label="Resultados para {{ $field['label'] }}"
                                              class="absolute z-30 mt-1 hidden max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
@@ -136,7 +138,7 @@
                                         </label>
                                         <p id="{{ $field['name'] }}_help" class="mt-1 text-xs leading-5 text-slate-500">{{ $field['help'] }}</p>
                                         <input type="search" id="{{ $field['name'] }}_search" name="{{ $field['name'] }}_search"
-                                               value="{{ old($field['name'] . '_search') }}"
+                                               value="{{ old($field['name'] . '_search', $editingBill ? match($field['name']) { 'shipper_id' => $editingBill->shipper?->legal_name, 'consignee_id' => $editingBill->consignee?->legal_name, 'loading_port_id' => $editingBill->loadingPort?->name, 'discharge_port_id' => $editingBill->dischargePort?->name, default => null } : null) }}"
                                                role="combobox" aria-autocomplete="list" aria-expanded="false"
                                                aria-controls="{{ $field['name'] }}_options"
                                                aria-describedby="{{ $field['name'] }}_help"
@@ -144,7 +146,7 @@
                                                placeholder="{{ $field['placeholder'] }}" required autocomplete="off"
                                                class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                                                data-lookup-input/>
-                                        <input type="hidden" name="{{ $field['name'] }}" value="{{ old($field['name']) }}" data-lookup-id/>
+                                        <input type="hidden" name="{{ $field['name'] }}" value="{{ old($field['name'], $editingBill?->{$field['name']}) }}" data-lookup-id/>
                                         <div id="{{ $field['name'] }}_options" role="listbox"
                                              aria-label="Resultados para {{ $field['label'] }}"
                                              class="absolute z-30 mt-1 hidden max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
@@ -170,7 +172,7 @@
                                         class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                     <option value="">Seleccioná el tipo de carga</option>
                                     @foreach($cargoTypes as $type)
-                                        <option value="{{ $type->id }}" @selected((string) old('primary_cargo_type_id') === (string) $type->id)>{{ $type->name }}</option>
+                                        <option value="{{ $type->id }}" @selected((string) old('primary_cargo_type_id', $editingBill?->primary_cargo_type_id) === (string) $type->id)>{{ $type->name }}</option>
                                     @endforeach
                                 </select>
                                 @error('primary_cargo_type_id') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
@@ -182,7 +184,7 @@
                             <div>
                                 <label for="gross_weight_kg" class="block text-sm font-semibold text-slate-900">Peso bruto declarado (kg) <span class="text-red-600">*</span></label>
                                 <input id="gross_weight_kg" name="gross_weight_kg" type="number" inputmode="decimal"
-                                       min="0" max="9999999999.99" step="0.01" required value="{{ old('gross_weight_kg') }}"
+                                       min="0" max="9999999999.99" step="0.01" required value="{{ old('gross_weight_kg', $editingBill?->gross_weight_kg) }}"
                                        placeholder="Ej.: 125.75" class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
                                 <p class="mt-1.5 text-xs text-slate-500">Usá hasta dos decimales, con punto (por ejemplo, 125.75), según el peso declarado.</p>
                                 @error('gross_weight_kg') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
@@ -192,13 +194,13 @@
                                 <label for="cargo_description" class="block text-sm font-semibold text-slate-900">Descripción de la mercadería <span class="text-red-600">*</span></label>
                                 <textarea id="cargo_description" name="cargo_description" rows="4" required
                                           placeholder="Describí la mercadería según el conocimiento"
-                                          class="mt-2 block w-full rounded-xl border-slate-300 px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('cargo_description') }}</textarea>
+                                          class="mt-2 block w-full rounded-xl border-slate-300 px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('cargo_description', $editingBill?->cargo_description) }}</textarea>
                                 @error('cargo_description') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                             </div>
 
                             <div>
                                 <label for="cargo_marks" class="block text-sm font-semibold text-slate-900">Marcas de los bultos <span class="text-red-600">*</span></label>
-                                <input id="cargo_marks" name="cargo_marks" type="text" maxlength="80" required value="{{ old('cargo_marks') }}"
+                                <input id="cargo_marks" name="cargo_marks" type="text" maxlength="80" required value="{{ old('cargo_marks', $editingBill?->cargo_marks) }}"
                                        placeholder="Marcas como figuran en la documentación"
                                        class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
                                 <p class="mt-1.5 text-xs text-slate-500">Hasta 80 caracteres.</p>
@@ -211,8 +213,8 @@
                                     <select id="is_consolidated" name="is_consolidated" required
                                             class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <option value="">Elegí una respuesta</option>
-                                        <option value="S" @selected(old('is_consolidated') === 'S')>Sí</option>
-                                        <option value="N" @selected(old('is_consolidated') === 'N')>No</option>
+                                        <option value="S" @selected(old('is_consolidated', $editingBill ? ((int) $editingBill->getRawOriginal('is_consolidated') === 1 ? 'S' : 'N') : null) === 'S')>Sí</option>
+                                        <option value="N" @selected(old('is_consolidated', $editingBill ? ((int) $editingBill->getRawOriginal('is_consolidated') === 1 ? 'S' : 'N') : null) === 'N')>No</option>
                                     </select>
                                     @error('is_consolidated') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
@@ -221,8 +223,8 @@
                                     <select id="is_transit_transshipment" name="is_transit_transshipment" required
                                             class="mt-2 block min-h-12 w-full rounded-xl border-slate-300 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                         <option value="">Elegí una respuesta</option>
-                                        <option value="S" @selected(old('is_transit_transshipment') === 'S')>Sí</option>
-                                        <option value="N" @selected(old('is_transit_transshipment') === 'N')>No</option>
+                                        <option value="S" @selected(old('is_transit_transshipment', $editingBill?->is_transit_transshipment) === 'S')>Sí</option>
+                                        <option value="N" @selected(old('is_transit_transshipment', $editingBill?->is_transit_transshipment) === 'N')>No</option>
                                     </select>
                                     @error('is_transit_transshipment') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>

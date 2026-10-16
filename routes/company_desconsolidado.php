@@ -32,6 +32,10 @@ Route::prefix('simple/webservices/desconsolidado')
                 ->whereNumber('operation')
                 ->name('company.simple.desconsolidado.operations.show');
 
+            Route::put('/{operation}', [DeconsolidationOperationController::class, 'update'])
+                ->whereNumber('operation')
+                ->name('company.simple.desconsolidado.operations.update');
+
             // Alta de títulos hijos dentro de un expediente propio.
             // El controlador vuelve a verificar rol y pertenencia por empresa.
             Route::get('/{operation}/bills/create', [DeconsolidationBillController::class, 'create'])
@@ -41,6 +45,17 @@ Route::prefix('simple/webservices/desconsolidado')
             Route::post('/{operation}/bills', [DeconsolidationBillController::class, 'store'])
                 ->whereNumber('operation')
                 ->name('company.simple.desconsolidado.operations.bills.store');
+
+            Route::get('/{operation}/bills/{bill}/edit', [DeconsolidationBillController::class, 'edit'])
+                ->whereNumber('operation')->whereNumber('bill')
+                ->name('company.simple.desconsolidado.operations.bills.edit');
+            Route::put('/{operation}/bills/{bill}', [DeconsolidationBillController::class, 'update'])
+                ->whereNumber('operation')->whereNumber('bill')
+                ->name('company.simple.desconsolidado.operations.bills.update');
+
+            Route::delete('/{operation}/bills/{bill}', [DeconsolidationBillController::class, 'destroy'])
+                ->whereNumber('operation')->whereNumber('bill')
+                ->name('company.simple.desconsolidado.operations.bills.destroy');
 
             // Mercadería del conocimiento hijo, siempre dentro del expediente.
             // La autorización por empresa, título y estado borrador está
@@ -54,6 +69,17 @@ Route::prefix('simple/webservices/desconsolidado')
                 ->whereNumber('operation')
                 ->whereNumber('bill')
                 ->name('company.simple.desconsolidado.operations.bills.items.store');
+
+            Route::get('/{operation}/bills/{bill}/items/{item}/edit', [DeconsolidationBillItemController::class, 'edit'])
+                ->whereNumber('operation')->whereNumber('bill')->whereNumber('item')
+                ->name('company.simple.desconsolidado.operations.bills.items.edit');
+            Route::put('/{operation}/bills/{bill}/items/{item}', [DeconsolidationBillItemController::class, 'update'])
+                ->whereNumber('operation')->whereNumber('bill')->whereNumber('item')
+                ->name('company.simple.desconsolidado.operations.bills.items.update');
+
+            Route::delete('/{operation}/bills/{bill}/items/{item}', [DeconsolidationBillItemController::class, 'destroy'])
+                ->whereNumber('operation')->whereNumber('bill')->whereNumber('item')
+                ->name('company.simple.desconsolidado.operations.bills.items.destroy');
 
             // Vincular contenedores ya registrados a una línea contenedorizada.
             // El controlador valida el expediente, BL y línea de la empresa.
@@ -69,6 +95,10 @@ Route::prefix('simple/webservices/desconsolidado')
                 ->whereNumber('bill')
                 ->whereNumber('item')
                 ->name('company.simple.desconsolidado.operations.bills.items.containers.store');
+
+            Route::delete('/{operation}/bills/{bill}/items/{item}/containers/{container}', [DeconsolidationContainerLinkController::class, 'destroy'])
+                ->whereNumber('operation')->whereNumber('bill')->whereNumber('item')->whereNumber('container')
+                ->name('company.simple.desconsolidado.operations.bills.items.containers.destroy');
 
             // Alta de contenedor nuevo, con datos físicos y documentales declarados.
             // El controlador comprueba pertenencia, estado borrador y duplicados
