@@ -32,6 +32,10 @@ Route::prefix('simple/webservices/desconsolidado')
                 ->whereNumber('operation')
                 ->name('company.simple.desconsolidado.operations.show');
 
+            Route::post('/{operation}/preflight', [DeconsolidationOperationController::class, 'preflight'])
+                ->whereNumber('operation')
+                ->name('company.simple.desconsolidado.operations.preflight');
+
             Route::put('/{operation}', [DeconsolidationOperationController::class, 'update'])
                 ->whereNumber('operation')
                 ->name('company.simple.desconsolidado.operations.update');
