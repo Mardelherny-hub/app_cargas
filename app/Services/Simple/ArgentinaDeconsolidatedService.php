@@ -186,36 +186,6 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         if ($bills->count() !== count($ids)) {
             throw new Exception('Hay conocimientos que no pertenecen al expediente.');
         }
-        $history = WebserviceTransaction::query()
-            ->where('company_id', $this->company->id)
-            ->where('webservice_type', 'desconsolidado')
-            ->where('country', 'AR')
-            ->whereNull('voyage_id')
-            ->orderBy('id')->get();
-        $states = array_fill_keys($ids, null);
-        foreach ($history as $entry) {
-            $meta = $entry->additional_metadata ?? [];
-            if ((int) ($meta['deconsolidation_operation_id'] ?? 0) !== (int) $operation->id) {
-                continue;
-            }
-            $shared = array_intersect($ids, array_map('intval', $meta['bill_ids'] ?? []));
-            if ($shared && in_array($entry->status, ['pending', 'sending'], true)) {
-                throw new Exception('Existe un envío pendiente: consulte su resultado antes de reintentar.');
-            }
-            if ($entry->status === 'success' && in_array($meta['method'] ?? '',
-                ['registrar', 'rectificar', 'eliminar'], true)) {
-                foreach ($shared as $id) {
-                    $states[$id] = $meta['method'];
-                }
-            }
-        }
-        foreach ($states as $id => $state) {
-            $active = in_array($state, ['registrar', 'rectificar'], true);
-            if (($method === 'registrar' && $active)
-                || ($method !== 'registrar' && !$active)) {
-                throw new Exception('Secuencia aduanera inválida para el conocimiento ' . $id);
-            }
-        }
         $generator = new SimpleXmlGeneratorDesconsolidado($operation, [
             'environment' => $this->config['environment'],
         ]);
@@ -230,29 +200,69 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'rectificar' => 'RectificarTitulosDesconsolidador',
             'eliminar' => 'EliminarTitulosDesconsolidador',
         };
-        $transaction = WebserviceTransaction::create([
-            'company_id' => $this->company->id,
-            'user_id' => $this->user->id,
-            'voyage_id' => null,
-            'transaction_id' => $transactionId,
-            'webservice_type' => 'desconsolidado',
-            'country' => 'AR',
-            'webservice_url' => $this->config['webservice_url'],
-            'soap_action' => $this->config["soap_action_{$method}"],
-            'status' => 'pending',
-            'environment' => $this->config['environment'],
-            'certificate_used' => $this->company->certificate_path
-                ?: $this->company->getCertificatePathForCountry('argentina'),
-            'bill_of_lading_count' => $bills->count(),
-            'container_count' => $this->countContainers($bills),
-            'additional_metadata' => [
-                'deconsolidation_operation_id' => $operation->id,
-                'argentina_voyage_id' => $operation->argentina_voyage_id,
-                'method' => $method,
-                'bill_ids' => $ids,
-                'bill_numbers' => $bills->pluck('bill_number')->values()->all(),
-            ],
-        ]);
+        // Serializar la reserva del expediente con lock de BD antes de
+        // consultar el historial y crear la transacción. No mantener
+        // el lock durante la llamada de red a Aduana.
+        $transaction = \Illuminate\Support\Facades\DB::transaction(function () use (
+            $operation, $ids, $method, $transactionId, $bills
+        ) {
+            DeconsolidationOperation::query()
+                ->where('company_id', $this->company->id)
+                ->lockForUpdate()->findOrFail($operation->id);
+            $history = WebserviceTransaction::query()
+                ->where('company_id', $this->company->id)
+                ->where('webservice_type', 'desconsolidado')
+                ->where('country', 'AR')
+                ->whereNull('voyage_id')
+                ->orderBy('id')->get();
+            $states = array_fill_keys($ids, null);
+            foreach ($history as $entry) {
+                $meta = $entry->additional_metadata ?? [];
+                if ((int) ($meta['deconsolidation_operation_id'] ?? 0) !== (int) $operation->id) {
+                    continue;
+                }
+                $shared = array_intersect($ids, array_map('intval', $meta['bill_ids'] ?? []));
+                if ($shared && in_array($entry->status, ['pending', 'sending'], true)) {
+                    throw new Exception('Existe un envío pendiente: consulte su resultado antes de reintentar.');
+                }
+                if ($entry->status === 'success' && in_array($meta['method'] ?? '',
+                    ['registrar', 'rectificar', 'eliminar'], true)) {
+                    foreach ($shared as $id) {
+                        $states[$id] = $meta['method'];
+                    }
+                }
+            }
+            foreach ($states as $id => $state) {
+                $active = in_array($state, ['registrar', 'rectificar'], true);
+                if (($method === 'registrar' && $active)
+                    || ($method !== 'registrar' && !$active)) {
+                    throw new Exception('Secuencia aduanera inválida para el conocimiento ' . $id);
+                }
+            }
+            return WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'voyage_id' => null,
+                'transaction_id' => $transactionId,
+                'webservice_type' => 'desconsolidado',
+                'country' => 'AR',
+                'webservice_url' => $this->config['webservice_url'],
+                'soap_action' => $this->config["soap_action_{$method}"],
+                'status' => 'pending',
+                'environment' => $this->config['environment'],
+                'certificate_used' => $this->company->certificate_path
+                    ?: $this->company->getCertificatePathForCountry('argentina'),
+                'bill_of_lading_count' => $bills->count(),
+                'container_count' => $this->countContainers($bills),
+                'additional_metadata' => [
+                    'deconsolidation_operation_id' => $operation->id,
+                    'argentina_voyage_id' => $operation->argentina_voyage_id,
+                    'method' => $method,
+                    'bill_ids' => $ids,
+                    'bill_numbers' => $bills->pluck('bill_number')->values()->all(),
+                ],
+            ]);
+        });
         try {
             $xml = match ($method) {
                 'registrar' => $generator->generateRegistrar($transactionId, $ids),
