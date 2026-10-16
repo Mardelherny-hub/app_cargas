@@ -358,6 +358,33 @@
                             </svg>
                             <div>
                                 <p class="text-sm font-bold text-amber-900">Los conocimientos se guardan como borradores</p>
+                                @if($operation->billsOfLading->isNotEmpty())
+                                    <form method="POST" action="{{ route('company.simple.desconsolidado.operations.transmit', ['operation' => $operation->id]) }}" class="mt-5 space-y-3 rounded-xl border border-amber-300 bg-white p-4">
+                                        @csrf
+                                        <p class="text-sm font-semibold text-slate-900">Operación ante Aduana Argentina</p>
+                                        <label class="block text-sm font-medium text-slate-800" for="ata-desc-method">Acción</label>
+                                        <select id="ata-desc-method" name="method" required class="w-full rounded-lg border-slate-300">
+                                            <option value="">Elegí la operación</option>
+                                            <option value="registrar">Registrar títulos</option>
+                                            <option value="rectificar">Rectificar títulos registrados</option>
+                                            <option value="eliminar">Eliminar títulos registrados en Aduana</option>
+                                        </select>
+                                        <fieldset class="space-y-2">
+                                            <legend class="text-sm font-semibold text-slate-800">Conocimientos a procesar</legend>
+                                            @foreach($operation->billsOfLading as $bill)
+                                                <label class="flex items-start gap-2 text-sm text-slate-800">
+                                                    <input type="checkbox" name="bill_ids[]" value="{{ $bill->id }}" class="mt-1 rounded border-slate-300"/>
+                                                    <span>{{ $bill->bill_number }}</span>
+                                                </label>
+                                            @endforeach
+                                        </fieldset>
+                                        <label class="flex items-start gap-2 text-sm text-amber-900">
+                                            <input type="checkbox" name="confirmation" value="1" required class="mt-1 rounded border-amber-400"/>
+                                            <span>Confirmo que revisé la información. Esta operación puede modificar registros reales de Aduana.</span>
+                                        </label>
+                                        <button type="submit" class="min-h-11 rounded-xl bg-amber-700 px-4 py-2 text-sm font-bold text-white hover:bg-amber-800">Ejecutar operación aduanera</button>
+                                    </form>
+                                @endif
                                 <form method="POST" action="{{ route('company.simple.desconsolidado.operations.preflight', ['operation' => $operation->id]) }}" class="mt-3">
                                     @csrf
                                     <button type="submit" class="min-h-11 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-bold text-amber-900">Validar datos sin transmitir</button>
@@ -366,7 +393,7 @@
                                     Ya podés agregar conocimientos hijos y cargar sus líneas de mercadería mientras sigan siendo borradores editables.
                                     Podés vincular contenedores ya registrados desde las líneas con embalaje 05 y condición H/P válida.
                                     La edición y el alta de contenedores ya están disponibles; verificá la documentación CSC/ACEP.
-                                    Guardar líneas o vincular contenedores no significa aceptación de Aduana. El envío desde este expediente sigue deshabilitado.
+                                    Guardar líneas o vincular contenedores no significa aceptación de Aduana. La operación aduanera requiere confirmación expresa y genera una transacción auditable.
                                 </p>
                             </div>
                         </div>
