@@ -3,6 +3,7 @@
 use App\Http\Controllers\Company\Simple\ArgentinaDeconsolidatedController;
 use App\Http\Controllers\Company\Simple\DeconsolidationBillController;
 use App\Http\Controllers\Company\Simple\DeconsolidationBillItemController;
+use App\Http\Controllers\Company\Simple\DeconsolidationContainerLinkController;
 use App\Http\Controllers\Company\Simple\DeconsolidationOperationController;
 use App\Http\Controllers\Company\Simple\LegacyDeconsolidationRedirectController;
 use Illuminate\Support\Facades\Route;
@@ -53,6 +54,21 @@ Route::prefix('simple/webservices/desconsolidado')
                 ->whereNumber('operation')
                 ->whereNumber('bill')
                 ->name('company.simple.desconsolidado.operations.bills.items.store');
+
+            // Vincular contenedores ya registrados a una línea contenedorizada.
+            // El controlador valida el expediente, BL y línea de la empresa.
+            // No crea ni modifica fichas globales de contenedores.
+            Route::get('/{operation}/bills/{bill}/items/{item}/containers/create', [DeconsolidationContainerLinkController::class, 'create'])
+                ->whereNumber('operation')
+                ->whereNumber('bill')
+                ->whereNumber('item')
+                ->name('company.simple.desconsolidado.operations.bills.items.containers.create');
+
+            Route::post('/{operation}/bills/{bill}/items/{item}/containers', [DeconsolidationContainerLinkController::class, 'store'])
+                ->whereNumber('operation')
+                ->whereNumber('bill')
+                ->whereNumber('item')
+                ->name('company.simple.desconsolidado.operations.bills.items.containers.store');
         });
 
         // Circuito previo vinculado a Voyage: conservar URI y acciones.
