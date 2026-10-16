@@ -69,6 +69,21 @@ Route::prefix('simple/webservices/desconsolidado')
                 ->whereNumber('bill')
                 ->whereNumber('item')
                 ->name('company.simple.desconsolidado.operations.bills.items.containers.store');
+
+            // Alta de contenedor nuevo, con datos físicos y documentales declarados.
+            // El controlador comprueba pertenencia, estado borrador y duplicados
+            // globales; guarda la unidad y su vínculo en una sola transacción.
+            Route::get('/{operation}/bills/{bill}/items/{item}/containers/register', [DeconsolidationContainerLinkController::class, 'register'])
+                ->whereNumber('operation')
+                ->whereNumber('bill')
+                ->whereNumber('item')
+                ->name('company.simple.desconsolidado.operations.bills.items.containers.register');
+
+            Route::post('/{operation}/bills/{bill}/items/{item}/containers/register', [DeconsolidationContainerLinkController::class, 'storeNew'])
+                ->whereNumber('operation')
+                ->whereNumber('bill')
+                ->whereNumber('item')
+                ->name('company.simple.desconsolidado.operations.bills.items.containers.store-new');
         });
 
         // Circuito previo vinculado a Voyage: conservar URI y acciones.
