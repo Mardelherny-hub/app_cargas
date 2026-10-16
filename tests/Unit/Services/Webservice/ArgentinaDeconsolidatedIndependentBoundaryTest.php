@@ -45,6 +45,38 @@ class ArgentinaDeconsolidatedIndependentBoundaryTest extends TestCase
     }
 
     #[Test]
+    public function independent_flow_rejects_a_bill_outside_its_operation_using_only_memory_database(): void
+    {
+        $previous = config('database.default');
+        config(['database.connections.ata_desc_isolated_test' => [
+            'driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '',
+            'foreign_key_constraints' => false,
+        ], 'database.default' => 'ata_desc_isolated_test']);
+        try {
+            $schema = \Illuminate\Support\Facades\Schema::connection('ata_desc_isolated_test');
+            $schema->create('bills_of_lading', function ($table) {
+                $table->increments('id');
+                $table->unsignedBigInteger('deconsolidation_operation_id')->nullable();
+                $table->unsignedBigInteger('shipment_id')->nullable();
+                $table->softDeletes();
+            });
+            \Illuminate\Support\Facades\DB::connection('ata_desc_isolated_test')
+                ->table('bills_of_lading')->insert([
+                    'id' => 44, 'deconsolidation_operation_id' => 888, 'shipment_id' => null,
+                ]);
+            $operation = new DeconsolidationOperation();
+            $operation->id = 11;
+            $operation->company_id = 101;
+            $this->expectException(\Exception::class);
+            $this->expectExceptionMessage('no pertenecen al expediente');
+            $this->service()->ejecutarExpediente($operation, 'registrar', [44]);
+        } finally {
+            \Illuminate\Support\Facades\DB::purge('ata_desc_isolated_test');
+            config(['database.default' => $previous]);
+        }
+    }
+
+    #[Test]
     public function independent_flow_rejects_empty_selections_before_database_or_network(): void
     {
         $operation = new DeconsolidationOperation();
