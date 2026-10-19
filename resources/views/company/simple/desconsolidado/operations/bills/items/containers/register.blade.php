@@ -59,7 +59,7 @@
             </a>
 
             <section aria-label="Identificación del conocimiento y la línea"
-                     class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-5 text-white shadow-lg sm:p-7">
+                     class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-5 text-white shadow-lg sm:p-7" style="background: #0f172a; color: #fff;">
                 <div class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
                     <div class="min-w-0">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-300">ATA-DESC · Contenedor nuevo</p>
@@ -314,7 +314,7 @@
                 </form>
 
                 <aside aria-label="Información importante" class="space-y-5 lg:col-span-4">
-                    <section class="rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6">
+                    <section class="rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6" style="background: #0f172a; color: #fff;">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-300">Guía para registrar</p>
                         <h2 class="mt-2 text-xl font-bold">Qué debés verificar</h2>
                         <ol class="mt-5 space-y-4 text-sm text-slate-200">
