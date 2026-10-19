@@ -20,7 +20,11 @@
         <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
             @php
                 $user = auth()->user();
-                $company = $user->company ?? null;
+                $company = $user && $user->userable_type === 'App\Models\Company'
+                    ? $user->userable
+                    : ($user && $user->userable_type === 'App\Models\Operator'
+                        ? $user->userable?->company
+                        : null);
             @endphp
 
             {{-- Dashboard --}}
