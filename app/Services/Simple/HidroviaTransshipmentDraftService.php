@@ -31,7 +31,11 @@ final class HidroviaTransshipmentDraftService
             $this->reject('El viaje no pertenece a la empresa autorizada.');
         }
 
-        return DB::transaction(function () use ($voyage, $bill, $allocations, $userId) {
+        return DB::transaction(function () use ($voyage, $companyId, $bill, $allocations, $userId) {
+            // Un lock por viaje serializa asignaciones de contenedores
+            // incluso si llegan desde conocimientos distintos.
+            Voyage::query()->where('company_id', $companyId)
+                ->lockForUpdate()->findOrFail($voyage->id);
             // Serializa las modificaciones concurrentes del mismo título.
             $lockedBill = BillOfLading::query()->lockForUpdate()->findOrFail($bill->id);
             if (!$lockedBill->canBeEdited()) {
@@ -41,6 +45,23 @@ final class HidroviaTransshipmentDraftService
                 $this->reject('El conocimiento no está identificado para tránsito/transbordo.');
             }
             $this->validator->validate($voyage, $lockedBill, $allocations);
+
+            foreach ($allocations as $row) {
+                $containerId = $row['container_id'] ?? null;
+                if ($containerId === null || $containerId === '') {
+                    continue;
+                }
+                $conflictingAllocation = HidroviaTransshipmentAllocation::query()
+                    ->where('container_id', $containerId)
+                    ->where('bill_of_lading_id', '!=', $lockedBill->id)
+                    ->where('target_shipment_id', '!=', (int) $row['shipment_id'])
+                    ->whereHas('billOfLading.shipment', fn ($query) =>
+                        $query->where('voyage_id', $voyage->id))
+                    ->exists();
+                if ($conflictingAllocation) {
+                    $this->reject('Un contenedor ya está asignado a otra barcaza del mismo viaje.');
+                }
+            }
 
             HidroviaTransshipmentAllocation::query()
                 ->where('bill_of_lading_id', $lockedBill->id)
