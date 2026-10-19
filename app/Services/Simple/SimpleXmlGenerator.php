@@ -43,6 +43,24 @@ class SimpleXmlGenerator
      * PASO 1: RegistrarTitEnvios - SOLO registra el título del transporte
      * NO incluye envíos detallados - esos van en RegistrarEnvios
      */
+    /** Campos opcionales para trasbordos según wgesregsintia2/TitTransEnvio. */
+    private function writeHidroviaTransshipmentReferences(\XMLWriter $writer, Shipment $shipment): void
+    {
+        foreach ([
+            'origin_manifest_id' => ['idManiCargaArrPaisPart', 20],
+            'origin_transport_doc' => ['idDocTranspArrPaisPart', 39],
+        ] as $attribute => [$element, $maxLength]) {
+            $value = trim((string) $shipment->{$attribute});
+            if ($value === '') {
+                continue;
+            }
+            if (mb_strlen($value) > $maxLength) {
+                throw new \Exception("RegistrarTitEnvios: {$element} supera {$maxLength} caracteres.");
+            }
+            $writer->writeElement($element, $value);
+        }
+    }
+
     public function createRegistrarTitEnviosXml(Shipment $shipment, string $transactionId): string
     {
         // ============ DIAGNÓSTICO COMPLETO CUIT ============
@@ -315,6 +333,9 @@ class SimpleXmlGenerator
                             $w->writeElement('indFinCom', 'S');
                             $w->writeElement('indFraccTransp', $bol->is_fractional ? 'S' : 'N');
                             $w->writeElement('indConsol', $bol->is_consolidated ? 'S' : 'N');
+
+                            // Referencias reales de arribo declaradas en el Shipment.
+                            $this->writeHidroviaTransshipmentReferences($w, $shipment);
                             
                             // Origen
                             $w->startElement('origen');
