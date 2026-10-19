@@ -40,7 +40,7 @@
             </a>
 
             <section aria-label="Conocimiento que estás completando"
-                     class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-5 text-white shadow-lg sm:p-7">
+                     class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-5 text-white shadow-lg sm:p-7" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #312e81 100%); color: #fff;">
                 <div class="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
                     <div class="min-w-0">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-300">ATA-DESC · Paso 3: mercadería</p>
@@ -284,7 +284,7 @@
                 </form>
 
                 <aside aria-label="Ayuda para cargar la línea" class="space-y-5 lg:col-span-4">
-                    <section class="rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6">
+                    <section class="rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6" style="background-color: #0f172a; color: #fff;">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-300">Guía de la operación</p>
                         <h2 class="mt-2 text-xl font-bold">Antes de guardar</h2>
                         <ol class="mt-5 space-y-4 text-sm text-slate-200">
