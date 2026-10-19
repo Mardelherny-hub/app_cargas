@@ -54,7 +54,7 @@
             @endif
 
             {{-- Resumen verificable: referencias guardadas; no equivale a registro en Aduana. --}}
-            <section aria-labelledby="summary-heading" class="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-5 text-white shadow-xl sm:p-8 lg:p-9">
+            <section aria-labelledby="summary-heading" class="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-5 text-white shadow-xl sm:p-8 lg:p-9" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #312e81 100%); color: #fff;">
                 <div aria-hidden="true" class="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full border border-white/10"></div>
                 <div class="relative">
                     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -444,7 +444,7 @@
                         </ol>
                     </section>
 
-                    <div class="rounded-2xl bg-slate-900 p-5 text-white shadow-lg sm:p-6">
+                    <div class="rounded-2xl bg-slate-900 p-5 text-white shadow-lg sm:p-6" style="background-color: #0f172a; color: #fff;">
                         <p class="text-sm font-bold">Tu expediente está guardado</p>
                         <p class="mt-2 text-sm leading-6 text-slate-300">
                             Podés salir y volver más tarde. Las referencias y los conocimientos asociados permanecerán en tu expediente.
