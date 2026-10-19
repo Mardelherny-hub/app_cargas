@@ -47,6 +47,20 @@
                 </div>
             @endif
 
+            {{-- ATA-DESC es independiente de los viajes y se muestra solo a empresas habilitadas. --}}
+            @if($company->hasCompanyRole('Desconsolidador'))
+                <div class="mb-6 flex flex-col gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h3 class="font-semibold text-indigo-900">Desconsolidados Argentina — ATA-DESC</h3>
+                        <p class="mt-1 text-sm text-indigo-700">Gestioná expedientes y conocimientos hijos. Este circuito no depende de un viaje ni del envío de Información Anticipada.</p>
+                    </div>
+                    <a href="{{ route('company.simple.desconsolidado.operations.index') }}"
+                       class="inline-flex shrink-0 items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                        Ingresar a Desconsolidados
+                    </a>
+                </div>
+            @endif
+
             {{-- Lista de Viajes con Estados de Webservices --}}
             <div class="bg-white overflow-hidden shadow rounded-lg">
                 <div class="px-4 py-5 sm:p-6">
