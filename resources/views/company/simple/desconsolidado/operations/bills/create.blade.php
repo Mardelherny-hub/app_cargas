@@ -11,7 +11,7 @@
                 <span aria-hidden="true">/</span>
                 <span class="text-slate-900">Conocimiento hijo</span>
             </nav>
-            <h1 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{{ $editingBill ? 'Editar conocimiento hijo' : 'Agregar conocimiento hijo' }}</h1>
+            <h1 class="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{{ ($editingBill ?? null) ? 'Editar conocimiento hijo' : 'Agregar conocimiento hijo' }}</h1>
             <p class="mt-1 text-sm text-slate-500">{{ $company->legal_name }}</p>
         </div>
     </x-slot>
