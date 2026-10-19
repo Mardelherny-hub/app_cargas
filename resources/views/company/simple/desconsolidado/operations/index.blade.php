@@ -42,7 +42,7 @@
             @endif
 
             {{-- Punto de entrada único: no se solicita barco ni viaje local. --}}
-            <section aria-labelledby="start-heading" class="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white shadow-xl">
+            <section aria-labelledby="start-heading" class="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white shadow-xl" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #312e81 100%); color: #fff;">
                 <div aria-hidden="true" class="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full border border-white/10"></div>
                 <div aria-hidden="true" class="pointer-events-none absolute -bottom-36 right-20 h-80 w-80 rounded-full bg-indigo-500/10 blur-3xl"></div>
                 <div class="relative grid gap-8 p-5 sm:p-8 lg:grid-cols-5 lg:items-center lg:gap-12 lg:p-10">
@@ -61,7 +61,7 @@
                             Después podrás agregar los conocimientos hijos. No necesitás cargar el barco ni el viaje de la transportista.
                         </p>
                         <a href="{{ route('company.simple.desconsolidado.operations.create') }}"
-                           class="mt-7 inline-flex min-h-12 w-full items-center justify-center gap-2.5 rounded-xl bg-white px-6 py-3 text-sm font-bold text-slate-900 shadow-lg shadow-black/10 transition hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white sm:w-auto">
+                           class="mt-7 inline-flex min-h-12 w-full items-center justify-center gap-2.5 rounded-xl bg-white px-6 py-3 text-sm font-bold text-slate-900 shadow-lg shadow-black/10 transition hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white sm:w-auto" style="color: #0f172a; background: #fff;">
                             <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/>
                             </svg>
