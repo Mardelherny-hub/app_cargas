@@ -31,7 +31,7 @@
             </a>
 
             <section aria-label="Conocimiento y línea de mercadería"
-                     class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-5 text-white shadow-lg sm:p-7">
+                     class="rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 p-5 text-white shadow-lg sm:p-7" style="background:#0f172a;color:#fff;">
                 <div class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
                     <div class="min-w-0">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-300">ATA-DESC · Contenedores</p>
@@ -179,7 +179,7 @@
                 </div>
 
                 <aside aria-label="Información importante" class="space-y-5 lg:col-span-4">
-                    <section class="rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6">
+                    <section class="rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6" style="background:#0f172a;color:#fff;">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-300">Antes de continuar</p>
                         <h2 class="mt-2 text-xl font-bold">¿Qué conserva el sistema?</h2>
                         <p class="mt-4 text-sm leading-6 text-slate-200">
