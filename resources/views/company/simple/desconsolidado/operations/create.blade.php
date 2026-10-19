@@ -65,7 +65,7 @@
                         @csrf
 
                         <div class="flex items-start gap-4">
-                            <span aria-hidden="true" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">01</span>
+                            <span aria-hidden="true" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white" style="background-color: #0f172a; color: #fff;">01</span>
                             <div class="min-w-0 flex-1">
                                 <label for="argentina_voyage_id" class="block text-sm font-bold text-slate-900">
                                     Identificador de viaje AFIP <span class="text-red-600">*</span>
@@ -90,7 +90,7 @@
                         <div class="border-t border-slate-100"></div>
 
                         <div class="flex items-start gap-4">
-                            <span aria-hidden="true" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">02</span>
+                            <span aria-hidden="true" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white" style="background-color: #0f172a; color: #fff;">02</span>
                             <div class="min-w-0 flex-1">
                                 <label for="master_loading_port_code" class="block text-sm font-bold text-slate-900">
                                     Código del puerto de embarque <span class="text-red-600">*</span>
@@ -115,7 +115,7 @@
                         <div class="border-t border-slate-100"></div>
 
                         <div class="flex items-start gap-4">
-                            <span aria-hidden="true" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">03</span>
+                            <span aria-hidden="true" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white" style="background-color: #0f172a; color: #fff;">03</span>
                             <div class="min-w-0 flex-1">
                                 <label for="master_bill_number" class="block text-sm font-bold text-slate-900">
                                     Número del conocimiento madre <span class="text-red-600">*</span>
@@ -166,7 +166,7 @@
                 </section>
 
                 <aside aria-label="Guía de la operación" class="space-y-5 lg:col-span-4">
-                    <section class="overflow-hidden rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6">
+                    <section class="overflow-hidden rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6" style="background-color: #0f172a; color: #fff;">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-300">Tu operación, paso a paso</p>
                         <h2 class="mt-2 text-xl font-bold">¿Qué pasa después?</h2>
                         <ol class="mt-6 space-y-5">
