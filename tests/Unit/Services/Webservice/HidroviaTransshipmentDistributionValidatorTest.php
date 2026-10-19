@@ -138,12 +138,29 @@ class HidroviaTransshipmentDistributionValidatorTest extends TestCase
     {
         $this->reject([$this->row(11, 41, 11, '100.25')], 'supera');
         $this->reject([$this->row(11, 41, 10, '100.26')], 'supera');
-        $this->reject([$this->row(11, 41, 10, '100.25')], 'completar exactamente', true);
+        $this->reject([
+            $this->row(11, 41, 4, '40.10', 51),
+            $this->row(12, 41, 6, '60.15', 52),
+        ], 'completar exactamente', true);
+    }
+
+    public function test_complete_containerized_distribution_requires_each_linked_container_once(): void
+    {
+        $this->reject([
+            $this->row(11, 41, 10, '100.25'),
+            $this->row(12, 42, 2, '20.50'),
+        ], 'contenedor real', true);
+        $this->reject([
+            $this->row(11, 41, 10, '100.25', 51),
+            $this->row(12, 42, 2, '20.50'),
+        ], 'todos sus contenedores reales', true);
     }
 
     public function test_invalid_precision_and_negative_quantity_are_rejected(): void
     {
         $this->reject([$this->row(11, 41, -1, '1.00')], 'cantidad');
         $this->reject([$this->row(11, 41, 1, '1.999')], 'dos decimales');
+        $this->reject([$this->row(11, 41, 0, '0.00')], 'sin mercadería ni contenedor');
+        $this->reject([$this->row(11, 41, 1, '10000000000.00')], 'fuera de rango');
     }
 }

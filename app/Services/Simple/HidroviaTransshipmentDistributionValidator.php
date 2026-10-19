@@ -69,6 +69,9 @@ final class HidroviaTransshipmentDistributionValidator
                 $this->reject("Asignación {$index}: cantidad de bultos inválida.");
             }
             $weight = $this->weightInHundredths($row['gross_weight_kg'] ?? null, "Asignación {$index}");
+            if ($quantity === 0 && $weight === 0 && $containerId === null) {
+                $this->reject("Asignación {$index}: no se admite una fila sin mercadería ni contenedor real.");
+            }
             $totals[$itemId]['quantity'] = ($totals[$itemId]['quantity'] ?? 0) + $quantity;
             $totals[$itemId]['weight'] = ($totals[$itemId]['weight'] ?? 0) + $weight;
         }
@@ -87,6 +90,19 @@ final class HidroviaTransshipmentDistributionValidator
             if ($requireComplete && ($distributedQuantity !== $declaredQuantity || $distributedWeight !== $declaredWeight)) {
                 $this->reject("Línea {$item->id}: la distribución debe completar exactamente bultos y peso.");
             }
+            if ($requireComplete && $item->containers->isNotEmpty()) {
+                $expected = $item->containers->pluck('id')->map(fn ($id) => (int) $id)->sort()->values()->all();
+                $assigned = collect($allocations)
+                    ->filter(fn ($row) => (int) ($row['shipment_item_id'] ?? 0) === (int) $item->id)
+                    ->pluck('container_id');
+                if ($assigned->contains(fn ($id) => $id === null || $id === '')) {
+                    $this->reject("Línea {$item->id}: todas las cargas deben indicar su contenedor real.");
+                }
+                $actual = $assigned->map(fn ($id) => (int) $id)->sort()->values()->all();
+                if ($expected !== $actual) {
+                    $this->reject("Línea {$item->id}: deben asignarse todos sus contenedores reales una sola vez.");
+                }
+            }
         }
     }
 
@@ -98,7 +114,7 @@ final class HidroviaTransshipmentDistributionValidator
             $this->reject("{$location}: peso bruto inválido (máximo dos decimales).");
         }
         [$whole, $fraction] = array_pad(explode('.', $value, 2), 2, '');
-        if (strlen($whole) > 15) {
+        if (strlen(ltrim($whole, '0')) > 10) {
             $this->reject("{$location}: peso bruto fuera de rango.");
         }
         return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
