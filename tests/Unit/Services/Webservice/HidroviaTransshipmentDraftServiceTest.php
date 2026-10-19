@@ -66,6 +66,7 @@ class HidroviaTransshipmentDraftServiceTest extends TestCase
         });
         // Probar el esquema de producción definido en la migración real.
         (require database_path('migrations/2026_10_19_123000_create_hidrovia_transshipment_allocations_table.php'))->up();
+        (require database_path('migrations/2025_07_23_120939_create_webservice_transactions_table.php'))->up();
         DB::table('voyages')->insert([['id' => 7, 'company_id' => 101], ['id' => 8, 'company_id' => 202]]);
         DB::table('vessel_types')->insert([
             ['id' => 301, 'category' => 'barge'],
@@ -224,6 +225,47 @@ class HidroviaTransshipmentDraftServiceTest extends TestCase
             array_replace($wrongBarge, ['shipment_id' => 11]),
         ]);
         $this->assertSame(2, HidroviaTransshipmentAllocation::count());
+    }
+
+    public function test_inflight_or_accepted_micdta_prevents_editing_the_distribution(): void
+    {
+        $this->service->replaceDraft($this->voyage, 101, $this->bill,
+            [$this->row(11, 10, '100.25')]);
+        foreach (['pending', 'sending', 'sent', 'success'] as $status) {
+            $transactionId = \Illuminate\Support\Facades\DB::table('webservice_transactions')->insertGetId([
+                'company_id' => 101,
+                'user_id' => 1,
+                'voyage_id' => 7,
+                'shipment_id' => 11,
+                'transaction_id' => 'TIT-' . $status,
+                'webservice_type' => 'micdta',
+                'country' => 'AR',
+                'webservice_url' => 'https://example.invalid',
+                'environment' => 'testing',
+                'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
+                'status' => $status,
+            ]);
+            $this->reject([$this->row(12, 10, '100.25')], 'MIC/DTA iniciada');
+            $this->assertSame(11,
+                \App\Models\HidroviaTransshipmentAllocation::first()->target_shipment_id);
+            \Illuminate\Support\Facades\DB::table('webservice_transactions')->where('id', $transactionId)->delete();
+        }
+    }
+
+    public function test_unrelated_or_rejected_micdta_transaction_does_not_freeze_the_voyage(): void
+    {
+        \Illuminate\Support\Facades\DB::table('webservice_transactions')->insert([
+            'company_id' => 101, 'user_id' => 1, 'voyage_id' => 7,
+            'transaction_id' => 'QA-ERR', 'webservice_type' => 'micdta',
+            'country' => 'AR', 'webservice_url' => 'https://example.invalid',
+            'environment' => 'testing',
+                'environment' => 'testing',
+            'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
+            'status' => 'error',
+        ]);
+        $saved = $this->service->replaceDraft($this->voyage, 101, $this->bill,
+            [$this->row(11, 10, '100.25')]);
+        $this->assertCount(1, $saved);
     }
 
     public function test_never_transmits_or_modifies_original_title_when_draft_is_saved(): void

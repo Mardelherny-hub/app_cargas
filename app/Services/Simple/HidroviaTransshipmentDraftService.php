@@ -5,6 +5,7 @@ namespace App\Services\Simple;
 use App\Models\BillOfLading;
 use App\Models\HidroviaTransshipmentAllocation;
 use App\Models\Voyage;
+use App\Models\WebserviceTransaction;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -36,6 +37,25 @@ final class HidroviaTransshipmentDraftService
             // incluso si llegan desde conocimientos distintos.
             Voyage::query()->where('company_id', $companyId)
                 ->lockForUpdate()->findOrFail($voyage->id);
+            // El transbordo modifica qué carga corresponderá a cada envío.
+            // No permitir cambios si el voyage ya inició la registración
+            // de títulos/envíos ante ARCA o existe un resultado incierto.
+            $micDtaIniciado = WebserviceTransaction::query()
+                ->where('company_id', $companyId)
+                ->where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->whereIn('status', ['pending', 'validating', 'sending', 'retry', 'sent', 'success'])
+                ->where(function ($query) {
+                    $query->where('soap_action', 'like', '%/RegistrarTitEnvios')
+                        ->orWhere('soap_action', 'like', '%/RegistrarEnvios')
+                        ->orWhere('soap_action', 'like', '%/RegistrarMicDta');
+                })
+                ->exists();
+            if ($micDtaIniciado) {
+                $this->reject('El viaje ya tiene una operación MIC/DTA iniciada: no se puede alterar su distribución.');
+            }
+
             // Serializa las modificaciones concurrentes del mismo título.
             $lockedBill = BillOfLading::query()->lockForUpdate()->findOrFail($bill->id);
             if (!$lockedBill->canBeEdited()) {
