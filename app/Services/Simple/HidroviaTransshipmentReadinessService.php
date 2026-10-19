@@ -53,12 +53,19 @@ final class HidroviaTransshipmentReadinessService
                 ->get(['id', 'voyage_id', 'vessel_id', 'shipment_number'])
                 ->keyBy('id');
             $shipments = [];
+            $idEnvio = 0;
             foreach ($records->groupBy('target_shipment_id') as $targetId => $allocations) {
+                // idEnvio es N(3) y lo informa el ATA: secuencia estable
+                // dentro del título, ordenada por el shipment de destino.
+                if (++$idEnvio > 999) {
+                    $this->reject('El título supera los 999 envíos permitidos por ARCA.');
+                }
                 $target = $targets->get((int) $targetId);
                 if (!$target || !$target->vessel_id || $target->vessel?->vesselType?->category !== 'barge') {
                     $this->reject('La distribución requiere una barcaza real registrada para cada envío.');
                 }
                 $shipments[] = [
+                    'id_envio' => $idEnvio,
                     'shipment_id' => (int) $target->id,
                     'shipment_number' => $target->shipment_number,
                     'vessel_id' => (int) $target->vessel_id,
