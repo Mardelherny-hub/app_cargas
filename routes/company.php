@@ -789,6 +789,17 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'transbordoIndex'])
             ->name('index');
             
+        // API de borradores Hidrovía: distribución local, sin enviar a ARCA.
+        Route::get('/{voyage}/bills/{bill}/distribution',
+            [App\Http\Controllers\Company\Simple\HidroviaTransshipmentDraftController::class, 'show'])
+            ->whereNumber('voyage')->whereNumber('bill')->name('drafts.show');
+        Route::put('/{voyage}/bills/{bill}/distribution',
+            [App\Http\Controllers\Company\Simple\HidroviaTransshipmentDraftController::class, 'update'])
+            ->whereNumber('voyage')->whereNumber('bill')->name('drafts.update');
+        Route::post('/{voyage}/bills/{bill}/distribution/preflight',
+            [App\Http\Controllers\Company\Simple\HidroviaTransshipmentDraftController::class, 'preflight'])
+            ->whereNumber('voyage')->whereNumber('bill')->name('drafts.preflight');
+
         // TODO FASE 5: Rutas específicas transbordo
         // Route::get('/{voyage}', [SimpleManifestController::class, 'transbordoShow'])->name('show');
         // Route::post('/{voyage}/send', [SimpleManifestController::class, 'transbordoSend'])->name('send');
