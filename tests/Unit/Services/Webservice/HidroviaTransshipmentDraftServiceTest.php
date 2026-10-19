@@ -159,10 +159,15 @@ class HidroviaTransshipmentDraftServiceTest extends TestCase
         ))->prepare($this->voyage, 101, $this->bill);
         $this->assertSame(31, $result['bill_of_lading_id']);
         $this->assertSame([11, 12], array_column($result['shipments'], 'shipment_id'));
+        $this->assertSame([1, 2], array_column($result['shipments'], 'id_envio'));
         $this->assertSame([201, 202], array_column($result['shipments'], 'vessel_id'));
         $this->assertSame(['B-201', 'B-202'], array_column($result['shipments'], 'shipment_number'));
         $this->assertSame(41, $result['shipments'][0]['lines'][0]['shipment_item_id']);
         $this->assertSame('40.10', $result['shipments'][0]['lines'][0]['gross_weight_kg']);
+        $again = (new HidroviaTransshipmentReadinessService(
+            new HidroviaTransshipmentDistributionValidator()
+        ))->prepare($this->voyage, 101, $this->bill);
+        $this->assertSame($result, $again, 'La numeración no puede cambiar entre dos preflight.');
     }
 
     public function test_readiness_rejects_partial_distribution_before_any_soap(): void
