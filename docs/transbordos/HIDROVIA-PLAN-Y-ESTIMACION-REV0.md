@@ -56,6 +56,20 @@ Reserva recomendada por integración aduanera y datos heterogéneos: 15% a 20%; 
 
 Los rangos NO incluyen la espera de aprobaciones, acceso externo a homologación o demoras en respuestas reales de Aduana. Reestimar cuando estén confirmados documentos reales de un transbordo y alcance PY/SIM.
 
+## Avance de backend — 2026-10-19
+
+Implementación local, aún sin publicar:
+
+- Referencias documentales optativas en `SimpleXmlGenerator` (`2ecceb3`) y test (`513abad`).
+- `HidroviaTransshipmentDistributionValidator`: verifica propiedad del viaje/título/línea, pesos, cantidades y asignación física de contenedores; no genera valores ficticios.
+- Migración `2026_10_19_123000_create_hidrovia_transshipment_allocations_table`: guarda proporciones por línea/barcaza sin duplicar `BillOfLading`.
+- `HidroviaTransshipmentDraftService`: reemplaza borradores transaccionalmente, con bloqueo del viaje y prevención de conflicto de un contenedor entre barcazas.
+- `HidroviaTransshipmentReadinessService`: verifica distribución completa, barcazas reales por categoría `barge` y agrupa por embarcación para una futura serialización.
+- API de borradores `GET/PUT .../transbordo/{voyage}/bills/{bill}/distribution` y `POST .../preflight`; controla la empresa y rol `Transbordos` sin acción SOAP.
+- 52 pruebas seleccionadas aprobadas, 244 verificaciones: incluye regresiones MIC/DTA y tests de SQLite en memoria sin base productiva.
+
+No habilitar interfaz de envío hasta resolver el contrato XML de N `Envio` dentro de un `TitTransEnvio`, persistencia TRACK por envío y gestión de respuestas AFIP. Los envíos parciales/fraccionados, reglas por tipo de carga y sincronización aduanera siguen pendientes.
+
 ## Estado de salida
 
-INICIADO EN LOCAL. Primer par de campos incorporado al XML y cubierto por tests. Distribución multibarcaza e interfaz pendiente. Sin push, deploy ni transmisión aduanera.
+BACKEND DE BORRADORES Y PREFLIGHT IMPLEMENTADO EN LOCAL. Integración SOAP multibarcaza, TRACK y frontend pendientes. Sin push, deploy ni transmisión aduanera.
