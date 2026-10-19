@@ -32,6 +32,13 @@
                 🏠 Dashboard
             </a>
 
+            @if($company && in_array('Desconsolidador', $company->company_roles ?? [], true))
+                <a href="{{ route('company.simple.desconsolidado.operations.index') }}"
+                   class="flex items-center px-3 py-2 text-sm font-semibold rounded-md {{ request()->routeIs('company.simple.desconsolidado.operations.*') ? 'bg-indigo-100 text-indigo-700' : 'text-indigo-700 hover:bg-indigo-50' }}">
+                    📦 Desconsolidados Argentina
+                </a>
+            @endif
+
             {{-- CREAR VIAJE COMPLETO --}}
             <div class="pt-4">
                 <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
