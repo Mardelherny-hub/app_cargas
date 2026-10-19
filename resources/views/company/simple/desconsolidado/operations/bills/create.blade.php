@@ -38,7 +38,7 @@
                 Volver al expediente
             </a>
 
-            <section aria-label="Título madre" class="rounded-2xl bg-slate-900 p-5 text-white shadow-md sm:p-6">
+            <section aria-label="Título madre" class="rounded-2xl bg-slate-900 p-5 text-white shadow-md sm:p-6" style="background-color: #0f172a; color: #fff;">
                 <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div class="min-w-0">
                         <p class="text-xs font-bold uppercase tracking-wider text-indigo-300">Expediente de desconsolidación</p>
@@ -247,7 +247,7 @@
                 </form>
 
                 <aside aria-label="Guía" class="space-y-5 lg:col-span-4">
-                    <section class="rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6">
+                    <section class="rounded-3xl bg-slate-900 p-5 text-white shadow-lg sm:p-6" style="background-color: #0f172a; color: #fff;">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-300">Guía rápida</p>
                         <h2 class="mt-2 text-xl font-bold">¿Qué se guarda ahora?</h2>
                         <ol class="mt-5 space-y-4 text-sm text-slate-200">
