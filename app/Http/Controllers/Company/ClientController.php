@@ -440,7 +440,7 @@ class ClientController extends Controller
                       ->orWhere('commercial_name', 'like', "%{$search}%")
                       ->orWhere('tax_id', 'like', "%{$search}%");
             })
-            ->select('id', 'legal_name', 'commercial_name', 'tax_id', 'client_roles')
+            ->select('id', 'legal_name', 'commercial_name', 'tax_id')
             ->limit(15)
             ->get();
 
@@ -455,7 +455,6 @@ class ClientController extends Controller
         $this->authorize('viewAny', Client::class);
         
         $term = $request->get('term', '');
-        $role = $request->get('role'); // Filtrar por rol específico
         
         if (strlen($term) < 2) {
             return response()->json([]);
@@ -468,12 +467,8 @@ class ClientController extends Controller
                   ->orWhere('tax_id', 'like', "%{$term}%");
             });
 
-        // Filtrar por rol si se especifica
-        if ($role && in_array($role, ['shipper', 'consignee', 'notify_party'])) {
-            $query->whereJsonContains('client_roles', $role);
-        }
-
-        $suggestions = $query->select('id', 'legal_name', 'tax_id', 'client_roles')
+        // Los clientes ya no tienen roles: cualquier cliente activo y verificado puede seleccionarse.
+        $suggestions = $query->select('id', 'legal_name', 'tax_id')
             ->limit(10)
             ->get()
             ->map(function($client) {
@@ -482,7 +477,7 @@ class ClientController extends Controller
                     'label' => $client->legal_name . ' (' . $client->tax_id . ')',
                     'value' => $client->legal_name,
                     'tax_id' => $client->tax_id,
-                    'roles' => $client->client_roles ?? []
+                    'roles' => []
                 ];
             });
 
