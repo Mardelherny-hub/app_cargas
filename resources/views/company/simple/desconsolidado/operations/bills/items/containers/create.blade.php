@@ -42,10 +42,10 @@
                     <div class="shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-3">
                         <p class="text-xs font-medium text-gray-600">Línea de mercadería</p>
                         <p class="mt-1 text-xl font-bold">N.º {{ $item->line_number }}</p>
-                        <p class="mt-1 text-xs text-gray-200">Embalaje {{ $item->packaging_code }} · Condición {{ $item->container_condition }}</p>
+                        <p class="mt-1 text-xs text-gray-700">Embalaje {{ $item->packaging_code }} · Condición {{ $item->container_condition }}</p>
                     </div>
                 </div>
-                <p class="mt-5 border-t border-gray-200 pt-4 text-sm leading-6 text-gray-200">
+                <p class="mt-5 border-t border-gray-200 pt-4 text-sm leading-6 text-gray-700">
                     {{ $item->item_description }}
                 </p>
             </section>
@@ -53,7 +53,7 @@
             @if($errors->any())
                 <div role="alert" class="rounded-lg border border-red-200 bg-red-50 p-5 text-sm text-red-900">
                     <p class="font-bold">No se pudo guardar la vinculación</p>
-                    <p class="mt-1">Revisá el número informado. El texto que ingresaste se mantiene.</p>
+                    <p class="mt-1">Revisá las observaciones indicadas. El número ingresado se conserva.</p>
                     <ul class="mt-2 list-disc space-y-1 pl-5">
                         @foreach($errors->all() as $error)
                             <li>{{ $error }}</li>
@@ -67,9 +67,9 @@
                     <section aria-labelledby="link-heading" class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-100 px-5 py-5 sm:px-7">
                             <p class="text-xs font-bold uppercase tracking-wider text-indigo-700">01 · Identificar el contenedor</p>
-                            <h2 id="link-heading" class="mt-1 text-xl font-bold text-gray-900">Ingresá el número real</h2>
+                            <h2 id="link-heading" class="mt-1 text-xl font-bold text-gray-900">Identificá el contenedor</h2>
                             <p class="mt-1 text-sm leading-6 text-gray-500">
-                                La aplicación buscará el contenedor exacto entre los que ya están registrados y habilitados.
+                                El sistema buscará el número indicado entre los contenedores registrados y habilitados.
                             </p>
                         </div>
 
@@ -86,7 +86,7 @@
                                     Número de contenedor <span class="text-red-600">*</span>
                                 </label>
                                 <p id="container-number-help" class="mt-1 text-sm leading-6 text-gray-500">
-                                    Copialo de la documentación. Debe coincidir con un contenedor activo y no bloqueado del sistema.
+                                    Ingresá el número completo que figura en la documentación. El contenedor debe estar registrado, activo y no bloqueado.
                                 </p>
                                 <input id="container_number" name="container_number" type="text"
                                        value="{{ old('container_number') }}" maxlength="15" required
@@ -99,16 +99,15 @@
                                     <p id="container-number-error" class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p>
                                 @enderror
                                 <p class="mt-2 text-xs leading-5 text-gray-500">
-                                    Hasta 15 caracteres. Se eliminan los espacios iniciales y finales, y se convierte a mayúsculas antes de buscar.
-                                    No se cargan todos los contenedores del catálogo.
+                                    Se admiten hasta 15 caracteres. El sistema omite los espacios iniciales y finales y convierte las letras a mayúsculas.
                                 </p>
                             </div>
 
                             <div class="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm leading-6 text-indigo-900">
-                                <p class="font-bold">Solo se crea la asociación con esta línea.</p>
+                                <p class="font-bold">Este paso vincula el contenedor con esta línea de mercadería.</p>
                                 <p class="mt-1">
-                                    Si el contenedor ya está vinculado, no se duplicará.
-                                    Si no existe en el catálogo, no se dará de alta automáticamente.
+                                    Si el contenedor ya está vinculado, se conserva la asociación existente.
+                                    Si todavía no está registrado, podés utilizar la opción «Registrar contenedor nuevo».
                                 </p>
                             </div>
                             <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
@@ -129,8 +128,8 @@
                         <div class="border-t border-gray-100 bg-gray-50 px-5 py-5 sm:px-7">
                             <p class="text-sm font-bold text-gray-900">¿El contenedor todavía no existe en el catálogo?</p>
                             <p class="mt-1 text-sm leading-6 text-gray-600">
-                                Si tenés su número y los estados físicos y operativos reales, podés registrarlo antes de asociarlo.
-                                El alta crea una ficha global: no la uses para un número que ya esté registrado.
+                                Si el contenedor todavía no está registrado, podés darlo de alta con su número y los estados físico y operativo correspondientes.
+                                El nuevo registro quedará disponible en el catálogo general.
                             </p>
                             <a href="{{ route('company.simple.desconsolidado.operations.bills.items.containers.register', [
                                     'operation' => $operation->id,
@@ -160,7 +159,7 @@
                             <div class="p-6 sm:p-7">
                                 <p class="text-sm font-semibold text-gray-900">Todavía no hay contenedores vinculados.</p>
                                 <p class="mt-2 text-sm leading-6 text-gray-600">
-                                    Ingresá arriba el número real del primero. No se generarán unidades ni cantidades ficticias.
+                                    Ingresá el número de un contenedor ya registrado para vincularlo a esta línea.
                                 </p>
                             </div>
                         @else
@@ -181,20 +180,20 @@
                 <aside aria-label="Información importante" class="space-y-5 lg:col-span-4">
                     <section class="rounded-lg bg-gray-100 p-5 text-gray-800 shadow-lg sm:p-6">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-700">Antes de continuar</p>
-                        <h2 class="mt-2 text-xl font-bold">¿Qué conserva el sistema?</h2>
-                        <p class="mt-4 text-sm leading-6 text-gray-200">
+                        <h2 class="mt-2 text-xl font-bold">¿Qué datos se mantienen?</h2>
+                        <p class="mt-4 text-sm leading-6 text-gray-700">
                             El estado físico, los precintos y los datos generales del contenedor no cambian.
                             La condición H/P de esta asociación proviene de la línea de mercadería.
                         </p>
-                        <p class="mt-3 text-sm leading-6 text-gray-200">
-                            Tampoco se inventan pesos, cantidades de bultos ni distribución física por contenedor.
+                        <p class="mt-3 text-sm leading-6 text-gray-700">
+                            La vinculación no modifica los pesos ni las cantidades de bultos, ni asigna su distribución entre contenedores.
                         </p>
                     </section>
                     <section class="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-900">
-                        <p class="font-bold">Vincular no significa transmitir a Aduana.</p>
+                        <p class="font-bold">Esta vinculación no realiza envíos a Aduana.</p>
                         <p class="mt-2">
-                            La documentación CSC o ACEP, y el resto de las validaciones ATA-DESC,
-                            deberán verificarse antes del envío. Este formulario no permite modificarlos.
+                            Antes de transmitir, se deben revisar los datos documentales CSC o ACEP y las demás validaciones ATA-DESC.
+                            Esta pantalla únicamente permite vincular el contenedor a la línea.
                         </p>
                     </section>
                 </aside>
