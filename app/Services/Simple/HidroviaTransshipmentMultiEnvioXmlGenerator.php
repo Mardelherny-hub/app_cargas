@@ -84,7 +84,7 @@ final class HidroviaTransshipmentMultiEnvioXmlGenerator
                     if (!$container || isset($seenContainers[$containerId])) {
                         throw new InvalidArgumentException('Contenedor ausente del ítem o asignado varias veces.');
                     }
-                    $seenContainers[$containerId] = true;
+                    $seenContainers[$containerId] = $itemId;
                 } elseif ($item->containers->isNotEmpty()) {
                     throw new InvalidArgumentException('Una línea contenedorizada debe identificar el contenedor real.');
                 }
@@ -106,6 +106,20 @@ final class HidroviaTransshipmentMultiEnvioXmlGenerator
                 || ($totals[$item->id]['quantity'] ?? -1) !== $quantity
                 || ($totals[$item->id]['weight'] ?? -1) !== $this->hundredths($item->gross_weight_kg)) {
                 throw new InvalidArgumentException('Los envíos no completan exactamente los bultos y pesos del título.');
+            }
+
+            // Los totales pueden coincidir aunque se omita un contenedor.
+            // Confirmar cada vínculo físico original con el MISMO ítem y
+            // una única asignación, antes de generar cualquier XML.
+            if (!$item->relationLoaded('containers')) {
+                throw new InvalidArgumentException('Faltan los contenedores reales del conocimiento.');
+            }
+            foreach ($item->containers as $container) {
+                if (($seenContainers[(int) $container->id] ?? null) !== (int) $item->id) {
+                    throw new InvalidArgumentException(
+                        'El reparto debe asignar todos los contenedores reales del conocimiento exactamente una vez.'
+                    );
+                }
             }
         }
 
