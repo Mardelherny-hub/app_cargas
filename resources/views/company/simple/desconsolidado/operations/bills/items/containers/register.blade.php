@@ -70,12 +70,12 @@
                     <div class="shrink-0 rounded-lg border border-gray-200 bg-white px-4 py-3">
                         <p class="text-xs font-medium text-gray-600">Línea de mercadería</p>
                         <p class="mt-1 text-xl font-bold">N.º {{ $item->line_number }}</p>
-                        <p class="mt-1 text-xs text-gray-200">
+                        <p class="mt-1 text-xs text-gray-700">
                             Embalaje {{ $item->packaging_code }} · Condición aduanera {{ $item->container_condition }}
                         </p>
                     </div>
                 </div>
-                <p class="mt-5 break-words border-t border-gray-200 pt-4 text-sm leading-6 text-gray-200">
+                <p class="mt-5 break-words border-t border-gray-200 pt-4 text-sm leading-6 text-gray-700">
                     {{ $item->item_description }}
                 </p>
             </section>
@@ -107,7 +107,7 @@
                             <p class="text-xs font-bold uppercase tracking-wider text-indigo-700">01 · Identificación</p>
                             <h2 id="identity-heading" class="mt-1 text-xl font-bold text-gray-900">Datos físicos declarados</h2>
                             <p class="mt-1 text-sm leading-6 text-gray-500">
-                                Este registro quedará en el catálogo global. No ingreses un contenedor que ya exista.
+                                Este contenedor quedará registrado en el catálogo general y vinculado a la línea. Si ya está registrado, utilizá «Vincular contenedor existente».
                             </p>
                         </div>
                         <div class="space-y-5 p-5 sm:p-7">
@@ -121,14 +121,13 @@
                                        aria-invalid="{{ $errors->has('container_number') ? 'true' : 'false' }}"
                                        class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 font-mono text-base uppercase shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
                                 <p class="mt-1.5 text-xs leading-5 text-gray-500">
-                                    Hasta 15 caracteres. Se eliminan espacios extremos y se convierte a mayúsculas al guardar.
-                                    No se genera un número automáticamente.
+                                    Ingresá hasta 15 caracteres según la documentación. El sistema elimina los espacios iniciales y finales y convierte las letras a mayúsculas.
                                 </p>
                                 @error('container_number') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                             </div>
                             <div class="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm leading-6 text-indigo-900">
                                 <p class="font-bold">¿Este contenedor ya está registrado?</p>
-                                <p class="mt-1">Usá el circuito existente: no se crearán duplicados ni se modificarán los datos físicos de otra ficha.</p>
+                                <p class="mt-1">Podés asociarlo a esta línea desde «Vincular contenedor existente», conservando los datos de su ficha.</p>
                                 <a href="{{ $existingUrl }}"
                                    class="mt-3 inline-flex min-h-11 items-center gap-2 font-bold text-indigo-800 underline decoration-indigo-300 underline-offset-4 hover:text-indigo-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
                                     Vincular contenedor existente
@@ -152,7 +151,7 @@
                                     @endforeach
                                 </select>
                                 <p class="mt-1.5 text-xs text-gray-500">
-                                    Solo tipos activos. No se deduce un tipo a partir del número del contenedor.
+                                    Seleccioná el tipo correspondiente si figura en la documentación. El catálogo muestra los tipos habilitados.
                                 </p>
                                 @error('container_type_id') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                             </div>
@@ -164,12 +163,12 @@
                                     <select id="condition" name="condition" required
                                             aria-invalid="{{ $errors->has('condition') ? 'true' : 'false' }}"
                                             class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">Seleccioná el estado real</option>
+                                        <option value="">Seleccioná el estado físico</option>
                                         @foreach($physicalStates as $state)
                                             <option value="{{ $state['value'] }}" @selected(old('condition') === $state['value'])>{{ $state['label'] }}</option>
                                         @endforeach
                                     </select>
-                                    <p class="mt-1.5 text-xs leading-5 text-gray-500">Estado de la unidad (V/D/S/P/L/R), distinto de la condición aduanera H/P de la línea.</p>
+                                    <p class="mt-1.5 text-xs leading-5 text-gray-500">Este campo describe el estado físico del contenedor. La condición aduanera H/P se informa en la línea de mercadería.</p>
                                     @error('condition') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                                 <div>
@@ -179,12 +178,12 @@
                                     <select id="operational_status" name="operational_status" required
                                             aria-invalid="{{ $errors->has('operational_status') ? 'true' : 'false' }}"
                                             class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
-                                        <option value="">Seleccioná el estado real</option>
+                                        <option value="">Seleccioná el estado operativo</option>
                                         @foreach($operationalStates as $state)
                                             <option value="{{ $state['value'] }}" @selected(old('operational_status') === $state['value'])>{{ $state['label'] }}</option>
                                         @endforeach
                                     </select>
-                                    <p class="mt-1.5 text-xs leading-5 text-gray-500">No se usa el valor predeterminado de la base sin que lo confirmes.</p>
+                                    <p class="mt-1.5 text-xs leading-5 text-gray-500">Seleccioná el estado operativo que corresponde al contenedor en el momento del registro.</p>
                                     @error('operational_status') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                             </div>
@@ -198,7 +197,7 @@
                                            placeholder="Peso declarado, si consta"
                                            aria-invalid="{{ $errors->has('tare_weight_kg') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
-                                    <p class="mt-1.5 text-xs text-gray-500">Máximo dos decimales. Dejar vacío si se desconoce; no escribir 0 por falta de dato.</p>
+                                    <p class="mt-1.5 text-xs text-gray-500">Admite hasta dos decimales. Si no se conoce la tara, dejá el campo vacío en lugar de consignar cero.</p>
                                     @error('tare_weight_kg') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                                 <div>
@@ -210,7 +209,7 @@
                                            placeholder="Peso máximo, si consta"
                                            aria-invalid="{{ $errors->has('max_gross_weight_kg') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
-                                    <p class="mt-1.5 text-xs text-gray-500">No puede ser menor que la tara informada. Sin documento, dejalo vacío.</p>
+                                    <p class="mt-1.5 text-xs text-gray-500">Debe ser igual o mayor que la tara informada. Si no disponés del dato, podés dejar este campo vacío.</p>
                                     @error('max_gross_weight_kg') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                             </div>
@@ -222,7 +221,7 @@
                             <p class="text-xs font-bold uppercase tracking-wider text-indigo-700">02 · Documentación aduanera</p>
                             <h2 id="documents-heading" class="mt-1 text-xl font-bold text-gray-900">Datos del contenedor para ATA-DESC</h2>
                             <p class="mt-1 text-sm leading-6 text-gray-500">
-                                Completá únicamente los datos que figuren en la documentación real. Todos estos campos son opcionales al registrar el borrador.
+                                Completá los datos disponibles en la documentación. Estos campos son opcionales para guardar el borrador; se revisarán antes de transmitir.
                             </p>
                         </div>
                         <div class="space-y-5 p-5 sm:p-7">
@@ -237,7 +236,7 @@
                                            placeholder="Código declarado, si consta"
                                            aria-invalid="{{ $errors->has('argentina_container_code') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 font-mono text-base uppercase shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
-                                    <p class="mt-1.5 text-xs text-gray-500">Hasta 4 caracteres. No se genera a partir del tipo de contenedor.</p>
+                                    <p class="mt-1.5 text-xs text-gray-500">Ingresá el código de características declarado, si está disponible. Admite hasta 4 caracteres.</p>
                                     @error('argentina_container_code') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                                 <div>
@@ -247,7 +246,7 @@
                                     <input id="shipper_seal" name="shipper_seal" type="text"
                                            value="{{ old('shipper_seal') }}" maxlength="35"
                                            autocomplete="off" spellcheck="false"
-                                           placeholder="Precinto real, si consta"
+                                           placeholder="Número de precinto, si está informado"
                                            aria-invalid="{{ $errors->has('shipper_seal') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
                                     <p class="mt-1.5 text-xs text-gray-500">Hasta 35 caracteres según el contrato de envío ATA-DESC.</p>
@@ -255,10 +254,10 @@
                                 </div>
                             </div>
                             <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                                <p class="font-bold">CSC o ACEP: nunca ambos.</p>
+                                <p class="font-bold">Vencimiento CSC o código ACEP</p>
                                 <p class="mt-1">
-                                    Si tenés la fecha de vencimiento CSC, informala en su campo. Si tenés ACEP, informá ese código.
-                                    Si no disponés de ninguno, dejá ambos vacíos: la documentación quedará pendiente antes del envío.
+                                    Informá la fecha de vencimiento CSC o el código ACEP, según corresponda. No se admiten ambos simultáneamente.
+                                    Si no disponés de ninguno, podés registrar el contenedor sin esos datos. La operación no estará lista para transmitir hasta resolver este requisito documental.
                                 </p>
                             </div>
                             <div class="grid gap-5 sm:grid-cols-2">
@@ -270,7 +269,7 @@
                                            value="{{ old('csc_expiry_date') }}"
                                            aria-invalid="{{ $errors->has('csc_expiry_date') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
-                                    <p class="mt-1.5 text-xs text-gray-500">Fecha real del documento; no calcularla desde este formulario.</p>
+                                    <p class="mt-1.5 text-xs text-gray-500">Ingresá la fecha de vencimiento indicada en la documentación CSC, si está disponible.</p>
                                     @error('csc_expiry_date') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                                 <div>
@@ -280,7 +279,7 @@
                                     <input id="acep" name="acep" type="text" maxlength="20"
                                            value="{{ old('acep') }}" pattern="[A-Za-z0-9]+"
                                            autocomplete="off" spellcheck="false"
-                                           placeholder="Código real, si consta"
+                                           placeholder="Código ACEP, si está informado"
                                            aria-invalid="{{ $errors->has('acep') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 font-mono text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
                                     <p class="mt-1.5 text-xs text-gray-500">Hasta 20 caracteres; únicamente letras y números.</p>
@@ -291,10 +290,9 @@
                     </section>
 
                     <section aria-label="Alcance del guardado" class="rounded-lg border border-indigo-100 bg-indigo-50 p-5 text-sm leading-6 text-indigo-900">
-                        <p class="font-bold">Se creará una ficha global y se vinculará a esta línea.</p>
+                        <p class="font-bold">El contenedor quedará registrado en el catálogo y vinculado a esta línea.</p>
                         <p class="mt-1">
-                            El guardado es un borrador. No inventa pesos ni cantidades distribuidas por contenedor
-                            y no transmite nada a Aduana. Una vez creado, ese número ya existirá en el catálogo global.
+                            En este paso no se asignan pesos ni cantidades por contenedor. La línea continúa como borrador y esta acción no transmite información a Aduana.
                         </p>
                     </section>
 
@@ -315,32 +313,30 @@
 
                 <aside aria-label="Información importante" class="space-y-5 lg:col-span-4">
                     <section class="rounded-lg bg-gray-100 p-5 text-gray-800 shadow-lg sm:p-6">
-                        <p class="text-xs font-bold uppercase tracking-widest text-indigo-700">Guía para registrar</p>
-                        <h2 class="mt-2 text-xl font-bold">Qué debés verificar</h2>
-                        <ol class="mt-5 space-y-4 text-sm text-gray-200">
+                        <p class="text-xs font-bold uppercase tracking-widest text-indigo-700">Antes del registro</p>
+                        <h2 class="mt-2 text-xl font-bold">Revisión previa</h2>
+                        <ol class="mt-5 space-y-4 text-sm text-gray-700">
                             <li class="flex items-start gap-3">
-                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500 font-bold">1</span>
-                                <span>Comprobá que el número no figure ya en el catálogo.</span>
+                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-700 font-bold text-white">1</span>
+                                <span>Si el contenedor ya está registrado, utilizá «Vincular contenedor existente».</span>
                             </li>
                             <li class="flex items-start gap-3">
-                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500 font-bold">2</span>
-                                <span>Seleccioná expresamente los estados físico y operativo reales de la unidad.</span>
+                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-700 font-bold text-white">2</span>
+                                <span>Seleccioná el estado físico y el operativo que correspondan al contenedor.</span>
                             </li>
                             <li class="flex items-start gap-3">
-                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500 font-bold">3</span>
-                                <span>Informá los documentos disponibles sin atribuir un dato que no conste en ellos.</span>
+                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-700 font-bold text-white">3</span>
+                                <span>Completá los datos documentales disponibles, incluido CSC o ACEP cuando corresponda.</span>
                             </li>
                         </ol>
                         <p class="mt-6 border-t border-gray-200 pt-5 text-xs leading-6 text-gray-600">
-                            La condición aduanera H/P seguirá siendo la declarada en la línea.
-                            No se cambia el estado físico de otros contenedores.
+                            La condición aduanera H/P será la definida en la línea de mercadería. Los demás contenedores no se modifican.
                         </p>
                     </section>
                     <section class="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-900">
-                        <p class="font-bold">Alta no significa aprobación aduanera.</p>
+                        <p class="font-bold">El registro no realiza envíos a Aduana.</p>
                         <p class="mt-2">
-                            El control documental CSC/ACEP y las restantes validaciones ATA-DESC
-                            deberán completarse antes de transmitir. Este formulario no habilita el envío.
+                            Antes de transmitir, la operación deberá superar las validaciones documentales y aduaneras correspondientes. Este formulario solo registra el contenedor y lo vincula a la línea.
                         </p>
                     </section>
                 </aside>
