@@ -20,7 +20,18 @@ final class HidroviaTransshipmentMultiEnvioXmlGenerator
         private readonly HidroviaTransshipmentContainerBultoWriter $containerBulto
     ) {}
 
-    public function createEnviosFragment(BillOfLading $bill, array $prepared): string
+    /**
+     * El tercer argumento es opcional SOLO para la vista previa enriquecida.
+     * Se indexa por shipment_id usando exclusivamente los nombres del contrato
+     * ARCA: idFiscalATAMIC, lugOperOrigen y lugOperDestino. No se infieren
+     * CUIT ni puertos a partir de la empresa de conexión o del viaje.
+     * No convierte este fragmento en un SOAP transmisible.
+     */
+    public function createEnviosFragment(
+        BillOfLading $bill,
+        array $prepared,
+        ?array $customsByShipmentId = null
+    ): string
     {
         if ((int) ($prepared['bill_of_lading_id'] ?? 0) !== (int) $bill->id
             || $bill->is_transit_transshipment !== 'S'
@@ -123,6 +134,44 @@ final class HidroviaTransshipmentMultiEnvioXmlGenerator
             }
         }
 
+        // Los datos específicos del ATA Buque y de los lugares operativos no
+        // existen en el plan de distribución. Solo incluirlos si se entregan
+        // explícitamente para CADA shipment, sin reemplazos inventados.
+        $customs = [];
+        if ($customsByShipmentId !== null) {
+            if (count($customsByShipmentId) !== count($shipments)) {
+                throw new InvalidArgumentException('Faltan datos aduaneros para alguna barcaza o sobran embarcaciones.');
+            }
+            foreach ($shipments as $shipment) {
+                $shipmentId = (int) $shipment['shipment_id'];
+                $entry = $customsByShipmentId[$shipmentId] ?? null;
+                if (!is_array($entry)) {
+                    throw new InvalidArgumentException("Faltan datos aduaneros de la barcaza {$shipmentId}.");
+                }
+                $fiscal = trim((string) ($entry['idFiscalATAMIC'] ?? ''));
+                if (!preg_match('/^[0-9]{11,14}$/D', $fiscal)) {
+                    throw new InvalidArgumentException("La barcaza {$shipmentId} requiere idFiscalATAMIC real y válido.");
+                }
+                $locations = [];
+                foreach (['lugOperOrigen' => 5, 'lugOperDestino' => 7] as $field => $max) {
+                    $location = $entry[$field] ?? null;
+                    if (!is_array($location)) {
+                        throw new InvalidArgumentException("La barcaza {$shipmentId} requiere {$field} real.");
+                    }
+                    $code = trim((string) ($location['codLugOper'] ?? ''));
+                    $city = strtoupper(trim((string) ($location['codCiu'] ?? '')));
+                    if ($code === '' || mb_strlen($code) > $max
+                        || !preg_match('/^[A-Z]{2}[A-Z0-9]{3}$/D', $city)) {
+                        throw new InvalidArgumentException("La barcaza {$shipmentId} tiene {$field} incompleto o inválido.");
+                    }
+                    // Aunque el manual califica opcional al lugar de destino,
+                    // ARCA 41933 rechazó codLugOper vacío: nunca emitirlo así.
+                    $locations[$field] = ['codLugOper' => $code, 'codCiu' => $city];
+                }
+                $customs[$shipmentId] = ['idFiscalATAMIC' => $fiscal] + $locations;
+            }
+        }
+
         $w = new XMLWriter();
         $w->openMemory();
         $w->startElement('envios');
@@ -186,8 +235,19 @@ final class HidroviaTransshipmentMultiEnvioXmlGenerator
             $w->endElement(); // Destinacion
             $w->endElement(); // destinaciones
             $w->writeElement('indUltFra', 'S');
-            // Pendientes: idFiscalATAMIC y lugares operativos POR envío,
-            // nunca reemplazarlos con identificadores ficticios.
+            // En modo QA básico se omiten los campos, nunca se inventan.
+            // En modo enriquecido se mantienen el orden y los nombres del XSD.
+            $shipmentId = (int) $shipment['shipment_id'];
+            if (isset($customs[$shipmentId])) {
+                $entry = $customs[$shipmentId];
+                $w->writeElement('idFiscalATAMIC', $entry['idFiscalATAMIC']);
+                foreach (['lugOperOrigen', 'lugOperDestino'] as $field) {
+                    $w->startElement($field);
+                    $w->writeElement('codLugOper', $entry[$field]['codLugOper']);
+                    $w->writeElement('codCiu', $entry[$field]['codCiu']);
+                    $w->endElement();
+                }
+            }
             $w->writeElement('idEnvio', (string) $shipment['id_envio']);
             $w->endElement(); // Envio
         }
