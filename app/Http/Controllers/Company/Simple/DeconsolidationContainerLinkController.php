@@ -68,9 +68,9 @@ class DeconsolidationContainerLinkController extends Controller
             'container_number' => ['required', 'string', 'max:15'],
         ], [
             'container_number.required' =>
-                'Ingresá el número real del contenedor que corresponde a esta línea.',
+                'Ingresá el número del contenedor que querés vincular a esta línea.',
             'container_number.max' =>
-                'El número del contenedor admite hasta 15 caracteres en el sistema.',
+                'El número del contenedor admite hasta 15 caracteres.',
         ]);
 
         [$container, $linked] = DB::transaction(function () use (
@@ -102,8 +102,9 @@ class DeconsolidationContainerLinkController extends Controller
             if (!$container) {
                 throw ValidationException::withMessages([
                     'container_number' =>
-                        'Ese contenedor no figura como disponible en el catálogo. '
-                        . 'No se creó uno automáticamente: verificá su alta con datos reales.',
+                        'No se encontró un contenedor activo y habilitado con ese número. '
+                        . 'Revisá el número o su estado en el catálogo. Si no está registrado, '
+                        . 'podés utilizar «Registrar contenedor nuevo».',
                 ]);
             }
 
@@ -130,7 +131,8 @@ class DeconsolidationContainerLinkController extends Controller
                     throw ValidationException::withMessages([
                         'container_number' =>
                             'Este contenedor ya está vinculado a otra línea '
-                            . 'del mismo conocimiento con condición H/P distinta.',
+                            . 'del mismo conocimiento con una condición H/P diferente. '
+                            . 'Revisá las condiciones antes de continuar.',
                     ]);
                 }
             }
@@ -153,13 +155,13 @@ class DeconsolidationContainerLinkController extends Controller
             ->with(
                 'success',
                 $linked
-                    ? "Contenedor {$container->container_number} vinculado como borrador "
-                        . "a la línea {$item->line_number}. "
-                        . 'No se inventaron pesos ni cantidades por contenedor. '
-                        . 'Falta verificar su documentación antes de transmitir.'
+                    ? "Contenedor {$container->container_number} vinculado "
+                        . "a la línea {$item->line_number} como borrador. "
+                        . 'La vinculación no asigna pesos ni cantidades por contenedor. '
+                        . 'Revisá su documentación antes de transmitir.'
                     : "El contenedor {$container->container_number} ya estaba "
-                        . "vinculado a la línea {$item->line_number}; "
-                        . 'no se duplicó ni se modificó su ficha.'
+                        . "vinculado a la línea {$item->line_number}. "
+                        . 'Se conserva la vinculación y su ficha original.'
             );
     }
 
@@ -183,7 +185,7 @@ class DeconsolidationContainerLinkController extends Controller
 
         return redirect()->route('company.simple.desconsolidado.operations.show', [
             'operation' => $operation,
-        ])->with('success', 'Contenedor desvinculado de la línea. La ficha global se conservó.');
+        ])->with('success', 'Contenedor desvinculado de la línea. Sus datos permanecen registrados en el catálogo.');
     }
 
     /**
@@ -269,14 +271,14 @@ class DeconsolidationContainerLinkController extends Controller
             'csc_expiry_date' => ['nullable', 'date_format:Y-m-d'],
             'acep' => ['nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/'],
         ], [
-            'container_number.required' => 'Ingresá el número real del contenedor.',
+            'container_number.required' => 'Ingresá el número del contenedor.',
             'container_number.max' => 'El número admite hasta 15 caracteres.',
             'container_type_id.exists' =>
                 'Seleccioná un tipo de contenedor activo del catálogo.',
             'condition.required' =>
-                'Indicá el estado físico real del contenedor.',
+                'Seleccioná el estado físico del contenedor.',
             'operational_status.required' =>
-                'Indicá el estado operativo real del contenedor.',
+                'Seleccioná el estado operativo del contenedor.',
             'tare_weight_kg.decimal' => 'La tara admite hasta dos decimales.',
             'max_gross_weight_kg.decimal' =>
                 'El peso bruto máximo admite hasta dos decimales.',
@@ -293,7 +295,7 @@ class DeconsolidationContainerLinkController extends Controller
         if (!empty($data['csc_expiry_date']) && !empty($data['acep'])) {
             throw ValidationException::withMessages([
                 'acep' =>
-                    'Para ATA-DESC informá vencimiento CSC o ACEP, nunca ambos.',
+                    'Para ATA-DESC se admite la fecha de vencimiento CSC o el código ACEP, pero no ambos simultáneamente.',
             ]);
         }
 
@@ -330,8 +332,9 @@ class DeconsolidationContainerLinkController extends Controller
                     ->exists()) {
                     throw ValidationException::withMessages([
                         'container_number' =>
-                            'Este contenedor ya existe en el catálogo. '
-                            . 'Usá Vincular contenedor existente; no se modificó su ficha.',
+                            'Este contenedor ya está registrado en el catálogo. '
+                            . 'Para asociarlo a la línea, utilizá «Vincular contenedor existente». '
+                            . 'Su ficha no se modificó.',
                     ]);
                 }
 
@@ -377,8 +380,8 @@ class DeconsolidationContainerLinkController extends Controller
             ) {
                 throw ValidationException::withMessages([
                     'container_number' =>
-                        'El contenedor fue registrado por otra operación. '
-                        . 'Volvé y vinculalo desde el catálogo existente.',
+                        'El contenedor ya fue registrado en el catálogo. '
+                        . 'Podés vincularlo desde «Vincular contenedor existente».',
                 ]);
             }
 
@@ -393,9 +396,8 @@ class DeconsolidationContainerLinkController extends Controller
                 'success',
                 "Contenedor {$container->container_number} registrado y vinculado "
                 . "a la línea {$item->line_number} como borrador. "
-                . 'No se inventaron pesos ni cantidades distribuidas. '
-                . 'La documentación y el resto de las validaciones '
-                . 'deberán completarse antes de cualquier envío.'
+                . 'No se asignaron pesos ni cantidades por contenedor. '
+                . 'Antes de transmitir a Aduana, revisá la documentación y las validaciones pendientes.'
             );
     }
 
@@ -408,11 +410,11 @@ class DeconsolidationContainerLinkController extends Controller
     {
         $company = $this->getUserCompany();
 
-        abort_unless($company, 403, 'No se encontró una empresa asociada al usuario.');
+        abort_unless($company, 403, 'Tu usuario no tiene una empresa asociada. Consultá al administrador.');
         abort_unless(
             $this->hasCompanyRole('Desconsolidador'),
             403,
-            'La empresa no tiene habilitado el rol Desconsolidador.'
+            'La empresa no está habilitada para operar Desconsolidados. Consultá al administrador.'
         );
 
         $operation = DeconsolidationOperation::query()
@@ -447,7 +449,7 @@ class DeconsolidationContainerLinkController extends Controller
             && !in_array($bill->argentina_status, ['sent', 'approved'], true)
             && !in_array($bill->webservice_status, ['sent', 'processing', 'approved', 'accepted'], true),
             409,
-            'El conocimiento no es un borrador editable de este expediente.'
+            'Este conocimiento no está disponible para edición desde el expediente actual.'
         );
     }
 
@@ -462,8 +464,8 @@ class DeconsolidationContainerLinkController extends Controller
                 true
             ),
             409,
-            'Solo pueden vincularse contenedores a líneas contenedorizadas '
-            . '(embalaje 05) que sigan siendo borradores y tengan condición H/P.'
+            'Para vincular un contenedor, la línea debe estar en borrador, '
+            . 'tener embalaje 05 y contar con una condición H/P válida.'
         );
     }
 }
