@@ -11,7 +11,7 @@
                 <span aria-hidden="true">/</span>
                 <span class="text-gray-800">Nueva línea de mercadería</span>
             </nav>
-            <h1 class="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">{{ $editingItem ? 'Editar línea de mercadería' : 'Agregar línea de mercadería' }}</h1>
+            <h1 class="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">{{ ($editingItem ?? null) ? 'Editar línea de mercadería' : 'Agregar línea de mercadería' }}</h1>
             <p class="mt-1 text-sm text-gray-500">Empresa: {{ $company->legal_name }}</p>
         </div>
     </x-slot>
