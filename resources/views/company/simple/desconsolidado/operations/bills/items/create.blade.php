@@ -129,7 +129,7 @@
                                            placeholder="Código de 2 caracteres"
                                            aria-invalid="{{ $errors->has('packaging_code') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 font-mono text-base uppercase shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
-                                    <p class="mt-1.5 text-xs leading-5 text-gray-500">No inventes un código. <strong>05</strong> corresponde a carga contenedorizada; requerirá vincular los contenedores reales.</p>
+                                    <p class="mt-1.5 text-xs leading-5 text-gray-500">Ingresá el código de embalaje indicado en la documentación. El código <strong>05</strong> corresponde a carga contenedorizada y requiere vincular los contenedores correspondientes.</p>
                                     @error('packaging_code') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                                 <div>
@@ -308,7 +308,7 @@
                     <div class="rounded-lg border border-gray-200 bg-white p-5 text-sm text-gray-600">
                         <p class="font-bold text-gray-900">¿Falta algún dato?</p>
                         <p class="mt-2 leading-6">
-                            Consultá el documento o el catálogo correspondiente. No ingreses un código parecido para poder continuar: la información debe coincidir con lo declarado.
+                            Consultá la documentación o el catálogo correspondiente para identificar el código correcto. Los datos deben coincidir con lo declarado.
                         </p>
                     </div>
                 </aside>
