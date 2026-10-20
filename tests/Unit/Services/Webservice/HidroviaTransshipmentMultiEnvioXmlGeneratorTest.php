@@ -78,23 +78,40 @@ class HidroviaTransshipmentMultiEnvioXmlGeneratorTest extends TestCase
         ];
     }
 
-    private function render(BillOfLading $bill, array $plan): DOMXPath
+    private function customsByShipment(): array
+    {
+        // Valores sintéticos: únicamente estructura y longitud, no CUIT válidos reales.
+        return [
+            11 => [
+                'idFiscalATAMIC' => '20123456789',
+                'lugOperOrigen' => ['codLugOper' => '12345', 'codCiu' => 'ARSFE'],
+                'lugOperDestino' => ['codLugOper' => '1234567', 'codCiu' => 'ARROS'],
+            ],
+            12 => [
+                'idFiscalATAMIC' => '20987654321',
+                'lugOperOrigen' => ['codLugOper' => 'A123', 'codCiu' => 'ARPNA'],
+                'lugOperDestino' => ['codLugOper' => 'B123', 'codCiu' => 'ARROS'],
+            ],
+        ];
+    }
+
+    private function render(BillOfLading $bill, array $plan, ?array $customs = null): DOMXPath
     {
         $generator = new HidroviaTransshipmentMultiEnvioXmlGenerator(
             new HidroviaTransshipmentContainerBultoWriter()
         );
-        $xml = $generator->createEnviosFragment($bill, $plan);
+        $xml = $generator->createEnviosFragment($bill, $plan, $customs);
         $document = new DOMDocument();
         $this->assertTrue($document->loadXML($xml));
         $this->assertSame('envios', $document->documentElement->nodeName);
         return new DOMXPath($document);
     }
 
-    private function rejected(BillOfLading $bill, array $plan, string $reason): void
+    private function rejected(BillOfLading $bill, array $plan, string $reason, ?array $customs = null): void
     {
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage($reason);
-        $this->render($bill, $plan);
+        $this->render($bill, $plan, $customs);
     }
 
     public function test_one_title_has_two_separate_barge_shipments_with_exact_fractional_weights(): void
@@ -233,5 +250,167 @@ class HidroviaTransshipmentMultiEnvioXmlGeneratorTest extends TestCase
             [$this->row(41, 4, '40.10', 51)],
             [$this->row(41, 6, '60.15', null)],
         ), 'contenedor real');
+    }
+
+    public function test_two_barges_can_have_distinct_ata_and_operative_locations_without_rewriting_source(): void
+    {
+        $bill = $this->bill([$this->item(41, 2, 10, '100.25')]);
+        $plan = $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]);
+        $customs = $this->customsByShipment();
+        $originalPlan = $plan;
+        $originalCustoms = $customs;
+        $xpath = $this->render($bill, $plan, $customs);
+
+        $this->assertSame('20123456789', $xpath->evaluate('string(/envios/Envio[1]/idFiscalATAMIC)'));
+        $this->assertSame('20987654321', $xpath->evaluate('string(/envios/Envio[2]/idFiscalATAMIC)'));
+        $this->assertSame('12345', $xpath->evaluate('string(/envios/Envio[1]/lugOperOrigen/codLugOper)'));
+        $this->assertSame('ARSFE', $xpath->evaluate('string(/envios/Envio[1]/lugOperOrigen/codCiu)'));
+        $this->assertSame('1234567', $xpath->evaluate('string(/envios/Envio[1]/lugOperDestino/codLugOper)'));
+        $this->assertSame('A123', $xpath->evaluate('string(/envios/Envio[2]/lugOperOrigen/codLugOper)'));
+        $this->assertSame('ARPNA', $xpath->evaluate('string(/envios/Envio[2]/lugOperOrigen/codCiu)'));
+        $this->assertSame('B123', $xpath->evaluate('string(/envios/Envio[2]/lugOperDestino/codLugOper)'));
+        $this->assertSame($originalPlan, $plan);
+        $this->assertSame($originalCustoms, $customs);
+    }
+
+    public function test_customs_xml_uses_existing_micdta_element_names_and_sequence(): void
+    {
+        $bill = $this->bill([$this->item(41, 2, 10, '100.25')]);
+        $xpath = $this->render($bill, $this->plan(
+            [$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]
+        ), $this->customsByShipment());
+        foreach ([1, 2] as $index) {
+            $elements = [];
+            foreach ($xpath->query("/envios/Envio[{$index}]/*") as $node) {
+                $elements[] = $node->nodeName;
+            }
+            $this->assertSame([
+                'destinaciones', 'indUltFra', 'idFiscalATAMIC',
+                'lugOperOrigen', 'lugOperDestino', 'idEnvio',
+            ], $elements);
+            $this->assertSame(1, $xpath->query("/envios/Envio[{$index}]/lugOperOrigen/codLugOper")->length);
+            $this->assertSame(1, $xpath->query("/envios/Envio[{$index}]/lugOperDestino/codCiu")->length);
+        }
+    }
+
+    public function test_basic_preview_never_invents_customs_details(): void
+    {
+        $bill = $this->bill([$this->item(41, 2, 10, '100.25')]);
+        $xpath = $this->render($bill, $this->plan(
+            [$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]
+        ));
+        $this->assertSame(2, $xpath->query('/envios/Envio')->length);
+        $this->assertSame(0, $xpath->query('//idFiscalATAMIC | //lugOperOrigen | //lugOperDestino')->length);
+    }
+
+    public function test_ata_cuit_is_required_for_each_barge(): void
+    {
+        $customs = $this->customsByShipment();
+        unset($customs[11]['idFiscalATAMIC']);
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'idFiscalATAMIC', $customs);
+    }
+
+    public function test_short_ata_cuit_is_rejected_without_padding(): void
+    {
+        $customs = $this->customsByShipment();
+        $customs[12]['idFiscalATAMIC'] = '1234567890';
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'idFiscalATAMIC', $customs);
+    }
+
+    public function test_nonnumeric_ata_cuit_is_rejected(): void
+    {
+        $customs = $this->customsByShipment();
+        $customs[12]['idFiscalATAMIC'] = '20-98765432-1';
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'idFiscalATAMIC', $customs);
+    }
+
+    public function test_missing_barge_customs_is_rejected(): void
+    {
+        $customs = $this->customsByShipment();
+        unset($customs[12]);
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'Faltan datos aduaneros', $customs);
+    }
+
+    public function test_foreign_customs_shipment_cannot_replace_missing_barge_even_with_two_entries(): void
+    {
+        $customs = $this->customsByShipment();
+        $customs[99] = $customs[12];
+        unset($customs[12]);
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'barcaza 12', $customs);
+    }
+
+    public function test_extra_customs_shipment_is_rejected(): void
+    {
+        $customs = $this->customsByShipment();
+        $customs[99] = $customs[11];
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'sobran embarcaciones', $customs);
+    }
+
+    public function test_origin_operative_location_code_cannot_exceed_five_characters(): void
+    {
+        $customs = $this->customsByShipment();
+        $customs[12]['lugOperOrigen']['codLugOper'] = '123456';
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'lugOperOrigen', $customs);
+    }
+
+    public function test_empty_destination_operative_location_is_rejected(): void
+    {
+        $customs = $this->customsByShipment();
+        $customs[12]['lugOperDestino']['codLugOper'] = '';
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'lugOperDestino', $customs);
+    }
+
+    public function test_destination_operative_location_code_cannot_exceed_seven_characters(): void
+    {
+        $customs = $this->customsByShipment();
+        $customs[11]['lugOperDestino']['codLugOper'] = '12345678';
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'lugOperDestino', $customs);
+    }
+
+    public function test_invalid_unlocode_for_origin_city_is_rejected(): void
+    {
+        $customs = $this->customsByShipment();
+        $customs[12]['lugOperOrigen']['codCiu'] = 'ROSA';
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'lugOperOrigen', $customs);
+    }
+
+    public function test_missing_operative_city_is_rejected(): void
+    {
+        $customs = $this->customsByShipment();
+        unset($customs[11]['lugOperDestino']['codCiu']);
+        $this->rejected($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]),
+            'lugOperDestino', $customs);
+    }
+
+    public function test_operative_city_is_normalized_to_uppercase_without_changing_source(): void
+    {
+        $customs = $this->customsByShipment();
+        $customs[11]['lugOperOrigen']['codCiu'] = 'arsfe';
+        $before = $customs;
+        $xpath = $this->render($this->bill([$this->item(41, 2, 10, '100.25')]),
+            $this->plan([$this->row(41, 4, '40.10')], [$this->row(41, 6, '60.15')]), $customs);
+        $this->assertSame('ARSFE', $xpath->evaluate('string(/envios/Envio[1]/lugOperOrigen/codCiu)'));
+        $this->assertSame($before, $customs);
     }
 }
