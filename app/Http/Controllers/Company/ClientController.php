@@ -111,11 +111,9 @@ class ClientController extends Controller
         try {
             DB::beginTransaction();
 
-            // Los datos ya vienen validados del FormRequest con client_roles
+            // El FormRequest ya normaliza el identificador según el país.
+            // Conservar el valor validado, incluidas letras extranjeras o NULL.
             $validatedData = $request->validated();
-
-            // Limpiar CUIT/RUC
-            $validatedData['tax_id'] = preg_replace('/[^0-9\-]/', '', $validatedData['tax_id']);
 
             // Establecer valores por defecto
             $validatedData['status'] = 'active';
@@ -239,13 +237,9 @@ class ClientController extends Controller
         try {
             DB::beginTransaction();
 
-            // Los datos ya vienen validados del FormRequest con client_roles
+            // Conservar la identificación ya validada por el FormRequest;
+            // no eliminar caracteres extranjeros ni transformar NULL.
             $validatedData = $request->validated();
-
-            // Limpiar CUIT/RUC si se proporciona
-            if (isset($validatedData['tax_id'])) {
-                $validatedData['tax_id'] = preg_replace('/[^0-9\-]/', '', $validatedData['tax_id']);
-            }
 
             // Actualizar cliente
             $client->update($validatedData);

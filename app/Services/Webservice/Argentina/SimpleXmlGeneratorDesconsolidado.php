@@ -988,7 +988,16 @@ class SimpleXmlGeneratorDesconsolidado
             false
         );
 
-        return $explicit ?: $this->optionalString(
+        if ($explicit !== null) {
+            return $explicit;
+        }
+
+        // El tipo documental local no se deduce de un registro extranjero.
+        if (strtoupper((string) $bill->consignee?->country?->alpha2_code) !== 'AR') {
+            return null;
+        }
+
+        return $this->optionalString(
             $bill->consignee?->documentType?->code,
             'TipoDocumentoDestinatarioMercaderia',
             4
@@ -1004,10 +1013,21 @@ class SimpleXmlGeneratorDesconsolidado
             11,
             false
         );
-        $value = $explicit ?: $bill->consignee?->tax_id;
 
-        if (!$value) {
+        // La identificación extranjera no se transforma en un documento ARCA.
+        $value = $explicit;
+        if ($value === null
+            && strtoupper((string) $bill->consignee?->country?->alpha2_code) === 'AR') {
+            $value = $bill->consignee?->tax_id;
+        }
+
+        if ($value === null || trim((string) $value) === '') {
             return null;
+        }
+
+        // Sólo normalizar separadores de un identificador realmente numérico.
+        if (!preg_match('/^[0-9.\s-]+$/', (string) $value)) {
+            throw new Exception("BL {$bill->id}: IdentificadorDestinatarioMercaderia debe ser numérico.");
         }
 
         $clean = preg_replace('/\D+/', '', (string) $value);
