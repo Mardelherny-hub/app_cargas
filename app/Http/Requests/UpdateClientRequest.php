@@ -3,6 +3,8 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use App\Models\Client;
+use App\Models\Country;
 use App\Traits\UserHelper;
 use Illuminate\Validation\Rule;
 
@@ -33,18 +35,40 @@ class UpdateClientRequest extends FormRequest
      */
     public function rules(): array
     {
-        $clientId = $this->route('client')->id ?? null;
+        $client = $this->route('client');
+        $clientId = $client?->id;
+        $countryId = $this->input('country_id');
+        $country = is_scalar($countryId) ? Country::find($countryId) : null;
+        $requiresLocalDocument = in_array(strtoupper((string) $country?->alpha2_code), ['AR', 'PY'], true);
+
+        // Los registros extranjeros históricos pueden tener un tipo de documento
+        // distinto de su país. Permitir otras ediciones si la identificación no cambia.
+        $foreignIdentityUnchanged = $client instanceof Client
+            && !$requiresLocalDocument
+            && (string) $client->country_id === (string) $countryId
+            && (string) ($client->document_type_id ?? '') === (string) ($this->input('document_type_id') ?? '')
+            && (string) ($client->tax_id ?? '') === (string) ($this->input('tax_id') ?? '');
+
+        $documentTypeRule = Rule::exists('document_types', 'id');
+        if (!$foreignIdentityUnchanged) {
+            $documentTypeRule->where('country_id', $countryId)->where('active', true);
+        }
 
         return [
-            // Identificación del cliente (el CUIT/RUC y país no se pueden cambiar)
             'tax_id' => [
-                'required',
+                Rule::requiredIf($requiresLocalDocument || ($this->filled('document_type_id') && !$foreignIdentityUnchanged)),
+                'nullable',
                 'string',
-                'max:13',
-                'unique:clients,tax_id,' . $clientId . ',id,country_id,' . $this->country_id
+                'max:20',
+                ...($requiresLocalDocument ? ['regex:/^[0-9]+$/'] : []),
+                Rule::unique('clients', 'tax_id')->where('country_id', $countryId)->ignore($clientId),
             ],
             'country_id' => 'required|exists:countries,id',
-            'document_type_id' => 'required|exists:document_types,id',
+            'document_type_id' => [
+                Rule::requiredIf($requiresLocalDocument),
+                'nullable',
+                $documentTypeRule,
+            ],
 
             // Datos básicos del cliente
             'legal_name' => 'required|string|min:3|max:255',
@@ -81,12 +105,13 @@ class UpdateClientRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'tax_id.required' => 'El CUIT/RUC es obligatorio.',
-            'tax_id.unique' => 'Ya existe un cliente con este CUIT/RUC en este país.',
+            'tax_id.required' => 'La identificación fiscal es obligatoria para el país o documento seleccionado.',
+            'tax_id.unique' => 'Ya existe un cliente con esta identificación fiscal en este país.',
+            'tax_id.regex' => 'El CUIT/RUC debe contener sólo números y separadores habituales.',
             'country_id.required' => 'El país es obligatorio.',
             'country_id.exists' => 'El país seleccionado no es válido.',
-            'document_type_id.required' => 'El tipo de documento es obligatorio.',
-            'document_type_id.exists' => 'El tipo de documento seleccionado no es válido.',
+            'document_type_id.required' => 'El tipo de documento es obligatorio para Argentina y Paraguay.',
+            'document_type_id.exists' => 'El tipo de documento debe corresponder al país seleccionado y estar activo.',
             'legal_name.required' => 'La razón social es obligatoria.',
             'legal_name.min' => 'La razón social debe tener al menos 3 caracteres.',
             'legal_name.max' => 'La razón social no puede tener más de 255 caracteres.',
@@ -105,12 +130,27 @@ class UpdateClientRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        // Limpiar CUIT/RUC removiendo caracteres no numéricos
-        if ($this->has('tax_id')) {
-            $this->merge([
-                'tax_id' => preg_replace('/[^0-9]/', '', $this->tax_id)
-            ]);
+        if ($this->input('document_type_id') === '') {
+            $this->merge(['document_type_id' => null]);
         }
+
+        $taxId = $this->input('tax_id');
+        if (!is_string($taxId)) {
+            return;
+        }
+
+        $taxId = trim($taxId);
+        $countryId = $this->input('country_id');
+        $country = is_scalar($countryId) ? Country::find($countryId) : null;
+
+        // Sólo quitar separadores de CUIT/RUC; rechazar letras sin convertirlas.
+        if ($taxId !== ''
+            && in_array(strtoupper((string) $country?->alpha2_code), ['AR', 'PY'], true)
+            && preg_match('/^[0-9.\\s-]+$/', $taxId)) {
+            $taxId = preg_replace('/[^0-9]/', '', $taxId);
+        }
+
+        $this->merge(['tax_id' => $taxId === '' ? null : $taxId]);
     }
 
     /**

@@ -68,22 +68,43 @@
                                 @enderror
                             </div>
 
+                            <!-- País: determina los tipos documentales disponibles -->
+                            <div>
+                                <label for="country_id" class="block text-sm font-medium text-gray-700">
+                                    País <span class="text-red-500">*</span>
+                                </label>
+                                <select name="country_id"
+                                        id="country_id"
+                                        required
+                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('country_id') border-red-300 @enderror">
+                                    <option value="">Seleccione un país</option>
+                                    @foreach($countries as $country)
+                                        <option value="{{ $country->id }}" data-country-code="{{ $country->alpha2_code }}" {{ old('country_id') == $country->id ? 'selected' : '' }}>
+                                            {{ $country->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('country_id')
+                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                @enderror
+                            </div>
+
                             <!-- Tipo de Documento -->
                             <div>
                                 <label for="document_type_id" class="block text-sm font-medium text-gray-700">
-                                    Tipo de Documento <span class="text-red-500">*</span>
+                                    Tipo de Documento <span id="document-type-required" class="text-red-500" hidden>*</span>
                                 </label>
-                                <select name="document_type_id" 
-                                        id="document_type_id" 
-                                        required
+                                <select name="document_type_id"
+                                        id="document_type_id"
                                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('document_type_id') border-red-300 @enderror">
-                                    <option value="">Seleccione un tipo</option>
+                                    <option value="">Seleccione primero un país</option>
                                     @foreach($documentTypes as $documentType)
-                                        <option value="{{ $documentType->id }}" {{ old('document_type_id') == $documentType->id ? 'selected' : '' }}>
+                                        <option value="{{ $documentType->id }}" data-country-id="{{ $documentType->country_id }}" {{ old('document_type_id') == $documentType->id ? 'selected' : '' }}>
                                             {{ $documentType->name }}
                                         </option>
                                     @endforeach
                                 </select>
+                                <p id="document-type-help" class="mt-1 text-xs text-gray-500">Seleccioná el país para ver los documentos disponibles.</p>
                                 @error('document_type_id')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
@@ -92,41 +113,20 @@
                             <!-- Número de Documento -->
                             <div>
                                 <label for="tax_id" class="block text-sm font-medium text-gray-700">
-                                    Número de Documento <span class="text-red-500">*</span>
+                                    Identificación fiscal <span id="tax-id-required" class="text-red-500" hidden>*</span>
                                 </label>
-                                <input type="text" 
-                                       name="tax_id" 
-                                       id="tax_id" 
-                                       required
+                                <input type="text"
+                                       name="tax_id"
+                                       id="tax_id"
                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('tax_id') border-red-300 @enderror"
                                        value="{{ old('tax_id') }}"
-                                       placeholder="Ingrese el número de documento"
-                                       maxlength="50">
+                                       placeholder="Número o identificador fiscal (si se informa)"
+                                       maxlength="20">
+                                <p id="tax-id-help" class="mt-1 text-xs text-gray-500">Elegí un país para conocer si la identificación es obligatoria.</p>
                                 @error('tax_id')
                                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                                 @enderror
                                 <div id="validation-result"></div>
-                            </div>
-
-                            <!-- País -->
-                            <div>
-                                <label for="country_id" class="block text-sm font-medium text-gray-700">
-                                    País <span class="text-red-500">*</span>
-                                </label>
-                                <select name="country_id" 
-                                        id="country_id" 
-                                        required
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm @error('country_id') border-red-300 @enderror">
-                                    <option value="">Seleccione un país</option>
-                                    @foreach($countries as $country)
-                                        <option value="{{ $country->id }}" {{ old('country_id') == $country->id ? 'selected' : '' }}>
-                                            {{ $country->name }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('country_id')
-                                    <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                                @enderror
                             </div>
 
                             <!-- Aduana Habitual -->
@@ -416,45 +416,127 @@
             }
         });
 
-        // Validación en tiempo real del número de documento
-        document.getElementById('tax_id').addEventListener('blur', function() {
-            const taxId = this.value.trim();
-            const documentTypeId = document.getElementById('document_type_id').value;
-            
-            if (taxId && documentTypeId) {
-                validateTaxId(taxId, documentTypeId);
+        const countryField = document.getElementById('country_id');
+        const documentTypeField = document.getElementById('document_type_id');
+        const taxIdField = document.getElementById('tax_id');
+        const validationResult = document.getElementById('validation-result');
+        let validationSequence = 0;
+
+        function clearDocumentValidation() {
+            validationSequence++;
+            validationResult.textContent = '';
+            validationResult.className = '';
+        }
+
+        // Sólo mostrar documentos del país elegido. Sin documento local, admitir tipo vacío.
+        function syncDocumentFields() {
+            const countryId = countryField.value;
+            const countryCode = (countryField.selectedOptions[0]?.dataset.countryCode || '').toUpperCase();
+            const requiresLocalDocument = countryCode === 'AR' || countryCode === 'PY';
+
+            for (const option of Array.from(documentTypeField.options).slice(1)) {
+                const available = Boolean(countryId) && option.dataset.countryId === countryId;
+                option.hidden = !available;
+                option.disabled = !available;
             }
+            if (documentTypeField.selectedOptions[0]?.disabled) {
+                documentTypeField.value = '';
+            }
+
+            documentTypeField.required = requiresLocalDocument;
+            taxIdField.required = requiresLocalDocument || Boolean(documentTypeField.value);
+            document.getElementById('document-type-required').hidden = !requiresLocalDocument;
+            document.getElementById('tax-id-required').hidden = !taxIdField.required;
+            documentTypeField.options[0].textContent = !countryId
+                ? 'Seleccione primero un país'
+                : requiresLocalDocument ? 'Seleccione un tipo' : 'Sin tipo documental informado';
+            document.getElementById('document-type-help').textContent = !countryId
+                ? 'Seleccioná un país para ver los documentos disponibles.'
+                : requiresLocalDocument
+                    ? 'Seleccioná el documento correspondiente al país.'
+                    : 'Si no hay un tipo adecuado para este país, dejalo sin seleccionar.';
+            document.getElementById('tax-id-help').textContent = requiresLocalDocument
+                ? 'Para Argentina y Paraguay es obligatorio informar el CUIT/RUC.'
+                : documentTypeField.value
+                    ? 'Al elegir un tipo de documento, tenés que informar su número.'
+                    : 'Para otros países, informá el identificador real (incluidas letras) o dejalo vacío si no se conoce.';
+        }
+
+        countryField.addEventListener('change', function() {
+            documentTypeField.value = '';
+            syncDocumentFields();
+            clearDocumentValidation();
+        });
+        documentTypeField.addEventListener('change', function() {
+            syncDocumentFields();
+            clearDocumentValidation();
+        });
+        taxIdField.addEventListener('input', clearDocumentValidation);
+        syncDocumentFields();
+
+        // Comprobación de existencia, no de autenticidad fiscal.
+        taxIdField.addEventListener('blur', function() {
+            const taxId = this.value.trim();
+            if (!taxId) {
+                clearDocumentValidation();
+                return;
+            }
+            if (!countryField.value) {
+                showValidationMessage('info', 'Seleccioná el país antes de comprobar la identificación.');
+                return;
+            }
+            validateTaxId(taxId, countryField.value);
         });
 
-        function validateTaxId(taxId, documentTypeId) {
-            const validationResult = document.getElementById('validation-result');
-            
-            showValidationMessage('loading', 'Validando documento...');
-            
-            fetch(`{{ route('company.clients.store') }}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                    'X-Validation-Only': 'true'
-                },
-                body: JSON.stringify({
-                    tax_id: taxId,
-                    document_type_id: documentTypeId
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.valid) {
-                    showValidationMessage('success', 'Documento válido');
-                } else {
-                    showValidationMessage('error', data.message || 'El documento ya está registrado o no es válido');
+        async function validateTaxId(taxId, countryId) {
+            const requestSequence = ++validationSequence;
+            const countryCode = (countryField.selectedOptions[0]?.dataset.countryCode || '').toUpperCase();
+            const isLocal = countryCode === 'AR' || countryCode === 'PY';
+            if (isLocal && !/^[0-9.\s-]+$/.test(taxId)) {
+                showValidationMessage('error', 'El CUIT/RUC debe contener sólo números y separadores habituales.');
+                return;
+            }
+            const identification = isLocal ? taxId.replace(/[^0-9]/g, '') : taxId;
+
+            if (!identification) {
+                showValidationMessage('error', 'Ingresá una identificación fiscal válida.');
+                return;
+            }
+
+            showValidationMessage('loading', 'Comprobando si la identificación ya está registrada...');
+
+            try {
+                const response = await fetch(`{{ route('company.clients.validate-tax-id') }}`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value
+                    },
+                    body: JSON.stringify({ tax_id: identification, country_id: countryId })
+                });
+                const data = await response.json();
+                if (requestSequence !== validationSequence
+                    || countryField.value !== countryId
+                    || taxIdField.value.trim() !== taxId) {
+                    return;
                 }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showValidationMessage('error', 'Error al validar el documento');
-            });
+                if (!response.ok || typeof data.exists !== 'boolean') {
+                    showValidationMessage('error', 'No se pudo comprobar la identificación. Intentá nuevamente.');
+                    return;
+                }
+                showValidationMessage(
+                    data.exists ? 'error' : 'success',
+                    data.exists
+                        ? 'Esta identificación ya está registrada para el país seleccionado.'
+                        : 'Identificación no registrada. Se verificará nuevamente al guardar.'
+                );
+            } catch (error) {
+                if (requestSequence !== validationSequence) return;
+                console.error('Error comprobando identificación:', error);
+                showValidationMessage('error', 'No se pudo consultar la identificación. Intentá nuevamente.');
+            }
         }
 
         function showValidationMessage(type, message) {
