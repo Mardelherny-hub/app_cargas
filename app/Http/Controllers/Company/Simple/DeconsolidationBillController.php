@@ -66,6 +66,7 @@ class DeconsolidationBillController extends Controller
 
         $data = $request->validate([
             'bill_number' => ['required', 'string', 'max:18'],
+            'loading_date' => ['nullable', 'date_format:Y-m-d'],
             'shipper_id' => ['required', 'integer', $activeClient],
             'consignee_id' => ['required', 'integer', $activeClient],
             'loading_port_id' => ['required', 'integer', $activePort],
@@ -88,6 +89,7 @@ class DeconsolidationBillController extends Controller
         ], [
             'bill_number.required' => 'Ingresá el número del conocimiento hijo según la documentación.',
             'bill_number.max' => 'El número del conocimiento hijo admite hasta 18 caracteres.',
+            'loading_date.date_format' => 'Ingresá una fecha de embarque válida.',
             'shipper_id.required' => 'Seleccioná el cargador del conocimiento hijo.',
             'consignee_id.required' => 'Seleccioná el consignatario del conocimiento hijo.',
             'loading_port_id.required' => 'Seleccioná el puerto de embarque del conocimiento hijo.',
@@ -140,6 +142,7 @@ class DeconsolidationBillController extends Controller
         $attributes = [
             'house_bill_number' => $data['bill_number'],
             'master_bill_number' => $operation->master_bill_number,
+            'loading_date' => $data['loading_date'] ?? null,
             'shipper_id' => $data['shipper_id'],
             'consignee_id' => $data['consignee_id'],
             'loading_port_id' => $data['loading_port_id'],
@@ -203,7 +206,7 @@ class DeconsolidationBillController extends Controller
     public function update(Request $request, int $operation, int $bill): RedirectResponse
     {
         [, $operationRecord] = $this->authorizedOperation($operation);
-        $fields = ['bill_number', 'shipper_id', 'consignee_id', 'loading_port_id',
+        $fields = ['bill_number', 'loading_date', 'shipper_id', 'consignee_id', 'loading_port_id',
             'discharge_port_id', 'primary_cargo_type_id', 'gross_weight_kg',
             'cargo_description', 'cargo_marks', 'is_consolidated', 'is_transit_transshipment'];
         foreach ($fields as $field) {
@@ -220,6 +223,7 @@ class DeconsolidationBillController extends Controller
             $query->where('active', true));
         $data = $request->validate([
             'bill_number' => ['required', 'string', 'max:18'],
+            'loading_date' => ['nullable', 'date_format:Y-m-d'],
             'shipper_id' => ['required', 'integer', $activeClient],
             'consignee_id' => ['required', 'integer', $activeClient],
             'loading_port_id' => ['required', 'integer', $activePort],
