@@ -40,7 +40,7 @@ class ArgentinaDeconsolidatedIndependentBoundaryTest extends TestCase
         $operation->id = 11;
         $operation->company_id = 101;
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('Operación ATA-DESC desconocida');
+        $this->expectExceptionMessage('Seleccioná una operación válida para Desconsolidados');
         $this->service()->ejecutarExpediente($operation, 'borrar_todo', [44]);
     }
 
@@ -68,7 +68,7 @@ class ArgentinaDeconsolidatedIndependentBoundaryTest extends TestCase
             $operation->id = 11;
             $operation->company_id = 101;
             $this->expectException(\Exception::class);
-            $this->expectExceptionMessage('no pertenecen al expediente');
+            $this->expectExceptionMessage('no pertenecen a este expediente');
             $this->service()->ejecutarExpediente($operation, 'registrar', [44]);
         } finally {
             \Illuminate\Support\Facades\DB::purge('ata_desc_isolated_test');
@@ -83,7 +83,7 @@ class ArgentinaDeconsolidatedIndependentBoundaryTest extends TestCase
         $operation->id = 11;
         $operation->company_id = 101;
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('Seleccione los conocimientos');
+        $this->expectExceptionMessage('Seleccioná los conocimientos del expediente');
         $this->service()->ejecutarExpediente($operation, 'registrar', []);
     }
 }
