@@ -188,6 +188,90 @@ class DeconsolidationContainerLinkController extends Controller
         ])->with('success', 'Contenedor desvinculado de la línea. Sus datos permanecen registrados en el catálogo.');
     }
 
+    /** Actualiza documentación CSC/ACEP solo en contenedores exclusivos del expediente. */
+    public function updateCustoms(
+        Request $request,
+        int $operation,
+        int $bill,
+        int $item,
+        int $container
+    ): RedirectResponse {
+        [, $operationRecord, $billRecord, $itemRecord] = $this->authorizedItem(
+            $operation, $bill, $item
+        );
+
+        if (is_string($request->input('acep'))) {
+            $value = trim($request->input('acep'));
+            $request->merge(['acep' => $value === '' ? null : $value]);
+        }
+
+        $data = $request->validate([
+            'csc_expiry_date' => ['nullable', 'date_format:Y-m-d'],
+            'acep' => ['nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9]+$/'],
+        ], [
+            'csc_expiry_date.date_format' => 'Ingresá una fecha de vencimiento CSC válida.',
+            'acep.regex' => 'El código ACEP admite únicamente letras y números.',
+            'acep.max' => 'El código ACEP admite hasta 20 caracteres.',
+        ]);
+
+        if (!empty($data['csc_expiry_date']) && !empty($data['acep'])) {
+            throw ValidationException::withMessages([
+                'container_customs' => 'Informá la fecha CSC o el código ACEP, pero no ambos simultáneamente.',
+            ]);
+        }
+
+        DB::transaction(function () use (
+            $operationRecord, $billRecord, $itemRecord, $container, $data
+        ) {
+            $lockedBill = $operationRecord->billsOfLading()
+                ->whereNull('shipment_id')->lockForUpdate()->findOrFail($billRecord->id);
+            $this->assertEditableBill($lockedBill, $operationRecord);
+
+            $lockedItem = $lockedBill->shipmentItems()
+                ->lockForUpdate()->findOrFail($itemRecord->id);
+            $this->assertContainerizedDraft($lockedItem);
+            abort_unless(
+                $lockedItem->containers()->where('containers.id', $container)->exists(),
+                404
+            );
+
+            $record = Container::query()->lockForUpdate()->findOrFail($container);
+
+            // Los contenedores son globales: no alterar documentos si también
+            // están vinculados a otro expediente o a un viaje transportista.
+            $sharedOutsideOperation = DB::table('container_shipment_item as link')
+                ->leftJoin('shipment_items as line', 'line.id', '=', 'link.shipment_item_id')
+                ->leftJoin('bills_of_lading as title', 'title.id', '=', 'line.bill_of_lading_id')
+                ->where('link.container_id', $record->id)
+                ->where(function ($query) use ($operationRecord) {
+                    $query->whereNull('title.deconsolidation_operation_id')
+                        ->orWhere('title.deconsolidation_operation_id', '!=', $operationRecord->id);
+                })
+                ->exists();
+
+            if ($sharedOutsideOperation) {
+                throw ValidationException::withMessages([
+                    'container_customs' => 'Este contenedor está asociado a otros expedientes o viajes. '
+                        . 'Su documentación compartida debe revisarse con el administrador.',
+                ]);
+            }
+
+            $record->update([
+                'csc_expiry_date' => $data['csc_expiry_date'] ?? null,
+                'acep' => $data['acep'] ?? null,
+                'last_updated_date' => now(),
+                'last_updated_by_user_id' => $this->getCurrentUser()?->id,
+            ]);
+        });
+
+        return redirect()
+            ->route('company.simple.desconsolidado.operations.show', [
+                'operation' => $operationRecord->id,
+            ])
+            ->with('success', 'Documentación CSC/ACEP del contenedor actualizada. '
+                . 'Podés ejecutar nuevamente la validación sin transmitir.');
+    }
+
     /**
      * Formulario de alta excepcional cuando el número todavía no existe
      * en el catálogo global. No modifica contenedores ya registrados.
