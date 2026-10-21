@@ -92,6 +92,21 @@
                                 @error('bill_number') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                             </div>
 
+                            <div>
+                                <label for="loading_date" class="block text-sm font-semibold text-gray-900">
+                                    Fecha de embarque del conocimiento hijo
+                                </label>
+                                <input id="loading_date" name="loading_date" type="date"
+                                       value="{{ old('loading_date', $editingBill?->loading_date?->format('Y-m-d')) }}"
+                                       aria-invalid="{{ $errors->has('loading_date') ? 'true' : 'false' }}"
+                                       class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
+                                <p class="mt-1.5 text-xs text-gray-600">
+                                    Ingresá la fecha de embarque indicada en el conocimiento. Es necesaria antes de enviar a Aduana
+                                    y es distinta de la fecha de arribo del viaje. Podés guardarla después mientras el conocimiento sea editable.
+                                </p>
+                                @error('loading_date') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
+                            </div>
+
                             @foreach($lookupFields as $field)
                                 @if($field['kind'] === 'client')
                                     <div class="relative" data-desc-lookup data-kind="{{ $field['kind'] }}"
