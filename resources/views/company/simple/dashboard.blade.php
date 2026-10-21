@@ -47,6 +47,20 @@
                 </div>
             @endif
 
+            {{-- Acceso directo a la preparación de Transbordos, independiente de Anticipada. --}}
+            @if($company->hasCompanyRole('Transbordos'))
+                <div class="mb-6 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <h3 class="font-semibold text-blue-900">Transbordos — Preparación de cargas</h3>
+                        <p class="mt-1 text-sm text-blue-700">Distribuí conocimientos entre barcazas, guardá borradores y validalos. Sin transmisión a ARCA.</p>
+                    </div>
+                    <a href="{{ route('company.simple.transbordo.index') }}"
+                       class="inline-flex shrink-0 items-center justify-center rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">
+                        Ingresar a Transbordos
+                    </a>
+                </div>
+            @endif
+
             {{-- ATA-DESC es independiente de los viajes y se muestra solo a empresas habilitadas. --}}
             @if($company->hasCompanyRole('Desconsolidador'))
                 <div class="mb-6 flex flex-col gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -245,30 +259,30 @@
                                                 </div>
                                             </div>
 
-                                            {{-- TRANSBORDO - PASO 4 --}}
-                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col {{ $anticipadaEnviada ? 'bg-white' : 'bg-gray-50 opacity-60' }}">
-                                                <div class="flex items-start justify-between mb-2">
-                                                    <div class="flex-1 min-w-0">
-                                                        <div class="flex items-center mb-1">
-                                                            @if(!$anticipadaEnviada)
-                                                                <svg class="w-3 h-3 mr-1 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                                                                    <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/>
-                                                                </svg>
-                                                            @endif
-                                                            <span class="text-xs font-medium text-gray-600 mr-2">Paso 4</span>
-                                                        </div>
-                                                        <span class="text-sm font-semibold text-gray-900 block truncate">Transbordo</span>
+                                            {{-- TRANSBORDOS: preparación de borradores, sin conexión SOAP. --}}
+                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-white">
+                                                <div class="flex items-start justify-between gap-2 mb-2">
+                                                    <div class="min-w-0">
+                                                        <span class="text-xs font-medium text-gray-600 block">Preparación</span>
+                                                        <span class="text-sm font-semibold text-gray-900 block truncate">Transbordos</span>
                                                     </div>
-                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 whitespace-nowrap">
-                                                        Próximamente
-                                                    </span>
+                                                    @if($company->hasCompanyRole('Transbordos'))
+                                                        <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">Borradores</span>
+                                                    @else
+                                                        <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700">Sin permiso</span>
+                                                    @endif
                                                 </div>
-                                                
                                                 <div class="mt-auto">
-                                                    <button disabled 
-                                                            class="block w-full text-center px-3 py-1.5 bg-gray-200 text-gray-500 text-xs font-medium rounded cursor-not-allowed">
-                                                        No Disponible
-                                                    </button>
+                                                    @if($company->hasCompanyRole('Transbordos'))
+                                                        <a href="{{ route('company.simple.transbordo.index', ['search' => $voyage->voyage_number]) }}"
+                                                           class="block w-full text-center rounded bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800">
+                                                            Ver conocimientos
+                                                        </a>
+                                                    @else
+                                                        <span class="block w-full text-center rounded bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">
+                                                            No habilitado
+                                                        </span>
+                                                    @endif
                                                 </div>
                                             </div>
                                         </div>
