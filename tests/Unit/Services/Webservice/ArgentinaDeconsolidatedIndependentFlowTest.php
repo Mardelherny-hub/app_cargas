@@ -113,6 +113,49 @@ class ArgentinaDeconsolidatedIndependentFlowTest extends TestCase
     }
 
     #[Test]
+    public function rejected_transaction_needing_manual_review_blocks_retransmission(): void
+    {
+        $operation = new DeconsolidationOperation();
+        $operation->id = 11;
+        $operation->company_id = 101;
+
+        WebserviceTransaction::create([
+            'company_id' => 101,
+            'user_id' => 205,
+            'voyage_id' => null,
+            'transaction_id' => 'DEC12345678901234567',
+            'webservice_type' => 'desconsolidado',
+            'country' => 'AR',
+            'webservice_url' => 'test-endpoint',
+            'soap_action' => 'RegistrarTitulosDesconsolidador',
+            'status' => 'error',
+            'environment' => 'testing',
+            'certificate_used' => 'test-certificate-not-used',
+            'bill_of_lading_count' => 1,
+            'container_count' => 0,
+            'error_code' => '42076',
+            'requires_manual_review' => true,
+            'additional_metadata' => [
+                'deconsolidation_operation_id' => 11,
+                'bill_ids' => [44],
+                'method' => 'registrar',
+            ],
+        ]);
+
+        try {
+            $this->service('ok')->ejecutarExpediente($operation, 'registrar', [44]);
+            $this->fail('No se debe reenviar un rechazo pendiente de revisión.');
+        } catch (\Exception $exception) {
+            $this->assertStringContainsString(
+                'rechazo aduanero pendiente de revisión',
+                $exception->getMessage()
+            );
+        }
+
+        $this->assertSame(1, WebserviceTransaction::count());
+    }
+
+    #[Test]
     public function missing_response_blocks_retry(): void
     {
         $operation = new DeconsolidationOperation(); $operation->id = 11; $operation->company_id = 101;
