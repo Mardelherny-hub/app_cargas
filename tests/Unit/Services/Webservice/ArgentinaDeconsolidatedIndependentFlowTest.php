@@ -119,7 +119,7 @@ class ArgentinaDeconsolidatedIndependentFlowTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertSame('sending', WebserviceTransaction::find($result['transaction_id'])->status);
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('envío pendiente');
+        $this->expectExceptionMessage('transmisión pendiente');
         $service->ejecutarExpediente($operation, 'registrar', [44]);
     }
 }
