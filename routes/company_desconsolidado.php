@@ -44,6 +44,12 @@ Route::prefix('simple/webservices/desconsolidado')
                 ->whereNumber('operation')
                 ->name('company.simple.desconsolidado.operations.update');
 
+            // La fecha de arribo puede completarse aun con conocimientos hijos.
+            // No modifica referencias del título madre ni realiza envíos.
+            Route::patch('/{operation}/arrival-date', [DeconsolidationOperationController::class, 'updateArrivalDate'])
+                ->whereNumber('operation')
+                ->name('company.simple.desconsolidado.operations.arrival-date');
+
             // Alta de títulos hijos dentro de un expediente propio.
             // El controlador vuelve a verificar rol y pertenencia por empresa.
             Route::get('/{operation}/bills/create', [DeconsolidationBillController::class, 'create'])
