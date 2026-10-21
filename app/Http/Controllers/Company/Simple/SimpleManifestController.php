@@ -1404,6 +1404,59 @@ public function micDtaSend(Request $request, Voyage $voyage)
                 return response()->json(['error' => 'No autorizado'], 403);
             }
 
+            // Para Transbordos, la vista previa utiliza sólo el reparto
+            // persistido. Nunca solicita WSAA ni genera el SOAP convencional.
+            $transshipmentBills = $voyage->billsOfLading()
+                ->where('is_transit_transshipment', 'S')
+                ->with(['shipmentItems.packagingType', 'shipmentItems.containers'])
+                ->get();
+            if ($transshipmentBills->isNotEmpty()) {
+                if (!$this->hasCompanyRole('Transbordos')) {
+                    return response()->json(['error' => 'Empresa sin permiso para Transbordos.'], 403);
+                }
+
+                $readiness = app(\App\Services\Simple\HidroviaTransshipmentReadinessService::class);
+                $generator = app(\App\Services\Simple\HidroviaTransshipmentMultiEnvioXmlGenerator::class);
+                $fragments = [];
+                foreach ($transshipmentBills as $bill) {
+                    try {
+                        $prepared = $readiness->prepare($voyage, (int) $company->id, $bill);
+                        $fragment = $generator->createEnviosFragment($bill, $prepared);
+                    } catch (\Illuminate\Validation\ValidationException $e) {
+                        return response()->json([
+                            'error' => 'La distribución de Transbordos no está completa.',
+                            'bill_of_lading_id' => $bill->id,
+                            'validation_errors' => $e->errors(),
+                        ], 422);
+                    } catch (\InvalidArgumentException $e) {
+                        return response()->json([
+                            'error' => 'La vista previa de Transbordos requiere corregir datos.',
+                            'bill_of_lading_id' => $bill->id,
+                            'validation_errors' => ['distribution' => [$e->getMessage()]],
+                        ], 422);
+                    }
+
+                    $fragments[] = [
+                        'bill_of_lading_id' => $bill->id,
+                        'bill_number' => $bill->bill_number,
+                        'shipments_count' => count($prepared['shipments']),
+                        'envios_xml_fragment' => $fragment,
+                    ];
+                }
+
+                return response()->json([
+                    'preview' => [
+                        'titenvios_xml' => null,
+                        'envios_xml' => null,
+                        'transshipment_fragments' => $fragments,
+                        'generated_at' => now()->toISOString(),
+                    ],
+                    'transmitted' => false,
+                    'transmittable' => false,
+                    'message' => 'Vista previa de distribuciones: fragmentos XML de QA, sin autenticación ni envío a ARCA. No son un SOAP transmisible.',
+                ]);
+            }
+
             $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
             $xmlGenerator = $micDtaService->getXmlSerializer();
 
