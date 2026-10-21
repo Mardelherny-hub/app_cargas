@@ -81,24 +81,24 @@ class DeconsolidationBillItemController extends Controller
             'is_monitored_transit' => ['required', 'in:S,N'],
             'is_renar' => ['required', 'in:S,N'],
         ], [
-            'line_number.required' => 'Ingresá el número de línea del conocimiento.',
+            'line_number.required' => 'Ingresá el número de la línea de mercadería.',
             'line_number.between' => 'El número de línea debe estar entre 1 y 999.',
-            'cargo_type_id.required' => 'Seleccioná el tipo de carga declarado.',
+            'cargo_type_id.required' => 'Seleccioná el tipo de carga indicado en la documentación.',
             'packaging_code.required' => 'Ingresá el código de embalaje ATA-DESC.',
             'packaging_code.size' => 'El código de embalaje ATA-DESC debe tener 2 caracteres.',
-            'container_condition.required' => 'Indicá la condición del contenedor (H/P).',
-            'container_condition.in' => 'La condición del contenedor debe ser H o P.',
-            'package_quantity.required' => 'Ingresá la cantidad real de bultos.',
+            'container_condition.required' => 'Seleccioná la condición aduanera H/P de la línea.',
+            'container_condition.in' => 'La condición aduanera de la línea debe ser H o P.',
+            'package_quantity.required' => 'Ingresá la cantidad de bultos declarada.',
             'gross_weight_kg.required' => 'Ingresá el peso bruto declarado de esta línea.',
             'gross_weight_kg.decimal' => 'El peso admite hasta dos decimales.',
-            'item_description.required' => 'Ingresá la descripción real de la mercadería.',
+            'item_description.required' => 'Ingresá la descripción de la mercadería según la documentación.',
             'item_description.max' => 'La descripción de cada línea ATA-DESC admite hasta 80 caracteres.',
             'cargo_marks.required' => 'Ingresá las marcas o números de los bultos.',
             'cargo_marks.max' => 'Las marcas de la línea admiten hasta 100 caracteres.',
             'tariff_position.required' => 'Ingresá la posición arancelaria declarada.',
-            'is_secure_logistics_operator.required' => 'Confirmá si corresponde operador logístico seguro.',
-            'is_monitored_transit.required' => 'Confirmá si corresponde tránsito monitoreado.',
-            'is_renar.required' => 'Confirmá si corresponde RENAR.',
+            'is_secure_logistics_operator.required' => 'Indicá si corresponde operador logístico seguro.',
+            'is_monitored_transit.required' => 'Indicá si corresponde tránsito monitoreado.',
+            'is_renar.required' => 'Indicá si corresponde RENAR.',
         ]);
 
         // En títulos no consolidados, el contrato real ATA-DESC exige 7..15.
@@ -145,7 +145,7 @@ class DeconsolidationBillItemController extends Controller
                     $value = strtoupper(trim((string) $previous->{$field}));
                     if ($value !== '' && $value !== $data[$field]) {
                         throw ValidationException::withMessages([
-                            $field => "El dato de {$label} debe coincidir con las otras líneas del conocimiento.",
+                            $field => "La información de {$label} debe coincidir en todas las líneas de este conocimiento.",
                         ]);
                     }
                 }
@@ -183,8 +183,8 @@ class DeconsolidationBillItemController extends Controller
             ->with(
                 'success',
                 $created
-                    ? "Línea {$item->line_number} guardada como borrador. El peso total del conocimiento se conserva. Falta revisar las demás líneas y los contenedores que correspondan."
-                    : "La línea {$item->line_number} ya existía. No se creó otra ni se modificaron sus datos."
+                    ? "Línea {$item->line_number} guardada como borrador. El peso total del conocimiento se conserva. Revisá las demás líneas y vinculá los contenedores correspondientes antes de transmitir."
+                    : "La línea {$item->line_number} ya estaba registrada. Se conservaron los datos existentes."
             );
     }
 
@@ -245,7 +245,7 @@ class DeconsolidationBillItemController extends Controller
             abort_unless($lockedLine->status === 'draft', 409);
             abort_if($lockedBill->shipmentItems()->whereKeyNot($item)
                 ->where('line_number', $data['line_number'])->exists(), 422,
-                'El número de línea ya existe en este conocimiento.');
+                'Ya hay otra línea con ese número en el conocimiento.');
             foreach (['tariff_position', 'is_secure_logistics_operator',
                 'is_monitored_transit', 'is_renar'] as $field) {
                 abort_if($lockedBill->shipmentItems()->whereKeyNot($item)
@@ -255,14 +255,14 @@ class DeconsolidationBillItemController extends Controller
             abort_if($lockedLine->containers()->exists() && (
                 $data['packaging_code'] !== $lockedLine->packaging_code ||
                 $data['container_condition'] !== $lockedLine->container_condition), 409,
-                'Desvinculá primero los contenedores antes de cambiar embalaje o condición.');
+                'Esta línea tiene contenedores vinculados. Para cambiar el embalaje o la condición H/P, primero deben desvincularse.');
             $lockedLine->fill($data);
             $lockedLine->last_updated_by_user_id = $this->getCurrentUser()?->id;
             $lockedLine->saveQuietly();
         });
         return redirect()->route('company.simple.desconsolidado.operations.show', [
             'operation' => $operation,
-        ])->with('success', 'Línea borrador actualizada.');
+        ])->with('success', 'Cambios de la línea guardados. La línea continúa como borrador.');
     }
 
     /** Elimina una línea local en borrador, sin borrar fichas globales. */
@@ -277,7 +277,7 @@ class DeconsolidationBillItemController extends Controller
             $this->assertDraftBill($lockedBill, $operationRecord);
 
             $line = $lockedBill->shipmentItems()->lockForUpdate()->findOrFail($item);
-            abort_unless($line->status === 'draft', 409, 'La línea ya no es un borrador.');
+            abort_unless($line->status === 'draft', 409, 'Esta línea ya no está disponible para edición o eliminación.');
 
             $line->containers()->detach();
             $line->deleteQuietly();
@@ -285,7 +285,7 @@ class DeconsolidationBillItemController extends Controller
 
         return redirect()->route('company.simple.desconsolidado.operations.show', [
             'operation' => $operation,
-        ])->with('success', 'Línea borrador eliminada; los contenedores del catálogo se conservaron.');
+        ])->with('success', 'Línea borrador eliminada. Los contenedores permanecen registrados en el catálogo.');
     }
 
     /**
@@ -297,11 +297,11 @@ class DeconsolidationBillItemController extends Controller
     {
         $company = $this->getUserCompany();
 
-        abort_unless($company, 403, 'No se encontró una empresa asociada al usuario.');
+        abort_unless($company, 403, 'Tu usuario no tiene una empresa asociada. Consultá al administrador.');
         abort_unless(
             $this->hasCompanyRole('Desconsolidador'),
             403,
-            'La empresa no tiene habilitado el rol Desconsolidador.'
+            'La empresa no está habilitada para operar Desconsolidados. Consultá al administrador.'
         );
 
         $operation = DeconsolidationOperation::query()
@@ -333,7 +333,7 @@ class DeconsolidationBillItemController extends Controller
             && !in_array($bill->argentina_status, ['sent', 'approved'], true)
             && !in_array($bill->webservice_status, ['sent', 'processing', 'approved', 'accepted'], true),
             409,
-            'El conocimiento no es un borrador editable o no coincide con su título madre.'
+            'Este conocimiento no está disponible para editar líneas desde el expediente actual.'
         );
     }
 }
