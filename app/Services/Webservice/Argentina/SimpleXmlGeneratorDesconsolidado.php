@@ -351,17 +351,28 @@ class SimpleXmlGeneratorDesconsolidado
     {
         $prefix = "Conocimiento {$bill->bill_number}";
 
-        // Manual del Desarrollador wgesinformacionanticipada v4.11:
-        // FechaEmbarque es obligatoria para registrar/rectificar títulos DESC.
-        // Rechazo XSD 41933 observado el 21/10/2026 al omitir este elemento.
-        // No reemplazar por la fecha de arribo del expediente.
+        // XSD wgesinformacionanticipada: los tres elementos dateTime son
+        // obligatorios en TituloDesconsolidador, incluso si el resumen de
+        // datos del ATA los presenta como optativos. No usar fecha de arribo.
+        $missingDates = [];
         if (!$bill->loading_date) {
+            $missingDates[] = 'falta la fecha de embarque.';
+        }
+        if (!$bill->origin_loading_date) {
+            $missingDates[] = 'falta la fecha de carga en origen.';
+        }
+        if (!$bill->discharge_date) {
+            $missingDates[] = 'falta la fecha de descarga.';
+        }
+        if ($missingDates !== []) {
             throw new Exception(
-                "{$prefix}: falta la fecha de embarque. "
-                . 'Completala desde «Editar conocimiento hijo» antes de transmitir.'
+                "{$prefix}: " . implode(' ', $missingDates)
+                . ' Completalas según la documentación en «Editar conocimiento hijo» antes de transmitir.'
             );
         }
         $this->requiredDate($bill->loading_date, "{$prefix}: fecha de embarque");
+        $this->requiredDate($bill->origin_loading_date, "{$prefix}: fecha de carga en origen");
+        $this->requiredDate($bill->discharge_date, "{$prefix}: fecha de descarga");
 
         $this->masterTitleIdentifier($bill);
         $this->exactLengthString(
@@ -385,15 +396,14 @@ class SimpleXmlGeneratorDesconsolidado
         $hasOriginLocation = trim((string) ($bill->origin_location ?? '')) !== '';
         if ($hasOriginLocation) {
             $this->requiredString($bill->origin_location, "{$prefix}: lugar de origen", 50);
-            $this->requiredDate($bill->origin_loading_date, "{$prefix}: fecha de carga en origen");
             $this->requiredString(
                 $bill->origin_country_code,
                 "{$prefix}: código del país de origen",
                 3
             );
-        } elseif ($bill->origin_loading_date || trim((string) ($bill->origin_country_code ?? '')) !== '') {
+        } elseif (trim((string) ($bill->origin_country_code ?? '')) !== '') {
             throw new Exception(
-                "{$prefix}: para informar la fecha o el país de carga, también se debe indicar el lugar de origen."
+                "{$prefix}: para informar un país de origen distinto, también se debe indicar el lugar."
             );
         }
 
@@ -505,9 +515,9 @@ class SimpleXmlGeneratorDesconsolidado
 
         $this->writeOptionalDate($writer, 'FechaEmbarque', $bill->loading_date);
         $this->writeOptionalString($writer, 'CodigoPuertoEmbarque', $bill->loadingPort?->code, 5);
+        $writer->writeElement('FechaCargaLugarOrigen', $this->formatDate($bill->origin_loading_date));
 
         if (trim((string) ($bill->origin_location ?? '')) !== '') {
-            $writer->writeElement('FechaCargaLugarOrigen', $this->formatDate($bill->origin_loading_date));
             $writer->writeElement('LugarOrigen', (string) $bill->origin_location);
             $writer->writeElement('CodigoPaisLugarOrigen', (string) $bill->origin_country_code);
         }
