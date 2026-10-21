@@ -248,15 +248,9 @@ class DeconsolidationContainerLinkController extends Controller
 
             // Los contenedores son globales: no alterar documentos si también
             // están vinculados a otro expediente o a un viaje transportista.
-            $sharedOutsideOperation = DB::table('container_shipment_item as link')
-                ->leftJoin('shipment_items as line', 'line.id', '=', 'link.shipment_item_id')
-                ->leftJoin('bills_of_lading as title', 'title.id', '=', 'line.bill_of_lading_id')
-                ->where('link.container_id', $record->id)
-                ->where(function ($query) use ($operationRecord) {
-                    $query->whereNull('title.deconsolidation_operation_id')
-                        ->orWhere('title.deconsolidation_operation_id', '!=', $operationRecord->id);
-                })
-                ->exists();
+            $sharedOutsideOperation = $this->containerHasOtherUses(
+                (int) $record->id, (int) $operationRecord->id
+            );
 
             if ($sharedOutsideOperation) {
                 throw ValidationException::withMessages([
@@ -492,6 +486,23 @@ class DeconsolidationContainerLinkController extends Controller
                 . 'No se asignaron pesos ni cantidades por contenedor. '
                 . 'Antes de transmitir a Aduana, revisá la documentación y las validaciones pendientes.'
             );
+    }
+
+    /**
+     * El catálogo es global; una vinculación ajena impide editar
+     * los documentos CSC/ACEP desde el expediente actual.
+     */
+    private function containerHasOtherUses(int $containerId, int $operationId): bool
+    {
+        return DB::table('container_shipment_item as link')
+            ->leftJoin('shipment_items as line', 'line.id', '=', 'link.shipment_item_id')
+            ->leftJoin('bills_of_lading as title', 'title.id', '=', 'line.bill_of_lading_id')
+            ->where('link.container_id', $containerId)
+            ->where(function ($query) use ($operationId) {
+                $query->whereNull('title.deconsolidation_operation_id')
+                    ->orWhere('title.deconsolidation_operation_id', '!=', $operationId);
+            })
+            ->exists();
     }
 
     /**
