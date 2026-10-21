@@ -34,7 +34,8 @@ class ArgentinaDeconsolidatedIndependentFlowTest extends TestCase
             $table->increments('id'); $table->unsignedInteger('deconsolidation_operation_id');
             $table->unsignedInteger('shipment_id')->nullable(); $table->string('bill_number');
             $table->string('argentina_status')->nullable(); $table->string('webservice_status')->nullable();
-            $table->timestamp('argentina_sent_at')->nullable(); $table->timestamp('webservice_response_at')->nullable();
+            // Igual que la tabla real: NO existe webservice_response_at.
+            $table->timestamp('argentina_sent_at')->nullable();
             $table->timestamps(); $table->softDeletes();
         });
         $schema->create('shipment_items', function ($table) {
@@ -55,7 +56,8 @@ class ArgentinaDeconsolidatedIndependentFlowTest extends TestCase
             $table->text('additional_metadata'); $table->text('request_xml')->nullable();
             $table->text('response_xml')->nullable(); $table->timestamp('sent_at')->nullable();
             $table->timestamp('response_at')->nullable(); $table->string('external_reference')->nullable();
-            $table->string('confirmation_number')->nullable(); $table->text('error_message')->nullable();
+            $table->string('confirmation_number')->nullable(); $table->string('error_code')->nullable();
+            $table->text('error_message')->nullable();
             $table->text('error_details')->nullable(); $table->timestamps();
         });
         DB::table('deconsolidation_operations')->insert(['id' => 11, 'company_id' => 101]);
