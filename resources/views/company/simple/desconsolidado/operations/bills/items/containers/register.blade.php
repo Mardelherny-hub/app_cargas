@@ -257,7 +257,7 @@
                                 <p class="font-bold">Vencimiento CSC o código ACEP</p>
                                 <p class="mt-1">
                                     Informá la fecha de vencimiento CSC o el código ACEP, según corresponda. No se admiten ambos simultáneamente.
-                                    Si no disponés de ninguno, podés registrar el contenedor sin esos datos. La operación no estará lista para transmitir hasta resolver este requisito documental.
+                                    Si no disponés de ninguno, podés registrar el contenedor. Para transmitir, deberá existir una fecha de arribo documentada en el expediente que permita calcular el vencimiento sumando 480 días.
                                 </p>
                             </div>
                             <div class="grid gap-5 sm:grid-cols-2">
