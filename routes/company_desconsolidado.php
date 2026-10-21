@@ -114,6 +114,10 @@ Route::prefix('simple/webservices/desconsolidado')
                 ->whereNumber('operation')->whereNumber('bill')->whereNumber('item')->whereNumber('container')
                 ->name('company.simple.desconsolidado.operations.bills.items.containers.destroy');
 
+            Route::patch('/{operation}/bills/{bill}/items/{item}/containers/{container}/customs', [DeconsolidationContainerLinkController::class, 'updateCustoms'])
+                ->whereNumber('operation')->whereNumber('bill')->whereNumber('item')->whereNumber('container')
+                ->name('company.simple.desconsolidado.operations.bills.items.containers.customs');
+
             // Alta de contenedor nuevo, con datos físicos y documentales declarados.
             // El controlador comprueba pertenencia, estado borrador y duplicados
             // globales; guarda la unidad y su vínculo en una sola transacción.
