@@ -97,6 +97,54 @@ class ArgentinaDeconsolidatedArrivalDateTest extends TestCase
     }
 
     #[Test]
+    public function migration_preserves_existing_dossiers_and_scopes_arrival_by_company(): void
+    {
+        $previous = config('database.default');
+        config([
+            'database.connections.ata_desc_arrival_test' => [
+                'driver' => 'sqlite',
+                'database' => ':memory:',
+                'prefix' => '',
+                'foreign_key_constraints' => false,
+            ],
+            'database.default' => 'ata_desc_arrival_test',
+        ]);
+        try {
+            $schema = \Illuminate\Support\Facades\Schema::connection('ata_desc_arrival_test');
+            $schema->create('deconsolidation_operations', function ($table) {
+                $table->increments('id');
+                $table->unsignedBigInteger('company_id');
+                $table->string('master_bill_number');
+                $table->timestamps();
+            });
+            \Illuminate\Support\Facades\DB::table('deconsolidation_operations')->insert([
+                'id' => 1,
+                'company_id' => 101,
+                'master_bill_number' => 'MASTER-REAL',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $migration = require base_path(
+                'database/migrations/2026_10_21_083000_add_arrival_date_to_deconsolidation_operations.php'
+            );
+            $migration->up();
+            $this->assertTrue($schema->hasColumn('deconsolidation_operations', 'arrival_date'));
+
+            $operation = DeconsolidationOperation::query()->forCompany(101)->findOrFail(1);
+            $this->assertNull($operation->arrival_date);
+            $this->assertNull(DeconsolidationOperation::query()->forCompany(999)->find(1));
+
+            $operation->update(['arrival_date' => '2026-10-20']);
+            $this->assertSame('2026-10-20', $operation->fresh()->arrival_date->format('Y-m-d'));
+            $this->assertSame('MASTER-REAL', $operation->fresh()->master_bill_number);
+        } finally {
+            \Illuminate\Support\Facades\DB::purge('ata_desc_arrival_test');
+            config(['database.default' => $previous]);
+        }
+    }
+
+    #[Test]
     public function route_and_form_do_not_allow_posting_original_dossier_references(): void
     {
         $route = app('router')->getRoutes()->getByName(
