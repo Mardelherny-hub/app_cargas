@@ -108,7 +108,7 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
 
         $this->assertFalse($result['is_valid']);
         $this->assertStringContainsString(
-            'PosicionArancelaria',
+            'posición arancelaria (NCM)',
             implode(' | ', $result['errors'])
         );
         $this->assertSame(0, $generator->wsaaCalls);
