@@ -41,6 +41,23 @@ class ArgentinaDeconsolidatedEmbarkationDateTest extends TestCase
     }
 
     #[Test]
+    public function missing_origin_and_discharge_dates_are_reported_together(): void
+    {
+        $bill = new BillOfLading();
+        $bill->bill_number = 'CHILD-TEST';
+        $bill->loading_date = '2026-10-19';
+
+        try {
+            (new ReflectionMethod($this->generator(), 'validateBill'))
+                ->invoke($this->generator(), $bill);
+            $this->fail('Las fechas obligatorias para el XSD no pueden faltar.');
+        } catch (\Exception $exception) {
+            $this->assertStringContainsString('falta la fecha de carga en origen.', $exception->getMessage());
+            $this->assertStringContainsString('falta la fecha de descarga.', $exception->getMessage());
+        }
+    }
+
+    #[Test]
     public function valid_embarkation_date_uses_existing_bill_field_and_xml_element(): void
     {
         $bill = new BillOfLading();
@@ -89,9 +106,13 @@ class ArgentinaDeconsolidatedEmbarkationDateTest extends TestCase
             $controller
         );
         $this->assertStringContainsString(
-            "'bill_number', 'loading_date', 'shipper_id'",
+            "'bill_number', 'loading_date', 'origin_loading_date', 'discharge_date'",
             $controller
         );
+        foreach (['origin_loading_date', 'discharge_date', 'origin_location', 'origin_country_code'] as $field) {
+            $this->assertStringContainsString('name="' . $field . '"', $view);
+            $this->assertStringContainsString("'" . $field . "' => ['nullable'", $controller);
+        }
     }
 
     #[Test]
