@@ -11,7 +11,7 @@
                 <h1 class="text-xl font-semibold text-gray-900">Distribución de Transbordos</h1>
                 <p class="text-sm text-gray-600">Viaje {{ $voyage->voyage_number }} · Conocimiento {{ $bill->bill_number }}</p>
             </div>
-            <a href="{{ route('company.simple.transbordo.index') }}" class="text-sm text-blue-700 hover:underline">Volver a los viajes</a>
+            <a href="{{ route('company.simple.micdta.show', $voyage) }}" class="text-sm text-blue-700 hover:underline">Volver al MIC/DTA del viaje</a>
         </div>
     </x-slot>
 
