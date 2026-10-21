@@ -779,12 +779,12 @@ class SimpleXmlGeneratorDesconsolidado
         if (!$expiry && $acep === null) {
             $arrival = $this->voyage instanceof Voyage
                 ? $this->voyage->estimated_arrival_date
-                : null;
+                : $this->voyage->arrival_date;
 
             if (!$arrival) {
                 throw new Exception(
-                    "{$prefix}: no se pudo determinar el vencimiento del contenedor. "
-                    . "No hay vencimiento CSC ni ACEP informado, y falta la fecha de arribo para calcular los 480 días. Revisá la documentación del contenedor y solicitá la actualización del dato antes de transmitir."
+                    "{$prefix}: falta la fecha de arribo para calcular el vencimiento del contenedor (480 días). "
+                    . "Ingresá la fecha documentada en el expediente o completá el vencimiento CSC o ACEP del contenedor antes de transmitir."
                 );
             }
 
