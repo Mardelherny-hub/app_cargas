@@ -12,11 +12,38 @@ use App\Services\Simple\HidroviaTransshipmentReadinessService;
 use App\Traits\UserHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 
 /** API interna para borradores: no registra envíos ni llama a ARCA. */
 class HidroviaTransshipmentDraftController extends Controller
 {
     use UserHelper;
+
+    /**
+     * Pantalla de distribución del conocimiento para barcazas del mismo viaje.
+     * Sólo lectura al abrirla; guardar y preflight usan la API existente.
+     * No invoca webservices aduaneros.
+     */
+    public function edit(int $voyage, int $bill): View
+    {
+        [$voyageRecord, $billRecord] = $this->authorizedBill($voyage, $bill);
+        abort_unless($billRecord->is_transit_transshipment === 'S', 404);
+        abort_if($billRecord->is_fractional, 422,
+            'Los conocimientos fraccionados aún no están habilitados para pruebas de Transbordos.');
+
+        $billRecord->load('shipmentItems.containers');
+        $shipments = $voyageRecord->shipments()
+            ->whereHas('vessel.vesselType', fn ($query) => $query->where('category', 'barge'))
+            ->with('vessel')
+            ->orderBy('id')
+            ->get();
+
+        return view('company.simple.transbordo.show', [
+            'voyage' => $voyageRecord,
+            'bill' => $billRecord,
+            'shipments' => $shipments,
+        ]);
+    }
 
     public function show(int $voyage, int $bill): JsonResponse
     {
