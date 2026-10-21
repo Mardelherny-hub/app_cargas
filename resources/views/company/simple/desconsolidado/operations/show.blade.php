@@ -308,6 +308,31 @@
                                                             <li class="break-all rounded-lg border border-indigo-100 bg-white px-3 py-2 font-mono text-xs font-semibold text-gray-800">
                                                                 {{ $container->container_number }}
                                                                 @if($canLinkContainer)
+                                                                    <details class="mt-2 rounded-lg border border-gray-200 bg-gray-50 p-3 font-sans text-sm">
+                                                                        <summary class="cursor-pointer font-semibold text-indigo-700">Completar CSC / ACEP</summary>
+                                                                        <p class="mt-2 text-xs font-normal leading-5 text-gray-600">
+                                                                            Informá únicamente el vencimiento CSC o el código ACEP, si corresponde.
+                                                                            Si ambos están vacíos, se utiliza la fecha de arribo documentada del expediente para calcular el vencimiento.
+                                                                            La edición se bloqueará si el contenedor está asociado a otros expedientes o viajes.
+                                                                        </p>
+                                                                        <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.items.containers.customs', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id, 'container' => $container->id]) }}" class="mt-3 space-y-3">
+                                                                            @csrf
+                                                                            @method('PATCH')
+                                                                            <label class="block text-xs font-semibold text-gray-800">Vencimiento CSC (opcional)
+                                                                                <input type="date" name="csc_expiry_date"
+                                                                                       value="{{ $container->csc_expiry_date?->format('Y-m-d') }}"
+                                                                                       class="mt-1 block min-h-10 w-full rounded-lg border-gray-300 text-gray-900"/>
+                                                                            </label>
+                                                                            <label class="block text-xs font-semibold text-gray-800">ACEP (opcional)
+                                                                                <input type="text" name="acep" maxlength="20" pattern="[A-Za-z0-9]+"
+                                                                                       value="{{ $container->acep }}"
+                                                                                       class="mt-1 block min-h-10 w-full rounded-lg border-gray-300 text-gray-900"/>
+                                                                            </label>
+                                                                            <button type="submit" class="min-h-10 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700">
+                                                                                Guardar documentación
+                                                                            </button>
+                                                                        </form>
+                                                                    </details>
                                                                     <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.items.containers.destroy', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id, 'container' => $container->id]) }}" class="mt-2" onsubmit="return confirm('¿Desvincular este contenedor de la línea? El contenedor permanecerá registrado en el catálogo.');">
                                                                         @csrf
                                                                         @method('DELETE')
