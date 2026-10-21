@@ -107,6 +107,51 @@
                                 @error('loading_date') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                             </div>
 
+                            <div class="rounded-lg border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-900">
+                                El servicio de Aduana exige fechas de embarque, carga en origen y descarga al transmitir un título.
+                                Completá las fechas que consten en la documentación. Podés conservar el conocimiento como borrador
+                                mientras falte alguna; la validación te indicará cuáles se necesitan antes del envío.
+                            </div>
+
+                            <div class="grid gap-5 sm:grid-cols-2">
+                                <div>
+                                    <label for="origin_loading_date" class="block text-sm font-semibold text-gray-900">Fecha de carga en el lugar de origen</label>
+                                    <input id="origin_loading_date" name="origin_loading_date" type="date"
+                                           value="{{ old('origin_loading_date', $editingBill?->origin_loading_date?->format('Y-m-d')) }}"
+                                           aria-invalid="{{ $errors->has('origin_loading_date') ? 'true' : 'false' }}"
+                                           class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 text-gray-900"/>
+                                    @error('origin_loading_date') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
+                                </div>
+                                <div>
+                                    <label for="discharge_date" class="block text-sm font-semibold text-gray-900">Fecha de descarga</label>
+                                    <input id="discharge_date" name="discharge_date" type="date"
+                                           value="{{ old('discharge_date', $editingBill?->discharge_date?->format('Y-m-d')) }}"
+                                           aria-invalid="{{ $errors->has('discharge_date') ? 'true' : 'false' }}"
+                                           class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 text-gray-900"/>
+                                    @error('discharge_date') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
+                                </div>
+                            </div>
+
+                            <div class="grid gap-5 sm:grid-cols-2">
+                                <div>
+                                    <label for="origin_location" class="block text-sm font-semibold text-gray-900">Lugar de origen (si difiere del puerto de embarque)</label>
+                                    <input id="origin_location" name="origin_location" type="text" maxlength="50"
+                                           value="{{ old('origin_location', $editingBill?->origin_location) }}"
+                                           aria-invalid="{{ $errors->has('origin_location') ? 'true' : 'false' }}"
+                                           class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 text-gray-900"/>
+                                    @error('origin_location') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
+                                </div>
+                                <div>
+                                    <label for="origin_country_code" class="block text-sm font-semibold text-gray-900">Código AFIP del país de origen (si informaste el lugar)</label>
+                                    <input id="origin_country_code" name="origin_country_code" type="text" maxlength="3"
+                                           value="{{ old('origin_country_code', $editingBill?->origin_country_code) }}"
+                                           aria-invalid="{{ $errors->has('origin_country_code') ? 'true' : 'false' }}"
+                                           class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 text-gray-900"/>
+                                    <p class="mt-1.5 text-xs text-gray-600">Código de 3 caracteres según la documentación aduanera.</p>
+                                    @error('origin_country_code') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
+                                </div>
+                            </div>
+
                             @foreach($lookupFields as $field)
                                 @if($field['kind'] === 'client')
                                     <div class="relative" data-desc-lookup data-kind="{{ $field['kind'] }}"
