@@ -418,8 +418,9 @@
                         @endforeach
                     </div>
                     <p class="mt-3 text-sm font-medium text-amber-900">
-                        Atención: RegistrarTitEnvios convencional no utiliza todavía las distribuciones multibarcaza.
-                        No transmitas este viaje hasta completar esa integración.
+                        Los métodos convencionales RegistrarTitEnvios, RegistrarEnvios y RegistrarMicDta
+                        no admiten todavía la distribución multibarcaza. Su transmisión permanece bloqueada
+                        para este viaje; podés seguir preparando y validando las asignaciones.
                     </p>
                 </section>
             @endif
@@ -671,12 +672,20 @@
 
                             <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarEnvios ? 'border-blue-300' : 'border-gray-300' }} rounded-lg overflow-hidden">
                                 {{-- Botón principal --}}
-                                <button onclick="{{ $puedeEjecutarEnvios ? "executeAfipMethod('RegistrarEnvios')" : "showRequisitosPrevios('RegistrarEnvios')" }}"
-                                        class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarEnvios ? 'hover:bg-blue-50' : 'bg-gray-50 cursor-not-allowed' }} transition-colors">
-                                    <span class="text-2xl mb-2">📦</span>
-                                    <span class="text-sm font-medium text-center {{ !$puedeEjecutarEnvios ? 'text-gray-500' : '' }}">2. RegistrarEnvios</span>
-                                    <span class="text-xs text-gray-600 text-center mt-1">Agrega envíos a título existente</span>
-                                </button>
+                                @if($transshipmentBills->isNotEmpty())
+                                    <div class="flex flex-col items-center justify-center bg-gray-100 p-4 text-gray-600" role="status">
+                                        <span class="text-2xl mb-2">📦</span>
+                                        <span class="text-sm font-medium text-center">2. RegistrarEnvios</span>
+                                        <span class="text-xs text-center mt-1">Envío convencional no habilitado para este viaje con Transbordos</span>
+                                    </div>
+                                @else
+                                    <button onclick="{{ $puedeEjecutarEnvios ? "executeAfipMethod('RegistrarEnvios')" : "showRequisitosPrevios('RegistrarEnvios')" }}"
+                                            class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarEnvios ? 'hover:bg-blue-50' : 'bg-gray-50 cursor-not-allowed' }} transition-colors">
+                                        <span class="text-2xl mb-2">📦</span>
+                                        <span class="text-sm font-medium text-center {{ !$puedeEjecutarEnvios ? 'text-gray-500' : '' }}">2. RegistrarEnvios</span>
+                                        <span class="text-xs text-gray-600 text-center mt-1">Agrega envíos a título existente</span>
+                                    </button>
+                                @endif
                                 
                                 {{-- Panel de información --}}
                                 <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs space-y-1">
@@ -822,12 +831,20 @@
 
                             <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarMicDta ? 'border-blue-300' : 'border-yellow-300' }} rounded-lg overflow-hidden">
                                 {{-- Botón principal --}}
-                                <button onclick="{{ $puedeEjecutarMicDta ? "executeAfipMethod('RegistrarMicDta')" : "showRequisitosPrevios('RegistrarMicDta')" }}"
-                                        class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarMicDta ? 'hover:bg-blue-50' : 'bg-gray-50' }} transition-colors">
-                                    <span class="text-2xl mb-2">📄</span>
-                                    <span class="text-sm font-medium text-center {{ !$puedeEjecutarMicDta ? 'text-gray-500' : '' }}">3. RegistrarMicDta</span>
-                                    <span class="text-xs text-gray-600 text-center mt-1">Genera MIC/DTA oficial</span>
-                                </button>
+                                @if($transshipmentBills->isNotEmpty())
+                                    <div class="flex flex-col items-center justify-center bg-gray-100 p-4 text-gray-600" role="status">
+                                        <span class="text-2xl mb-2">📄</span>
+                                        <span class="text-sm font-medium text-center">3. RegistrarMicDta</span>
+                                        <span class="text-xs text-center mt-1">Envío convencional no habilitado para este viaje con Transbordos</span>
+                                    </div>
+                                @else
+                                    <button onclick="{{ $puedeEjecutarMicDta ? "executeAfipMethod('RegistrarMicDta')" : "showRequisitosPrevios('RegistrarMicDta')" }}"
+                                            class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarMicDta ? 'hover:bg-blue-50' : 'bg-gray-50' }} transition-colors">
+                                        <span class="text-2xl mb-2">📄</span>
+                                        <span class="text-sm font-medium text-center {{ !$puedeEjecutarMicDta ? 'text-gray-500' : '' }}">3. RegistrarMicDta</span>
+                                        <span class="text-xs text-gray-600 text-center mt-1">Genera MIC/DTA oficial</span>
+                                    </button>
+                                @endif
                                 
                                 {{-- Panel de información --}}
                                 <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs space-y-1">
