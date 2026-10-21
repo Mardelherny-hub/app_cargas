@@ -79,12 +79,12 @@ class SimpleXmlGeneratorDesconsolidado
         foreach ($bills as $bill) {
             $this->requiredString(
                 $bill->loadingPort?->code,
-                "BL {$bill->id}: CodigoPuertoEmbarque para eliminación",
+                "Conocimiento {$bill->bill_number}: código del puerto de embarque para eliminar el título",
                 5
             );
             $this->requiredString(
                 $bill->bill_number,
-                "BL {$bill->id}: NumeroConocimiento",
+                "Conocimiento {$bill->bill_number}: número de conocimiento",
                 18
             );
         }
@@ -152,12 +152,12 @@ class SimpleXmlGeneratorDesconsolidado
                 if ($operation === 'eliminar') {
                     $this->requiredString(
                         $bill->loadingPort?->code,
-                        "BL {$bill->id}: CodigoPuertoEmbarque para eliminación",
+                        "Conocimiento {$bill->bill_number}: código del puerto de embarque para eliminar el título",
                         5
                     );
                     $this->requiredString(
                         $bill->bill_number,
-                        "BL {$bill->id}: NumeroConocimiento",
+                        "Conocimiento {$bill->bill_number}: número de conocimiento",
                         18
                     );
                 } else {
@@ -248,12 +248,12 @@ class SimpleXmlGeneratorDesconsolidado
         $bills = $query->orderBy('bills_of_lading.id')->get();
 
         if ($bills->isEmpty()) {
-            throw new Exception('No hay títulos desconsolidados para procesar.');
+            throw new Exception('No hay conocimientos hijos para procesar en esta operación.');
         }
 
         if ($ids !== [] && $bills->count() !== count($ids)) {
             throw new Exception(
-                'Uno o más conocimientos seleccionados no pertenecen al viaje o no son desconsolidados.'
+                'Uno o más conocimientos seleccionados no pertenecen a esta operación o no están habilitados para desconsolidación.'
             );
         }
 
@@ -262,10 +262,10 @@ class SimpleXmlGeneratorDesconsolidado
 
     private function masterTitleIdentifier(BillOfLading $bill): string
     {
-        $prefix = "BL {$bill->id}";
+        $prefix = "Conocimiento {$bill->bill_number}";
         $masterNumber = $this->requiredString(
             $bill->master_bill_number,
-            "{$prefix}: NumeroConocimiento del título madre",
+            "{$prefix}: número del conocimiento madre",
             18
         );
 
@@ -276,14 +276,13 @@ class SimpleXmlGeneratorDesconsolidado
 
         if ($masterPort === '') {
             throw new Exception(
-                "Falta campo obligatorio {$prefix}: "
-                . "CodigoPuertoEmbarque del título madre."
+                "{$prefix}: falta el código del puerto de embarque del conocimiento madre."
             );
         }
 
         if (!preg_match('/^[A-Z0-9]{5}$/', $masterPort)) {
             throw new Exception(
-                "{$prefix}: CodigoPuertoEmbarque del título madre "
+                "{$prefix}: el código del puerto de embarque del conocimiento madre "
                 . "debe tener 5 caracteres alfanuméricos."
             );
         }
@@ -296,7 +295,7 @@ class SimpleXmlGeneratorDesconsolidado
         $value = $this->singleItemValue(
             $bill,
             'tariff_position',
-            'PosicionArancelaria',
+            'posición arancelaria (NCM)',
             16,
             true
         );
@@ -305,8 +304,8 @@ class SimpleXmlGeneratorDesconsolidado
             $length = mb_strlen($value);
             if ($length < 7 || $length > 15) {
                 throw new Exception(
-                    "BL {$bill->id}: PosicionArancelaria debe tener entre "
-                    . "7 y 15 caracteres cuando IndicadorConsolidado=N."
+                    "Conocimiento {$bill->bill_number}: la posición arancelaria (NCM) debe tener entre "
+                    . "7 y 15 caracteres en conocimientos no consolidados."
                 );
             }
         }
@@ -343,67 +342,67 @@ class SimpleXmlGeneratorDesconsolidado
                 !== $afipCountryCode
         ) {
             throw new Exception(
-                "{$prefix}: CodigoPaisDestino no coincide con Argentina."
+                "{$prefix}: el código del país de destino no corresponde a Argentina."
             );
         }
     }
 
     private function validateBill(BillOfLading $bill): void
     {
-        $prefix = "BL {$bill->id}";
+        $prefix = "Conocimiento {$bill->bill_number}";
 
         $this->masterTitleIdentifier($bill);
         $this->exactLengthString(
             $bill->destination_country_code,
-            "{$prefix}: CodigoPaisDestino",
+            "{$prefix}: código del país de destino",
             3
         );
         $this->validateArgentinaDestination($bill, $prefix);
-        $this->requiredString($bill->bill_number, "{$prefix}: NumeroConocimiento", 18);
+        $this->requiredString($bill->bill_number, "{$prefix}: número de conocimiento", 18);
         $this->requiredString(
             $this->billMarks($bill),
-            "{$prefix}: MarcaBultos",
+            "{$prefix}: marcas o números de bultos",
             80
         );
-        $this->requiredFlag($bill->is_consolidated, "{$prefix}: IndicadorConsolidado");
+        $this->requiredFlag($bill->is_consolidated, "{$prefix}: condición de consolidado");
         $this->requiredFlag(
             $bill->is_transit_transshipment,
-            "{$prefix}: IndicadorTransitoTrasbordo"
+            "{$prefix}: indicador de tránsito o transbordo"
         );
 
         $hasOriginLocation = trim((string) ($bill->origin_location ?? '')) !== '';
         if ($hasOriginLocation) {
-            $this->requiredString($bill->origin_location, "{$prefix}: LugarOrigen", 50);
-            $this->requiredDate($bill->origin_loading_date, "{$prefix}: FechaCargaLugarOrigen");
+            $this->requiredString($bill->origin_location, "{$prefix}: lugar de origen", 50);
+            $this->requiredDate($bill->origin_loading_date, "{$prefix}: fecha de carga en origen");
             $this->requiredString(
                 $bill->origin_country_code,
-                "{$prefix}: CodigoPaisLugarOrigen",
+                "{$prefix}: código del país de origen",
                 3
             );
         } elseif ($bill->origin_loading_date || trim((string) ($bill->origin_country_code ?? '')) !== '') {
             throw new Exception(
-                "{$prefix}: FechaCargaLugarOrigen/CodigoPaisLugarOrigen requieren LugarOrigen."
+                "{$prefix}: para informar la fecha o el país de carga, también se debe indicar el lugar de origen."
             );
         }
 
         if ($bill->shipmentItems->isEmpty()) {
-            throw new Exception("{$prefix}: debe tener al menos una línea de mercadería.");
+            throw new Exception("{$prefix}: agregá al menos una línea de mercadería antes de transmitir.");
         }
 
         $this->tariffPositionForBill($bill);
         $this->singleItemFlag(
             $bill,
             'is_secure_logistics_operator',
-            'IndicadorOperadorLogisticoSeguro'
+            'operador logístico seguro'
         );
-        $this->singleItemFlag($bill, 'is_monitored_transit', 'IndicadorTransitoMonitoreado');
-        $this->singleItemFlag($bill, 'is_renar', 'IndicadorRenar');
+        $this->singleItemFlag($bill, 'is_monitored_transit', 'tránsito monitoreado');
+        $this->singleItemFlag($bill, 'is_renar', 'RENAR');
         $forwarderName = $this->forwarderNameForBill($bill);
 
         if ($this->normalizeFlag($bill->is_consolidated) === 'S') {
             $this->requiredString(
                 $forwarderName,
-                "{$prefix}: RazonSocialFowarderExterior",
+                "{$prefix}: razón social del agente de carga en el exterior",
                 70
             );
         }
@@ -411,28 +410,28 @@ class SimpleXmlGeneratorDesconsolidado
         $lineNumbers = [];
         foreach ($bill->shipmentItems as $item) {
             if ($item->line_number === null || $item->line_number === '' || !is_numeric($item->line_number)) {
-                throw new Exception("{$prefix}: ShipmentItem {$item->id} no tiene NumeroLinea válido.");
+                throw new Exception("{$prefix}: hay una línea de mercadería sin número válido. Revisá sus datos.");
             }
 
             $lineNumber = (int) $item->line_number;
             if ($lineNumber < 1 || $lineNumber > 999) {
                 throw new Exception(
-                    "{$prefix}: ShipmentItem {$item->id} NumeroLinea fuera de rango 1-999."
+                    "{$prefix}: el número de la línea {$item->line_number} debe estar entre 1 y 999."
                 );
             }
             if (in_array($lineNumber, $lineNumbers, true)) {
-                throw new Exception("{$prefix}: NumeroLinea {$lineNumber} está repetido.");
+                throw new Exception("{$prefix}: el número de línea {$lineNumber} está repetido.");
             }
             $lineNumbers[] = $lineNumber;
 
             $packagingCode = $this->packagingCodeForItem(
                 $item,
-                "{$prefix}: ShipmentItem {$item->id}"
+                "{$prefix}: Línea {$item->line_number}"
             );
 
             $this->containerCondition(
                 $item->container_condition,
-                "{$prefix}: ShipmentItem {$item->id} CondicionContenedor"
+                "{$prefix}: línea {$item->line_number}, condición H/P"
             );
 
             $manifestedQuantity = $packagingCode === '05'
@@ -441,21 +440,21 @@ class SimpleXmlGeneratorDesconsolidado
 
             $this->requiredIntegerLike(
                 $manifestedQuantity,
-                "{$prefix}: ShipmentItem {$item->id} CantidadManifestada",
+                "{$prefix}: línea {$item->line_number}, cantidad manifestada",
                 9
             );
             $this->requiredDecimal(
                 $item->gross_weight_kg,
-                "{$prefix}: ShipmentItem {$item->id} PesoVolumenManifestado"
+                "{$prefix}: línea {$item->line_number}, peso bruto declarado"
             );
             $this->requiredString(
                 $item->item_description,
-                "{$prefix}: ShipmentItem {$item->id} DescripcionMercaderia",
+                "{$prefix}: línea {$item->line_number}, descripción de mercadería",
                 80
             );
             $this->requiredString(
                 $this->packageMarksForItem($item),
-                "{$prefix}: ShipmentItem {$item->id} NumeroBultos",
+                "{$prefix}: línea {$item->line_number}, marcas o números de bultos",
                 100
             );
         }
@@ -467,9 +466,9 @@ class SimpleXmlGeneratorDesconsolidado
 
     private function validateContainer(Container $container, BillOfLading $bill): void
     {
-        $prefix = "BL {$bill->id}: Contenedor {$container->id}";
+        $prefix = "Conocimiento {$bill->bill_number}: Contenedor {$container->container_number}";
 
-        $this->requiredString($container->container_number, "{$prefix}: IdentificadorContenedor", 20);
+        $this->requiredString($container->container_number, "{$prefix}: número de contenedor", 20);
         $this->containerConditionForBill($container, $bill);
 
         if ($container->operator_client_id) {
@@ -480,7 +479,7 @@ class SimpleXmlGeneratorDesconsolidado
             && trim((string) $container->argentina_container_code) !== '') {
             $this->optionalString(
                 $container->argentina_container_code,
-                "{$prefix}: CaracteristicasContenedor",
+                "{$prefix}: código de características del contenedor",
                 4
             );
         }
@@ -547,16 +546,16 @@ class SimpleXmlGeneratorDesconsolidado
             $this->singleItemFlag(
                 $bill,
                 'is_secure_logistics_operator',
-                'IndicadorOperadorLogisticoSeguro'
+                'operador logístico seguro'
             )
         );
         $writer->writeElement(
             'IndicadorTransitoMonitoreado',
-            $this->singleItemFlag($bill, 'is_monitored_transit', 'IndicadorTransitoMonitoreado')
+            $this->singleItemFlag($bill, 'is_monitored_transit', 'tránsito monitoreado')
         );
         $writer->writeElement(
             'IndicadorRenar',
-            $this->singleItemFlag($bill, 'is_renar', 'IndicadorRenar')
+            $this->singleItemFlag($bill, 'is_renar', 'RENAR')
         );
 
         $this->writeOptionalString(
@@ -571,7 +570,7 @@ class SimpleXmlGeneratorDesconsolidado
             $this->singleItemValue(
                 $bill,
                 'foreign_forwarder_tax_id',
-                'IndicadorTributarioForwarderExterior',
+                'identificador tributario del agente de carga del exterior',
                 35,
                 false
             ),
@@ -583,7 +582,7 @@ class SimpleXmlGeneratorDesconsolidado
             $this->singleItemValue(
                 $bill,
                 'foreign_forwarder_country',
-                'CodigoPaisEmisorIdentificadorForwarderExterior',
+                'código de país del agente de carga del exterior',
                 3,
                 false
             ),
@@ -620,7 +619,7 @@ class SimpleXmlGeneratorDesconsolidado
         foreach ($bill->shipmentItems->sortBy('line_number') as $item) {
             $packagingCode = $this->packagingCodeForItem(
                 $item,
-                "BL {$bill->id}: ShipmentItem {$item->id}"
+                "Conocimiento {$bill->bill_number}: Línea {$item->line_number}"
             );
             $manifestedQuantity = $packagingCode === '05'
                 ? $item->containers->count()
@@ -633,7 +632,7 @@ class SimpleXmlGeneratorDesconsolidado
                 'CondicionContenedor',
                 $this->containerCondition(
                     $item->container_condition,
-                    "BL {$bill->id}: ShipmentItem {$item->id} CondicionContenedor"
+                    "Conocimiento {$bill->bill_number}: línea {$item->line_number}, condición H/P"
                 )
             );
             $writer->writeElement(
@@ -672,7 +671,7 @@ class SimpleXmlGeneratorDesconsolidado
             if ($container->operator_client_id) {
                 $writer->writeElement(
                     'CuitAtaOperadorContenedor',
-                    $this->containerOperatorCuit($container, "Contenedor {$container->id}")
+                    $this->containerOperatorCuit($container, "Contenedor {$container->container_number}")
                 );
             }
 
@@ -710,7 +709,7 @@ class SimpleXmlGeneratorDesconsolidado
 
             [$expiry, $acep] = $this->containerValidityData(
                 $container,
-                "BL {$bill->id}: Contenedor {$container->id}"
+                "Conocimiento {$bill->bill_number}: Contenedor {$container->container_number}"
             );
 
             if ($expiry !== null) {
@@ -773,8 +772,7 @@ class SimpleXmlGeneratorDesconsolidado
 
         if ($expiry && $acep !== null) {
             throw new Exception(
-                "{$prefix}: informe FechaVencimientoContenedor "
-                . "o ACEP, pero no ambos."
+                "{$prefix}: informá la fecha de vencimiento CSC o el código ACEP, pero no ambos a la vez."
             );
         }
 
@@ -785,8 +783,8 @@ class SimpleXmlGeneratorDesconsolidado
 
             if (!$arrival) {
                 throw new Exception(
-                    "{$prefix}: no se puede calcular "
-                    . "FechaVencimientoContenedor sin FechaArribo."
+                    "{$prefix}: no se pudo determinar el vencimiento del contenedor. "
+                    . "No hay vencimiento CSC ni ACEP informado, y falta la fecha de arribo para calcular los 480 días. Revisá la documentación del contenedor y solicitá la actualización del dato antes de transmitir."
                 );
             }
 
@@ -806,7 +804,7 @@ class SimpleXmlGeneratorDesconsolidado
         if ($explicit !== '') {
             return $this->requiredString(
                 $explicit,
-                "{$prefix}: CodigoEmbalaje",
+                "{$prefix}: código de embalaje",
                 2
             );
         }
@@ -819,7 +817,7 @@ class SimpleXmlGeneratorDesconsolidado
 
         return $this->requiredString(
             $item->packagingType?->argentina_ws_code,
-            "{$prefix}: CodigoEmbalaje",
+            "{$prefix}: código de embalaje",
             2
         );
     }
@@ -844,7 +842,7 @@ class SimpleXmlGeneratorDesconsolidado
         $explicit = $this->singleItemValue(
             $bill,
             'foreign_forwarder_name',
-            'RazonSocialFowarderExterior',
+            'razón social del agente de carga del exterior',
             70,
             false
         );
@@ -855,7 +853,7 @@ class SimpleXmlGeneratorDesconsolidado
 
         return $this->optionalString(
             $bill->shipper?->legal_name,
-            "BL {$bill->id}: RazonSocialFowarderExterior",
+            "Conocimiento {$bill->bill_number}: razón social del agente de carga del exterior",
             70
         );
     }
@@ -875,7 +873,7 @@ class SimpleXmlGeneratorDesconsolidado
 
         if ($itemMarks->count() > 1) {
             throw new Exception(
-                "BL {$bill->id}: MarcaBultos tiene valores distintos entre líneas."
+                "Conocimiento {$bill->bill_number}: las marcas de los bultos deben coincidir en todas las líneas."
             );
         }
 
@@ -903,26 +901,26 @@ class SimpleXmlGeneratorDesconsolidado
 
         if ($conditions->isEmpty()) {
             throw new Exception(
-                "BL {$bill->id}: Contenedor {$container->container_number} no tiene condición H/P contextual en sus líneas."
+                "Conocimiento {$bill->bill_number}: el contenedor {$container->container_number} no tiene una condición H/P válida en sus líneas vinculadas."
             );
         }
 
         if ($conditions->count() > 1) {
             throw new Exception(
-                "BL {$bill->id}: Contenedor {$container->container_number} está vinculado a líneas con condiciones H/P distintas."
+                "Conocimiento {$bill->bill_number}: el contenedor {$container->container_number} está vinculado a líneas con condiciones H/P diferentes."
             );
         }
 
         return $this->containerCondition(
             $conditions->first(),
-            "BL {$bill->id}: Contenedor {$container->container_number} CondicionContenedor"
+            "Conocimiento {$bill->bill_number}: contenedor {$container->container_number}, condición H/P"
         );
     }
 
     private function containerOperatorCuit(Container $container, string $prefix): string
     {
         if (!$container->operator_client_id) {
-            throw new Exception("{$prefix}: falta operator_client_id.");
+            throw new Exception("{$prefix}: falta identificar al operador del contenedor.");
         }
 
         $taxId = Client::query()
@@ -931,7 +929,7 @@ class SimpleXmlGeneratorDesconsolidado
         $clean = preg_replace('/\D+/', '', (string) $taxId);
 
         if (strlen($clean) !== 11) {
-            throw new Exception("{$prefix}: el CUIT del operador de contenedor debe tener 11 dígitos.");
+            throw new Exception("{$prefix}: el CUIT del operador del contenedor debe tener 11 dígitos. Revisá sus datos en el catálogo.");
         }
 
         return $clean;
@@ -941,7 +939,7 @@ class SimpleXmlGeneratorDesconsolidado
     {
         $value = strtoupper((string) $this->singleItemValue($bill, $field, $label, 1, true));
         if (!in_array($value, ['S', 'N'], true)) {
-            throw new Exception("BL {$bill->id}: {$label} debe ser S o N.");
+            throw new Exception("Conocimiento {$bill->bill_number}: seleccioná Sí o No para {$label}.");
         }
 
         return $value;
@@ -963,16 +961,16 @@ class SimpleXmlGeneratorDesconsolidado
 
         if ($values->count() > 1) {
             throw new Exception(
-                "BL {$bill->id}: {$label} tiene valores distintos entre líneas; AFIP admite uno por título."
+                "Conocimiento {$bill->bill_number}: {$label} debe tener el mismo valor en todas las líneas."
             );
         }
 
         $value = $values->first();
         if ($required && ($value === null || $value === '')) {
-            throw new Exception("BL {$bill->id}: falta {$label}.");
+            throw new Exception("Conocimiento {$bill->bill_number}: falta completar {$label}.");
         }
         if ($value !== null && mb_strlen($value) > $maxLength) {
-            throw new Exception("BL {$bill->id}: {$label} supera {$maxLength} caracteres.");
+            throw new Exception("Conocimiento {$bill->bill_number}: {$label} supera {$maxLength} caracteres.");
         }
 
         return $value;
@@ -983,7 +981,7 @@ class SimpleXmlGeneratorDesconsolidado
         $explicit = $this->singleItemValue(
             $bill,
             'consignee_document_type',
-            'TipoDocumentoDestinatarioMercaderia',
+            'tipo de documento del destinatario',
             4,
             false
         );
@@ -1009,7 +1007,7 @@ class SimpleXmlGeneratorDesconsolidado
         $explicit = $this->singleItemValue(
             $bill,
             'consignee_tax_id',
-            'IdentificadorDestinatarioMercaderia',
+            'identificación del destinatario para Aduana',
             11,
             false
         );
@@ -1027,12 +1025,12 @@ class SimpleXmlGeneratorDesconsolidado
 
         // Sólo normalizar separadores de un identificador realmente numérico.
         if (!preg_match('/^[0-9.\s-]+$/', (string) $value)) {
-            throw new Exception("BL {$bill->id}: IdentificadorDestinatarioMercaderia debe ser numérico.");
+            throw new Exception("Conocimiento {$bill->bill_number}: la identificación del destinatario informada para Aduana debe ser numérica.");
         }
 
         $clean = preg_replace('/\D+/', '', (string) $value);
         if ($clean === '' || strlen($clean) > 11) {
-            throw new Exception("BL {$bill->id}: IdentificadorDestinatarioMercaderia inválido.");
+            throw new Exception("Conocimiento {$bill->bill_number}: la identificación del destinatario no cumple el formato requerido para Aduana.");
         }
 
         return $clean;
@@ -1041,7 +1039,7 @@ class SimpleXmlGeneratorDesconsolidado
     private function validateTransactionId(string $transactionId): void
     {
         if ($transactionId === '' || mb_strlen($transactionId) > 20) {
-            throw new Exception('IdTransaccion es obligatorio y no puede superar 20 caracteres.');
+            throw new Exception('La referencia de transacción es obligatoria y admite hasta 20 caracteres.');
         }
     }
 
@@ -1050,11 +1048,11 @@ class SimpleXmlGeneratorDesconsolidado
         $identifier = trim((string) ($this->voyage->argentina_voyage_id ?? ''));
         if ($identifier === '') {
             throw new Exception(
-                'El viaje no tiene IdentificadorViaje AFIP. Primero debe existir un RegistrarViaje exitoso.'
+                'Falta el identificador de viaje AFIP necesario para procesar este expediente.'
             );
         }
         if (mb_strlen($identifier) > 16) {
-            throw new Exception('IdentificadorViaje AFIP supera los 16 caracteres permitidos.');
+            throw new Exception('El identificador de viaje AFIP admite hasta 16 caracteres.');
         }
     }
 
@@ -1088,7 +1086,7 @@ class SimpleXmlGeneratorDesconsolidado
     {
         $cuit = preg_replace('/\D+/', '', (string) $this->company->tax_id);
         if (strlen($cuit) !== 11) {
-            throw new Exception('CUIT de la empresa conectada inválido; debe tener 11 dígitos.');
+            throw new Exception('El CUIT de la empresa conectada debe tener 11 dígitos. Revisá su configuración.');
         }
 
         $writer->startElement('argWSAutenticacionEmpresa');
@@ -1177,7 +1175,7 @@ class SimpleXmlGeneratorDesconsolidado
         $signedFile = tempnam(sys_get_temp_dir(), 'wsaa_signed_');
 
         if (!$ticketFile || !$certFile || !$keyFile || !$signedFile) {
-            throw new Exception('No se pudieron crear temporales para WSAA.');
+            throw new Exception('No fue posible preparar los archivos de autenticación con Aduana. Consultá al administrador.');
         }
 
         try {
@@ -1229,12 +1227,12 @@ class SimpleXmlGeneratorDesconsolidado
 
         $response = $client->loginCms(['in0' => $signedTicket]);
         if (!isset($response->loginCmsReturn)) {
-            throw new Exception('WSAA no devolvió loginCmsReturn.');
+            throw new Exception('La autenticación con Aduana no devolvió una respuesta completa. Consultá al administrador.');
         }
 
         $xml = simplexml_load_string((string) $response->loginCmsReturn);
         if ($xml === false || empty($xml->credentials->token) || empty($xml->credentials->sign)) {
-            throw new Exception('Respuesta WSAA inválida o sin Token/Sign.');
+            throw new Exception('La respuesta de autenticación con Aduana no contiene las credenciales requeridas. Consultá al administrador.');
         }
 
         return [
@@ -1349,7 +1347,7 @@ class SimpleXmlGeneratorDesconsolidado
                 : (new DateTimeImmutable((string) $value))->format('Y-m-d\TH:i:s');
         } catch (Throwable $exception) {
             throw new Exception(
-                'Fecha inválida para XML AFIP: ' . (string) $value,
+                'La fecha indicada no tiene un formato válido para Aduana: ' . (string) $value,
                 0,
                 $exception
             );
@@ -1401,7 +1399,7 @@ class SimpleXmlGeneratorDesconsolidado
     private function decimalString($value): string
     {
         if (!is_numeric($value)) {
-            throw new Exception('El valor decimal AFIP debe ser numérico.');
+            throw new Exception('El valor decimal informado para Aduana debe ser numérico.');
         }
 
         $text = number_format((float) $value, 3, '.', '');
