@@ -86,19 +86,19 @@ class DeconsolidationBillController extends Controller
             'is_consolidated' => ['required', 'in:S,N'],
             'is_transit_transshipment' => ['required', 'in:S,N'],
         ], [
-            'bill_number.required' => 'Ingresá el número real del conocimiento hijo.',
+            'bill_number.required' => 'Ingresá el número del conocimiento hijo según la documentación.',
             'bill_number.max' => 'El número del conocimiento hijo admite hasta 18 caracteres.',
             'shipper_id.required' => 'Seleccioná el cargador del conocimiento hijo.',
             'consignee_id.required' => 'Seleccioná el consignatario del conocimiento hijo.',
             'loading_port_id.required' => 'Seleccioná el puerto de embarque del conocimiento hijo.',
             'discharge_port_id.required' => 'Seleccioná el puerto de descarga del conocimiento hijo.',
-            'primary_cargo_type_id.required' => 'Seleccioná el tipo de carga real.',
+            'primary_cargo_type_id.required' => 'Seleccioná el tipo de carga indicado en el conocimiento.',
             'gross_weight_kg.required' => 'Ingresá el peso bruto declarado.',
             'gross_weight_kg.decimal' => 'El peso admite como máximo dos decimales.',
-            'cargo_description.required' => 'Ingresá la descripción real de la mercadería.',
+            'cargo_description.required' => 'Ingresá la descripción de la mercadería según la documentación.',
             'cargo_marks.required' => 'Ingresá las marcas de los bultos.',
-            'is_consolidated.required' => 'Indicá si el conocimiento es consolidado (S/N).',
-            'is_transit_transshipment.required' => 'Indicá si corresponde tránsito o transbordo (S/N).',
+            'is_consolidated.required' => 'Indicá si el conocimiento es consolidado.',
+            'is_transit_transshipment.required' => 'Indicá si corresponde tránsito o transbordo.',
         ]);
 
         // ATA-DESC exige descarga en Argentina. Nunca inferir país o puerto
@@ -107,7 +107,7 @@ class DeconsolidationBillController extends Controller
         if (!$destination || strtoupper(trim((string) $destination->country?->alpha2_code)) !== 'AR') {
             throw ValidationException::withMessages([
                 'discharge_port_id' =>
-                    'Para ATA-DESC el puerto de descarga debe pertenecer a Argentina.',
+                    'El puerto de descarga de ATA-DESC debe estar ubicado en Argentina.',
             ]);
         }
 
@@ -117,7 +117,7 @@ class DeconsolidationBillController extends Controller
         if (!preg_match('/^[A-Z0-9]{3}$/', $afipCountry)) {
             throw ValidationException::withMessages([
                 'discharge_port_id' =>
-                    'El puerto seleccionado no tiene un código AFIP de país válido en el catálogo.',
+                    'El puerto seleccionado no tiene un código de país AFIP válido configurado. Consultá al administrador.',
             ]);
         }
 
@@ -131,7 +131,7 @@ class DeconsolidationBillController extends Controller
         if ($existing?->trashed()) {
             throw ValidationException::withMessages([
                 'bill_number' =>
-                    'Ese conocimiento ya existe archivado en esta operación. Revisalo antes de volver a cargarlo.',
+                    'Este conocimiento figura como archivado en el expediente. Revisá su estado antes de continuar.',
             ]);
         }
 
@@ -181,8 +181,8 @@ class DeconsolidationBillController extends Controller
             ->with(
                 'success',
                 $bill->wasRecentlyCreated
-                    ? 'Conocimiento hijo guardado como borrador. Falta cargar sus líneas de mercadería antes de transmitir.'
-                    : 'El conocimiento hijo ya estaba guardado. No se creó otro ni se modificaron sus datos.'
+                    ? 'Conocimiento hijo guardado como borrador. Completá sus líneas de mercadería antes de transmitir.'
+                    : 'El conocimiento hijo ya estaba registrado. Se conservaron los datos existentes.'
             );
     }
 
@@ -236,7 +236,7 @@ class DeconsolidationBillController extends Controller
         if (!$destination || strtoupper(trim((string) $destination->country?->alpha2_code)) !== 'AR'
             || !preg_match('/^[A-Z0-9]{3}$/', strtoupper(trim((string) $destination->country?->codigo_afip)))) {
             throw ValidationException::withMessages([
-                'discharge_port_id' => 'El puerto argentino seleccionado debe tener un código de país AFIP válido.',
+                'discharge_port_id' => 'El puerto de descarga debe ser argentino y tener un código de país AFIP válido. Consultá al administrador si faltan datos en el catálogo.',
             ]);
         }
         DB::transaction(function () use ($operationRecord, $bill, $data, $destination) {
@@ -245,11 +245,11 @@ class DeconsolidationBillController extends Controller
             $this->assertDraftHouseBill($record, $operationRecord);
             abort_if($operationRecord->billsOfLading()->withTrashed()
                 ->whereKeyNot($record->id)->where('bill_number', $data['bill_number'])->exists(),
-                409, 'Ya existe ese número de conocimiento en el expediente.');
+                409, 'Ya hay otro conocimiento con ese número en este expediente.');
             abort_if($record->shipmentItems()->exists() && (
                 $data['bill_number'] !== $record->bill_number
                 || $data['is_consolidated'] !== ((int) $record->getRawOriginal('is_consolidated') === 1 ? 'S' : 'N')),
-                409, 'No se puede cambiar el número ni la consolidación con líneas asociadas.');
+                409, 'El número y la condición de consolidado se mantienen mientras este conocimiento tenga líneas de mercadería.');
             $record->fill(array_merge($data, [
                 'is_consolidated' => $data['is_consolidated'] === 'S' ? 1 : 0,
                 'destination_country_code' => strtoupper(trim((string) $destination->country->codigo_afip)),
@@ -259,7 +259,7 @@ class DeconsolidationBillController extends Controller
         });
         return redirect()->route('company.simple.desconsolidado.operations.show', [
             'operation' => $operation,
-        ])->with('success', 'Conocimiento hijo borrador actualizado.');
+        ])->with('success', 'Cambios del conocimiento hijo guardados correctamente.');
     }
 
     private function assertDraftHouseBill(BillOfLading $bill, DeconsolidationOperation $operation): void
@@ -271,7 +271,7 @@ class DeconsolidationBillController extends Controller
                 'argentina.desconsolidated.master_loading_port_code') === (string) $operation->master_loading_port_code
             && !in_array($bill->argentina_status, ['sent', 'approved'], true)
             && !in_array($bill->webservice_status, ['sent', 'processing', 'approved', 'accepted'], true),
-            409, 'El conocimiento no es un borrador editable.');
+            409, 'Este conocimiento no está disponible para edición en su estado actual.');
     }
 
     /** Quitar un título hijo local solamente cuando no haya sido transmitido. */
@@ -289,17 +289,17 @@ class DeconsolidationBillController extends Controller
                 && (string) $record->master_bill_number === (string) $operationRecord->master_bill_number
                 && !in_array($record->argentina_status, ['sent', 'approved'], true)
                 && !in_array($record->webservice_status, ['sent', 'processing', 'approved', 'accepted'], true),
-                409, 'El conocimiento no es un borrador editable.'
+                409, 'Este conocimiento no está disponible para edición en su estado actual.'
             );
             abort_if($record->shipmentItems()->exists(), 409,
-                'El conocimiento tiene líneas. Eliminá primero sus líneas borrador.');
+                'Este conocimiento tiene líneas de mercadería. Para archivarlo, primero deben eliminarse sus líneas en borrador.');
 
             $record->delete(); // SoftDeletes: conservar trazabilidad.
         });
 
         return redirect()->route('company.simple.desconsolidado.operations.show', [
             'operation' => $operation,
-        ])->with('success', 'Conocimiento hijo borrador archivado.');
+        ])->with('success', 'Conocimiento hijo archivado. Su registro se conserva en el historial.');
     }
 
     /**
@@ -311,11 +311,11 @@ class DeconsolidationBillController extends Controller
     {
         $company = $this->getUserCompany();
 
-        abort_unless($company, 403, 'No se encontró una empresa asociada al usuario.');
+        abort_unless($company, 403, 'Tu usuario no tiene una empresa asociada. Consultá al administrador.');
         abort_unless(
             $this->hasCompanyRole('Desconsolidador'),
             403,
-            'La empresa no tiene habilitado el rol Desconsolidador.'
+            'La empresa no está habilitada para operar Desconsolidados. Consultá al administrador.'
         );
 
         $operation = DeconsolidationOperation::query()
