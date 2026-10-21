@@ -17,7 +17,7 @@ class LegacyDeconsolidationRedirectController extends Controller
             ->route('company.simple.dashboard')
             ->with(
                 'error',
-                'El módulo histórico de desconsolidación fue reemplazado por el circuito real de Desconsolidados Argentina.'
+                'Este acceso anterior a Desconsolidados ya no está disponible. Ingresá al módulo «Desconsolidados Argentina» para continuar.'
             );
     }
 }
