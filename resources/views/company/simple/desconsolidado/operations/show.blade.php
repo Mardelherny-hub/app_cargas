@@ -27,6 +27,13 @@
                 Volver a mis desconsolidaciones
             </a>
 
+            @if((int) $operation->bills_of_lading_count > 0)
+                <a href="#ata-desc-transmit"
+                   class="inline-flex min-h-11 w-fit items-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-indigo-700">
+                    Ir a Enviar a Aduana
+                </a>
+            @endif
+
             @if(session('success'))
                 <div role="status" class="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
                     <svg class="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
@@ -401,7 +408,7 @@
                         </div>
                     @endforelse
 
-                    <div class="border-t border-amber-200 bg-amber-50 px-5 py-4 sm:px-7">
+                    <div id="ata-desc-transmit" class="border-t border-amber-200 bg-amber-50 px-5 py-4 sm:px-7">
                         <div class="flex items-start gap-3">
                             <svg class="mt-0.5 h-5 w-5 shrink-0 text-amber-700" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.8 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/>
@@ -432,7 +439,7 @@
                                             <input type="checkbox" name="confirmation" value="1" required class="mt-1 rounded border-amber-400"/>
                                             <span>Confirmo que revisé la información y comprendo que esta operación puede registrar, modificar o eliminar datos en Aduana.</span>
                                         </label>
-                                        <button type="submit" class="min-h-11 rounded-xl bg-amber-700 px-4 py-2 text-sm font-bold text-white hover:bg-amber-800">Ejecutar operación aduanera</button>
+                                        <button type="submit" class="min-h-11 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">Enviar a Aduana</button>
                                     </form>
                                 @endif
                                 <form method="POST" action="{{ route('company.simple.desconsolidado.operations.preflight', ['operation' => $operation->id]) }}" class="mt-3">
