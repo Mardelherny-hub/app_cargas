@@ -116,6 +116,31 @@
                 </details>
             @endif
 
+            <section aria-labelledby="arrival-heading" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+                <h2 id="arrival-heading" class="text-lg font-bold text-gray-900">Fecha de arribo del viaje</h2>
+                <p class="mt-2 text-sm leading-6 text-gray-600">
+                    Si un contenedor no tiene vencimiento CSC ni código ACEP, ATA-DESC calcula su vencimiento sumando 480 días a la fecha de arribo.
+                    Informá la fecha que figure en la documentación del viaje. Es opcional mientras no se requiera ese cálculo.
+                </p>
+                <form method="POST" action="{{ route('company.simple.desconsolidado.operations.arrival-date', ['operation' => $operation->id]) }}"
+                      class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                    @csrf
+                    @method('PATCH')
+                    <label for="arrival_date" class="text-sm font-semibold text-gray-800">
+                        Fecha de arribo documentada
+                        <input id="arrival_date" name="arrival_date" type="date"
+                               value="{{ old('arrival_date', $operation->arrival_date?->format('Y-m-d')) }}"
+                               aria-invalid="{{ $errors->has('arrival_date') ? 'true' : 'false' }}"
+                               class="mt-2 block min-h-11 w-full rounded-lg border-gray-300 text-gray-900 sm:w-64"/>
+                    </label>
+                    <button type="submit" class="min-h-11 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">
+                        Guardar fecha de arribo
+                    </button>
+                </form>
+                @error('arrival_date') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
+                <p class="mt-3 text-xs text-gray-500">Este dato puede completarse aunque el expediente ya tenga conocimientos hijos. Guardarlo no realiza envíos a Aduana.</p>
+            </section>
+
             <div class="grid gap-6 lg:grid-cols-12 lg:items-start">
                 <section aria-labelledby="children-heading" class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm lg:col-span-8">
                     <div class="flex flex-col gap-3 border-b border-gray-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-6">
