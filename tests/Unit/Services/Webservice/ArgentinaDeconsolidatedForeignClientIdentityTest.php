@@ -66,7 +66,7 @@ class ArgentinaDeconsolidatedForeignClientIdentityTest extends TestCase
         $bill = $this->bill('US', 'CUIT', 'P11000103603', 'CUIT', '1234AB');
 
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('IdentificadorDestinatarioMercaderia debe ser numérico');
+        $this->expectExceptionMessage('la identificación del destinatario informada para Aduana debe ser numérica');
         $this->field($bill, 'consigneeTaxId');
     }
 
@@ -76,7 +76,7 @@ class ArgentinaDeconsolidatedForeignClientIdentityTest extends TestCase
         $bill = $this->bill('AR', 'CUIT', 'P11000103603');
 
         $this->expectException(\Exception::class);
-        $this->expectExceptionMessage('IdentificadorDestinatarioMercaderia debe ser numérico');
+        $this->expectExceptionMessage('la identificación del destinatario informada para Aduana debe ser numérica');
         $this->field($bill, 'consigneeTaxId');
     }
 
