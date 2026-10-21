@@ -32,8 +32,8 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.8 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/>
                         </svg>
                         <div>
-                            <p class="font-bold">Hay datos que necesitamos revisar</p>
-                            <p class="mt-1 text-red-700">Corregilos en el formulario. Lo que escribiste se mantiene.</p>
+                            <p class="font-bold">Hay datos para revisar</p>
+                            <p class="mt-1 text-red-700">Revisá las observaciones indicadas. Los datos ingresados se conservan.</p>
                             <ul class="mt-2 list-disc space-y-1 pl-5">
                                 @foreach($errors->all() as $error)
                                     <li>{{ $error }}</li>
@@ -55,7 +55,7 @@
                             Completá las referencias de Aduana
                         </h2>
                         <p class="mt-3 max-w-2xl text-sm leading-6 text-gray-600">
-                            Para empezar solo necesitás tres datos. No se solicitan el barco, el capitán ni los datos del viaje de la transportista.
+                            Para iniciar el expediente, ingresá el identificador de viaje AFIP, el puerto de embarque y el número del conocimiento madre.
                         </p>
                     </div>
 
@@ -71,7 +71,7 @@
                                     Identificador de viaje AFIP <span class="text-red-600">*</span>
                                 </label>
                                 <p id="voyage-help" class="mt-1 text-sm leading-5 text-gray-500">
-                                    Es el identificador que Aduana asignó al viaje. No es el número interno de la transportista.
+                                    Ingresá el identificador del viaje asignado por Aduana, que puede diferir del número interno de la transportista.
                                 </p>
                                 <input id="argentina_voyage_id" name="argentina_voyage_id" type="text"
                                        value="{{ old('argentina_voyage_id') }}" required maxlength="16"
@@ -96,14 +96,14 @@
                                     Código del puerto de embarque <span class="text-red-600">*</span>
                                 </label>
                                 <p id="port-help" class="mt-1 text-sm leading-5 text-gray-500">
-                                    El puerto de embarque del <strong>conocimiento madre</strong>, no el puerto de descarga de los conocimientos hijos.
+                                    Ingresá el código del puerto de embarque indicado en el <strong>conocimiento madre</strong>.
                                 </p>
                                 <input id="master_loading_port_code" name="master_loading_port_code" type="text"
                                        value="{{ old('master_loading_port_code') }}" required maxlength="5" minlength="5"
                                        pattern="[A-Za-z0-9]{5}" autocapitalize="characters" autocomplete="off" spellcheck="false"
                                        aria-describedby="port-help{{ $errors->has('master_loading_port_code') ? ' port-error' : '' }}"
                                        aria-invalid="{{ $errors->has('master_loading_port_code') ? 'true' : 'false' }}"
-                                       placeholder="Ej.: ARBUE"
+                                       placeholder="Código de puerto de 5 caracteres"
                                        class="mt-3 block min-h-12 w-full rounded-xl border px-4 py-3 font-mono text-base uppercase tracking-widest text-gray-900 shadow-sm placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-gray-600 focus:border-indigo-600 focus:ring-indigo-500 {{ $errors->has('master_loading_port_code') ? 'border-red-400 bg-red-50/30' : 'border-gray-300 bg-white' }}"/>
                                 @error('master_loading_port_code')
                                     <p id="port-error" class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p>
@@ -144,7 +144,7 @@
                                 </svg>
                                 <div class="text-sm leading-6 text-indigo-950">
                                     <p class="font-bold">Guardar no envía información a Aduana.</p>
-                                    <p class="mt-1 text-indigo-800">Primero se crea o se recupera tu expediente. Después podrás cargar los conocimientos hijos y revisar los datos antes de transmitir.</p>
+                                    <p class="mt-1 text-indigo-800">El expediente quedará guardado para que puedas incorporar los conocimientos hijos y revisar la información antes de transmitir.</p>
                                 </div>
                             </div>
                         </div>
@@ -171,31 +171,31 @@
                         <h2 class="mt-2 text-xl font-bold">¿Qué pasa después?</h2>
                         <ol class="mt-6 space-y-5">
                             <li class="flex items-start gap-3">
-                                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-500 text-sm font-bold text-white">1</span>
+                                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-700 text-sm font-bold text-white">1</span>
                                 <div>
                                     <p class="text-sm font-bold">Identificar el título madre</p>
                                     <p class="mt-1 text-xs leading-5 text-gray-600">Estás en este paso. Guardá las tres referencias.</p>
                                 </div>
                             </li>
                             <li class="flex items-start gap-3">
-                                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white text-sm font-semibold text-gray-200">2</span>
+                                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-700">2</span>
                                 <div>
-                                    <p class="text-sm font-semibold text-gray-100">Agregar conocimientos hijos</p>
+                                    <p class="text-sm font-semibold text-gray-800">Agregar conocimientos hijos</p>
                                     <p class="mt-1 text-xs leading-5 text-gray-600">Cargá los datos de cada conocimiento.</p>
                                 </div>
                             </li>
                             <li class="flex items-start gap-3">
-                                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white text-sm font-semibold text-gray-200">3</span>
+                                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-700">3</span>
                                 <div>
-                                    <p class="text-sm font-semibold text-gray-100">Revisar la información</p>
-                                    <p class="mt-1 text-xs leading-5 text-gray-600">Controlá los datos y corregí los faltantes.</p>
+                                    <p class="text-sm font-semibold text-gray-800">Revisar la información</p>
+                                    <p class="mt-1 text-xs leading-5 text-gray-600">Revisá la información y completá los datos pendientes.</p>
                                 </div>
                             </li>
                             <li class="flex items-start gap-3">
-                                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white text-sm font-semibold text-gray-200">4</span>
+                                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-300 bg-white text-sm font-semibold text-gray-700">4</span>
                                 <div>
-                                    <p class="text-sm font-semibold text-gray-100">Transmitir a Aduana</p>
-                                    <p class="mt-1 text-xs leading-5 text-gray-600">El envío se hace únicamente cuando los datos estén listos.</p>
+                                    <p class="text-sm font-semibold text-gray-800">Transmitir a Aduana</p>
+                                    <p class="mt-1 text-xs leading-5 text-gray-600">La transmisión se realiza después de revisar y validar los datos.</p>
                                 </div>
                             </li>
                         </ol>
