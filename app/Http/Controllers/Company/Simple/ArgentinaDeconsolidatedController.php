@@ -126,7 +126,7 @@ class ArgentinaDeconsolidatedController extends Controller
                 ->withInput()
                 ->withErrors([
                     'container_customs' =>
-                        'Para ATA-DESC informe Fecha de vencimiento CSC o ACEP, pero no ambos.',
+                        'Para ATA-DESC, informá la fecha de vencimiento CSC o el código ACEP, pero no ambos simultáneamente.',
                 ]);
         }
 
@@ -148,7 +148,7 @@ class ArgentinaDeconsolidatedController extends Controller
             ->keyBy('id');
 
         if ($allowedItems->count() !== $submittedItemIds->count()) {
-            abort(404, 'Una o más líneas no pertenecen a este contenedor/viaje desconsolidado.');
+            abort(404, 'Una o más líneas seleccionadas no corresponden a este contenedor y viaje.');
         }
 
         DB::transaction(function () use ($container, $expiry, $acep, $validated, $allowedItems) {
@@ -192,8 +192,8 @@ class ArgentinaDeconsolidatedController extends Controller
             'bill_ids' => 'required|array|min:1',
             'bill_ids.*' => 'integer|min:1',
         ], [
-            'bill_ids.required' => 'Seleccione al menos un conocimiento.',
-            'bill_ids.min' => 'Seleccione al menos un conocimiento.',
+            'bill_ids.required' => 'Seleccioná al menos un conocimiento.',
+            'bill_ids.min' => 'Seleccioná al menos un conocimiento.',
         ]);
 
         $action = $validated['action'];
@@ -213,9 +213,9 @@ class ArgentinaDeconsolidatedController extends Controller
             if ($result['success']) {
                 $processedCount = count($result['bill_ids'] ?? $billIds);
                 $messages = [
-                    'registrar' => "{$processedCount} título(s) desconsolidado(s) registrado(s) exitosamente en AFIP.",
-                    'rectificar' => "{$processedCount} título(s) desconsolidado(s) rectificado(s) exitosamente en AFIP.",
-                    'eliminar' => "{$processedCount} título(s) desconsolidado(s) eliminado(s) exitosamente en AFIP.",
+                    'registrar' => "Conocimientos registrados en AFIP: {$processedCount}.",
+                    'rectificar' => "Conocimientos rectificados en AFIP: {$processedCount}.",
+                    'eliminar' => "Conocimientos eliminados en AFIP: {$processedCount}.",
                 ];
 
                 $redirect = redirect()
@@ -237,7 +237,7 @@ class ArgentinaDeconsolidatedController extends Controller
                 ->withInput()
                 ->with(
                     'error',
-                    'Error: ' . ($result['error_message'] ?? $result['error'] ?? 'Error desconocido')
+                    'No se confirmó la operación. Detalle informado: ' . ($result['error_message'] ?? $result['error'] ?? 'Sin detalle disponible')
                 );
         } catch (Throwable $exception) {
             Log::error('Error HTTP procesando desconsolidado Argentina', [
@@ -252,7 +252,7 @@ class ArgentinaDeconsolidatedController extends Controller
             return redirect()
                 ->route('company.simple.desconsolidado.show', $voyage)
                 ->withInput()
-                ->with('error', 'Error procesando solicitud: ' . $exception->getMessage());
+                ->with('error', 'No fue posible confirmar el resultado de la operación. Revisá el historial y verificá su estado en Aduana antes de reintentar.');
         }
     }
 
@@ -263,17 +263,17 @@ class ArgentinaDeconsolidatedController extends Controller
         abort_unless(
             $company,
             403,
-            'No se encontró la empresa asociada al usuario.'
+            'Tu usuario no tiene una empresa asociada. Consultá al administrador.'
         );
         abort_unless(
             $this->hasCompanyRole('Desconsolidador'),
             403,
-            'La empresa no tiene habilitado el rol Desconsolidador.'
+            'La empresa no está habilitada para operar Desconsolidados. Consultá al administrador.'
         );
         abort_unless(
             (int) $voyage->company_id === (int) $company->id,
             403,
-            'No tiene permisos para este viaje.'
+            'La empresa actual no tiene acceso a este viaje.'
         );
 
         return $company;
