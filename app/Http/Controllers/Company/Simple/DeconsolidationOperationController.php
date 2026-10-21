@@ -108,8 +108,8 @@ class DeconsolidationOperationController extends Controller
             ->with(
                 'success',
                 $operation->wasRecentlyCreated
-                    ? 'Desconsolidación iniciada. Podés continuar con los conocimientos hijos.'
-                    : 'Ya existe esta desconsolidación. Retomamos el expediente guardado.'
+                    ? 'Expediente de desconsolidación creado. Podés continuar con los conocimientos hijos.'
+                    : 'El expediente ya estaba registrado. Se abrió la operación existente para continuar.'
             );
     }
 
@@ -155,8 +155,8 @@ class DeconsolidationOperationController extends Controller
             abort_if(
                 $record->billsOfLading()->exists(),
                 409,
-                'No se pueden modificar las referencias del expediente con conocimientos hijos. '
-                . 'Primero debe resolverse la documentación asociada.'
+                'Las referencias del expediente no pueden modificarse mientras tenga conocimientos hijos. '
+                . 'Revisá la documentación asociada antes de solicitar cambios.'
             );
 
             $record->update($data);
@@ -201,7 +201,7 @@ class DeconsolidationOperationController extends Controller
         $result = $generator->validateLocalData('registrar', $billIds);
         $errors = $result['errors'] ?? [];
         if (!$billIds) {
-            $errors[] = 'El expediente no tiene conocimientos hijos.';
+            $errors[] = 'Agregá al menos un conocimiento hijo para validar el expediente.';
         }
         $pending = WebserviceTransaction::query()
             ->where('company_id', $company->id)
@@ -214,7 +214,7 @@ class DeconsolidationOperationController extends Controller
                     'deconsolidation_operation_id') === (int) $record->id
             );
         if ($pending) {
-            $errors[] = 'Hay una transmisión pendiente o de resultado incierto; no reenviar.';
+            $errors[] = 'Hay una transmisión pendiente o cuyo resultado aún no está confirmado. Revisá el historial y consultá su estado en Aduana antes de realizar otro envío.';
         }
         if ($errors) {
             return redirect()->route('company.simple.desconsolidado.operations.show', [
@@ -223,7 +223,7 @@ class DeconsolidationOperationController extends Controller
         }
         return redirect()->route('company.simple.desconsolidado.operations.show', [
             'operation' => $record->id,
-        ])->with('success', 'Validación local aprobada. Esto NO registra títulos en Aduana.');
+        ])->with('success', 'La revisión local de datos terminó sin observaciones. No se transmitió información a Aduana.');
     }
 
     public function transmit(Request $request, int $operation): RedirectResponse
@@ -245,8 +245,8 @@ class DeconsolidationOperationController extends Controller
                 'operation' => $record->id,
             ])->with($result['success'] ? 'success' : 'error',
                 $result['success']
-                    ? 'Aduana aceptó la operación. Transacción: ' . $result['transaction_id']
-                    : 'Aduana rechazó la operación. Revisá el historial de transmisiones.');
+                    ? 'Aduana aceptó la operación. Referencia de transacción: ' . $result['transaction_id']
+                    : 'No se confirmó la aceptación de la operación. Revisá el historial de transmisiones y el resultado informado por Aduana.');
         } catch (Throwable $exception) {
             Log::error('ATA-DESC: resultado de transmisión no confirmado', [
                 'operation_id' => $record->id,
@@ -255,7 +255,7 @@ class DeconsolidationOperationController extends Controller
             ]);
             return redirect()->route('company.simple.desconsolidado.operations.show', [
                 'operation' => $record->id,
-            ])->with('error', 'No se confirmó la operación. No reintentar sin revisar el historial y Aduana.');
+            ])->with('error', 'No fue posible confirmar el resultado de la operación. Antes de realizar un nuevo envío, revisá el historial y verificá el estado en Aduana.');
         }
     }
 
@@ -263,11 +263,11 @@ class DeconsolidationOperationController extends Controller
     {
         $company = $this->getUserCompany();
 
-        abort_unless($company, 403, 'No se encontró una empresa asociada al usuario.');
+        abort_unless($company, 403, 'Tu usuario no tiene una empresa asociada. Consultá al administrador.');
         abort_unless(
             $this->hasCompanyRole('Desconsolidador'),
             403,
-            'La empresa no tiene habilitado el rol Desconsolidador.'
+            'La empresa no está habilitada para operar Desconsolidados. Consultá al administrador.'
         );
 
         return $company;
