@@ -789,6 +789,12 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
         Route::get('/', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'transbordoIndex'])
             ->name('index');
             
+        // Editor de distribución por conocimiento y barcaza (sólo QA local).
+        // El controlador aplica el control de empresa y rol Transbordos.
+        Route::get('/{voyage}/bills/{bill}/distribution/edit',
+            [App\Http\Controllers\Company\Simple\HidroviaTransshipmentDraftController::class, 'edit'])
+            ->whereNumber('voyage')->whereNumber('bill')->name('drafts.edit');
+
         // API de borradores Hidrovía: distribución local, sin enviar a ARCA.
         Route::get('/{voyage}/bills/{bill}/distribution',
             [App\Http\Controllers\Company\Simple\HidroviaTransshipmentDraftController::class, 'show'])
