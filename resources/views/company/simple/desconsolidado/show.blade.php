@@ -18,7 +18,7 @@
 
             @if(session('warning'))
                 <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded text-sm text-yellow-800">
-                    <strong>AFIP respondió con advertencias:</strong> {{ session('warning') }}
+                    <strong>Advertencias informadas por AFIP:</strong> {{ session('warning') }}
                 </div>
             @endif
 
@@ -64,7 +64,7 @@
                             <p class="mt-1">
                                 @if(!empty($validation['errors']))
                                     <span class="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
-                                        Con errores
+                                        Con observaciones
                                     </span>
                                 @elseif(!empty($validation['warnings']))
                                     <span class="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
@@ -72,7 +72,7 @@
                                     </span>
                                 @else
                                     <span class="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                                        Lista
+                                        Sin observaciones
                                     </span>
                                 @endif
                             </p>
@@ -115,8 +115,7 @@
                         <div class="mb-5">
                             <h3 class="text-lg font-medium text-gray-900">Datos aduaneros de contenedores</h3>
                             <p class="mt-1 text-sm text-gray-600">
-                                Estos campos se usan exclusivamente para ATA-DESC. No modifican tara, peso,
-                                estado operativo, tarifas, ubicación, precintos ni otros datos internos de gestión.
+                                Estos campos corresponden a la declaración ATA-DESC. El guardado no modifica los pesos, el estado, los precintos ni los demás datos de gestión del contenedor.
                             </p>
                         </div>
 
@@ -168,8 +167,8 @@
                                                 @endif
                                             </div>
                                             <p class="mt-1 text-xs text-gray-500">
-                                                Estado operativo actual: {{ $container->condition ?: '—' }}.
-                                                Se muestra sólo como referencia y no se modifica desde aquí.
+                                                Estado físico actual: {{ $container->condition ?: '—' }}.
+                                                Se muestra como referencia y permanece sin cambios al guardar.
                                             </p>
                                         </div>
 
@@ -220,7 +219,7 @@
                                                 Documento del contenedor
                                             </p>
                                             <p class="text-xs text-gray-500 mb-3">
-                                                Si informa un vencimiento CSC o un ACEP real, se usa ese dato y no deben completarse ambos. Si deja los dos campos vacíos, ATA-DESC calcula el vencimiento como Fecha de arribo + 480 días.
+                                                Ingresá la fecha de vencimiento CSC o el código ACEP según la documentación; no se admiten ambos a la vez. Si los dos campos quedan vacíos y el viaje tiene fecha de arribo, se calcula el vencimiento sumando 480 días a esa fecha.
                                             </p>
                                             @if($calculatedExpiry)
                                                 <p class="text-xs font-medium text-green-700 mb-3">
@@ -271,19 +270,18 @@
                             <div>
                                 <h3 class="text-lg font-medium text-gray-900">Títulos a transmitir</h3>
                                 <p class="text-sm text-gray-600 mt-1">
-                                    Seleccione exactamente los conocimientos que desea procesar. El servidor vuelve a validar
-                                    pertenencia, estado y datos obligatorios de los títulos seleccionados antes de transmitir a AFIP.
+                                    Seleccioná los conocimientos que querés procesar. Antes de transmitir a AFIP, el sistema verifica que correspondan a este viaje y que cumplan las validaciones necesarias.
                                 </p>
                             </div>
                             <div class="text-xs text-gray-500 md:text-right">
-                                <div><strong>Sin registrar / Eliminado:</strong> puede Registrar</div>
-                                <div><strong>Registrado / Rectificado:</strong> puede Rectificar o Eliminar</div>
+                                <div><strong>Sin registrar o eliminado:</strong> puede Registrar</div>
+                                <div><strong>Registrado o rectificado:</strong> puede Rectificar o Eliminar</div>
                             </div>
                         </div>
 
                         @if($desconsolidatedBills->isEmpty())
                             <div class="bg-yellow-50 border border-yellow-200 rounded p-4 text-sm text-yellow-800">
-                                Este viaje no tiene conocimientos con <code>master_bill_number</code> informado.
+                                Este viaje no tiene conocimientos con un número de conocimiento madre asociado.
                             </div>
                         @else
                             <div class="overflow-x-auto border rounded-lg">
@@ -394,7 +392,7 @@
                                 name="action"
                                 value="eliminar"
                                 @disabled($desconsolidatedBills->isEmpty())
-                                onclick="return confirm('Esta acción solicitará a AFIP la eliminación únicamente de los títulos seleccionados. ¿Desea continuar?')"
+                                onclick="return confirm('Esta acción solicitará a AFIP la eliminación de los conocimientos seleccionados. ¿Confirmás que querés continuar?')"
                                 class="inline-flex justify-center items-center px-4 py-2 bg-red-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Eliminar seleccionados
@@ -409,7 +407,7 @@
                     <h3 class="text-lg font-medium text-gray-900 mb-4">Historial de transacciones</h3>
 
                     @if($transactions->isEmpty())
-                        <p class="text-sm text-gray-500">Todavía no hay transacciones de Desconsolidados Argentina para este viaje.</p>
+                        <p class="text-sm text-gray-500">Todavía no se registraron transmisiones de Desconsolidados Argentina para este viaje.</p>
                     @else
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200">
@@ -418,7 +416,7 @@
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Operación</th>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Títulos</th>
-                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">IdTransaccion</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID de transacción AFIP</th>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
                                         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Resultado</th>
                                     </tr>
@@ -450,7 +448,12 @@
                                                     <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">Error</span>
                                                 @else
                                                     <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                                        {{ $transaction->status }}
+                                                        {{ match ($transaction->status) {
+                                                            'pending' => 'Pendiente',
+                                                            'sending' => 'En envío',
+                                                            'processing' => 'En proceso',
+                                                            default => $transaction->status,
+                                                        } }}
                                                     </span>
                                                 @endif
                                             </td>
