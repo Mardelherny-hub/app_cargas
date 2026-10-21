@@ -286,6 +286,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                 'status' => $result['success'] ? 'success' : 'error',
                 'external_reference' => $result['identifier'] ?? null,
                 'confirmation_number' => $result['identifier'] ?? null,
+                'error_code' => $result['success'] ? null : collect($result['details'] ?? [])->pluck('code')->filter()->first(),
                 'error_message' => $result['error_message'] ?? null,
                 'error_details' => $result['success'] ? null : ($result['details'] ?? []),
                 'response_at' => now(),
@@ -297,12 +298,10 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                     $bill->forceFill($method === 'eliminar' ? [
                         'argentina_status' => 'deleted',
                         'webservice_status' => 'accepted',
-                        'webservice_response_at' => now(),
                     ] : [
                         'argentina_status' => 'sent',
                         'argentina_sent_at' => now(),
                         'webservice_status' => 'accepted',
-                        'webservice_response_at' => now(),
                     ])->saveQuietly();
                 }
             }
@@ -702,6 +701,23 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                 'description' => $this->elementText($node, 'Descripcion'),
                 'additional' => $this->elementText($node, 'DescripcionAdicional'),
             ];
+        }
+
+        // Aduana puede devolver IdentificadorViaje incluso cuando rechaza
+        // el título. Un código de error no equivale a una advertencia W*.
+        $blocking = collect($details)->filter(function (array $detail): bool {
+            $code = strtoupper(trim((string) ($detail['code'] ?? '')));
+
+            return $code === '' || !preg_match('/^W[A-Z0-9_-]+$/', $code);
+        });
+        if ($blocking->isNotEmpty()) {
+            $message = $blocking->map(fn (array $detail) => implode(' - ', array_filter([
+                ($detail['code'] ?? null) ? 'AFIP ' . $detail['code'] : null,
+                $detail['description'] ?? null,
+                $detail['additional'] ?? null,
+            ])))->filter()->implode(' | ');
+
+            return $this->errorResult($message ?: 'Aduana rechazó la operación.', $details);
         }
 
         if ($identifier !== '') {
