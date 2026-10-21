@@ -243,8 +243,8 @@
                                                 aria-invalid="{{ $errors->has($indicator['name']) ? 'true' : 'false' }}"
                                                 class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
                                             <option value="">Elegí una respuesta</option>
-                                            <option value="S" @selected(old($indicator['name']) === 'S')>Sí</option>
-                                            <option value="N" @selected(old($indicator['name']) === 'N')>No</option>
+                                            <option value="S" @selected((string) old($indicator['name'], $editingItem?->{$indicator['name']}) === 'S')>Sí</option>
+                                            <option value="N" @selected((string) old($indicator['name'], $editingItem?->{$indicator['name']}) === 'N')>No</option>
                                         </select>
                                         @if($errors->has($indicator['name']))
                                             <p class="mt-2 text-sm font-medium text-red-700">{{ $errors->first($indicator['name']) }}</p>
