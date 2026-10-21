@@ -45,8 +45,8 @@
             <section aria-labelledby="start-heading" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
                 <h2 id="start-heading" class="text-xl font-semibold text-gray-800">Nueva desconsolidación</h2>
                 <p class="mt-2 text-sm text-gray-600">
-                    Para comenzar necesitás el identificador del viaje AFIP, el código del puerto de embarque
-                    y el número del conocimiento madre. No es necesario cargar un viaje de la transportista.
+                    Para comenzar, ingresá el identificador del viaje AFIP, el código del puerto de embarque del conocimiento madre
+                    y el número de ese conocimiento.
                 </p>
                 <a href="{{ route('company.simple.desconsolidado.operations.create') }}"
                    class="mt-4 inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
@@ -90,7 +90,7 @@
                                         <dd class="mt-1 break-all text-sm font-semibold text-gray-900">{{ $operation->argentina_voyage_id }}</dd>
                                     </div>
                                     <div class="min-w-0">
-                                        <dt class="text-xs font-medium text-gray-500">Puerto del título madre</dt>
+                                        <dt class="text-xs font-medium text-gray-500">Puerto de embarque del título madre</dt>
                                         <dd class="mt-1 text-sm font-semibold text-gray-900">{{ $operation->master_loading_port_code }}</dd>
                                     </div>
                                     <div class="min-w-0">
@@ -103,7 +103,7 @@
                                 <p class="text-xs leading-5 text-gray-500">
                                     {{ $operation->bills_of_lading_count > 0
                                         ? 'Podés revisar los conocimientos que guardaste.'
-                                        : 'Todavía no se cargaron conocimientos hijos.' }}
+                                        : 'Podés agregar el primer conocimiento hijo desde este expediente.' }}
                                 </p>
                                 <a href="{{ route('company.simple.desconsolidado.operations.show', ['operation' => $operation->id]) }}"
                                    class="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
@@ -125,7 +125,7 @@
                         </div>
                         <h3 class="mt-5 text-xl font-bold text-gray-900">Todavía no hay desconsolidaciones</h3>
                         <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
-                            Empezá la primera con los datos del título madre que recibiste de Aduana. Se guardará para que puedas continuar más tarde.
+                            Iniciá un expediente con las referencias del conocimiento madre. Podrás retomarlo para agregar los conocimientos hijos.
                         </p>
                         <a href="{{ route('company.simple.desconsolidado.operations.create') }}"
                            class="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
@@ -149,7 +149,7 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 3 4.5 6v5.5c0 4.5 3 7.8 7.5 9.5 4.5-1.7 7.5-5 7.5-9.5V6L12 3Z"/>
                     <path stroke-linecap="round" stroke-linejoin="round" d="m9 12 2 2 4-4"/>
                 </svg>
-                Solo se muestran operaciones de tu empresa. La creación de un expediente no realiza ningún envío a Aduana.
+                Esta lista contiene las operaciones de tu empresa. Crear o guardar un expediente no transmite información a Aduana.
             </div>
         </div>
     </div>
