@@ -67,7 +67,7 @@
                             </div>
                             <h2 id="summary-heading" class="text-2xl font-bold tracking-tight sm:text-3xl">Referencias guardadas</h2>
                             <p class="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
-                                Esta operación está identificada en la aplicación. Todavía no significa que los conocimientos hijos hayan sido registrados ante Aduana.
+                                Las referencias del expediente están guardadas. Los conocimientos hijos solo quedarán registrados en Aduana después de completar y confirmar su transmisión.
                             </p>
                         </div>
                         <span class="inline-flex w-fit shrink-0 items-center gap-2 rounded-xl bg-green-100 px-3 py-2 text-xs font-semibold text-green-700">
@@ -90,7 +90,7 @@
                         </div>
                     </dl>
                     <p class="mt-5 text-xs text-gray-600">
-                        Expediente iniciado el {{ $operation->created_at?->format('d/m/Y') ?? '—' }}. No se solicitó información de la embarcación.
+                        Expediente iniciado el {{ $operation->created_at?->format('d/m/Y') ?? '—' }}.
                     </p>
                 </div>
             </section>
@@ -98,14 +98,14 @@
             @if((int) $operation->bills_of_lading_count === 0)
                 <details class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                     <summary class="cursor-pointer text-sm font-bold text-indigo-700">Corregir referencias del expediente</summary>
-                    <p class="mt-3 text-sm text-gray-600">Solo mientras no se hayan cargado conocimientos hijos.</p>
+                    <p class="mt-3 text-sm text-gray-600">Podés actualizar estas referencias mientras el expediente no tenga conocimientos hijos.</p>
                     <form method="POST" action="{{ route('company.simple.desconsolidado.operations.update', ['operation' => $operation->id]) }}" class="mt-4 grid gap-4 sm:grid-cols-3">
                         @csrf
                         @method('PUT')
                         <label class="text-sm font-semibold text-gray-800">Identificador del viaje AFIP
                             <input name="argentina_voyage_id" required maxlength="16" value="{{ old('argentina_voyage_id', $operation->argentina_voyage_id) }}" class="mt-2 w-full rounded-xl border-gray-300"/>
                         </label>
-                        <label class="text-sm font-semibold text-gray-800">Puerto del título madre
+                        <label class="text-sm font-semibold text-gray-800">Puerto de embarque del conocimiento madre
                             <input name="master_loading_port_code" required maxlength="5" minlength="5" pattern="[A-Za-z0-9]{5}" value="{{ old('master_loading_port_code', $operation->master_loading_port_code) }}" class="mt-2 w-full rounded-xl border-gray-300 uppercase"/>
                         </label>
                         <label class="text-sm font-semibold text-gray-800">Conocimiento madre
@@ -182,13 +182,13 @@
                                     <p class="text-xs font-semibold text-gray-500">Número de conocimiento hijo</p>
                                     <h3 class="mt-1 break-words text-lg font-bold text-gray-900">{{ $bill->bill_number }}</h3>
                                     <p class="mt-2 text-xs leading-5 text-gray-500">
-                                        Guardado en esta operación. La presentación ante Aduana debe verificarse por separado.
+                                        Conocimiento guardado en este expediente. Su estado ante Aduana se verifica por separado.
                                     </p>
                                     @if($canAddLines)
                                         <a href="{{ route('company.simple.desconsolidado.operations.bills.edit', ['operation' => $operation->id, 'bill' => $bill->id]) }}" class="mt-3 inline-flex min-h-11 items-center rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700">Editar conocimiento hijo</a>
                                     @endif
                                     @if($canAddLines && $bill->shipmentItems->isEmpty())
-                                        <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.destroy', ['operation' => $operation->id, 'bill' => $bill->id]) }}" class="mt-3" onsubmit="return confirm('¿Archivar este conocimiento hijo sin líneas?');">
+                                        <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.destroy', ['operation' => $operation->id, 'bill' => $bill->id]) }}" class="mt-3" onsubmit="return confirm('¿Archivar este conocimiento hijo? No tiene líneas de mercadería y dejará de aparecer entre los borradores activos.');">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="min-h-11 rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Archivar conocimiento borrador</button>
@@ -207,7 +207,7 @@
                                         </a>
                                     @else
                                         <p class="mt-3 text-xs font-medium text-gray-500">
-                                            Este conocimiento no admite agregar líneas desde este expediente.
+                                            Este conocimiento no está disponible para agregar líneas en su estado actual.
                                         </p>
                                     @endif
                                 </div>
@@ -264,7 +264,7 @@
                                             <a href="{{ route('company.simple.desconsolidado.operations.bills.items.edit', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id]) }}" class="mt-3 inline-flex min-h-11 items-center rounded-xl border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700">Editar línea</a>
                                         @endif
                                         @if($canAddLines && $line->status === 'draft')
-                                            <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.items.destroy', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id]) }}" class="mt-3" onsubmit="return confirm('¿Eliminar esta línea borrador y sus vínculos con contenedores? Las fichas físicas se conservarán.');">
+                                            <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.items.destroy', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id]) }}" class="mt-3" onsubmit="return confirm('¿Eliminar esta línea borrador y desvincular sus contenedores? Los contenedores seguirán registrados en el catálogo.');">
                                                 @csrf
                                                 @method('DELETE')
                                                 <button type="submit" class="min-h-11 rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50">Eliminar línea borrador</button>
@@ -283,7 +283,7 @@
                                                             <li class="break-all rounded-lg border border-indigo-100 bg-white px-3 py-2 font-mono text-xs font-semibold text-gray-800">
                                                                 {{ $container->container_number }}
                                                                 @if($canLinkContainer)
-                                                                    <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.items.containers.destroy', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id, 'container' => $container->id]) }}" class="mt-2" onsubmit="return confirm('¿Desvincular este contenedor sin borrar su ficha global?');">
+                                                                    <form method="POST" action="{{ route('company.simple.desconsolidado.operations.bills.items.containers.destroy', ['operation' => $operation->id, 'bill' => $bill->id, 'item' => $line->id, 'container' => $container->id]) }}" class="mt-2" onsubmit="return confirm('¿Desvincular este contenedor de la línea? El contenedor permanecerá registrado en el catálogo.');">
                                                                         @csrf
                                                                         @method('DELETE')
                                                                         <button type="submit" class="text-xs font-semibold text-red-700 underline">Desvincular</button>
@@ -313,7 +313,7 @@
                                                 @elseif($canAddLines && $line->status === 'draft'
                                                     && !in_array($lineCondition, ['H', 'P'], true))
                                                     <p class="mt-3 text-xs font-medium leading-5 text-amber-800">
-                                                        Falta una condición H/P válida antes de vincular contenedores.
+                                                        Para vincular contenedores, revisá la condición aduanera H/P de esta línea.
                                                     </p>
                                                 @endif
                                             </div>
@@ -357,7 +357,7 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.8 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z"/>
                             </svg>
                             <div>
-                                <p class="text-sm font-bold text-amber-900">Los conocimientos se guardan como borradores</p>
+                                <p class="text-sm font-bold text-amber-900">Revisá los conocimientos antes de transmitir</p>
                                 @if($operation->billsOfLading->isNotEmpty())
                                     <form method="POST" action="{{ route('company.simple.desconsolidado.operations.transmit', ['operation' => $operation->id]) }}" class="mt-5 space-y-3 rounded-xl border border-amber-300 bg-white p-4">
                                         @csrf
@@ -380,7 +380,7 @@
                                         </fieldset>
                                         <label class="flex items-start gap-2 text-sm text-amber-900">
                                             <input type="checkbox" name="confirmation" value="1" required class="mt-1 rounded border-amber-400"/>
-                                            <span>Confirmo que revisé la información. Esta operación puede modificar registros reales de Aduana.</span>
+                                            <span>Confirmo que revisé la información y comprendo que esta operación puede registrar, modificar o eliminar datos en Aduana.</span>
                                         </label>
                                         <button type="submit" class="min-h-11 rounded-xl bg-amber-700 px-4 py-2 text-sm font-bold text-white hover:bg-amber-800">Ejecutar operación aduanera</button>
                                     </form>
@@ -390,10 +390,10 @@
                                     <button type="submit" class="min-h-11 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-bold text-amber-900">Validar datos sin transmitir</button>
                                 </form>
                                 <p class="mt-1 text-sm leading-6 text-amber-800">
-                                    Ya podés agregar conocimientos hijos y cargar sus líneas de mercadería mientras sigan siendo borradores editables.
-                                    Podés vincular contenedores ya registrados desde las líneas con embalaje 05 y condición H/P válida.
-                                    La edición y el alta de contenedores ya están disponibles; verificá la documentación CSC/ACEP.
-                                    Guardar líneas o vincular contenedores no significa aceptación de Aduana. La operación aduanera requiere confirmación expresa y genera una transacción auditable.
+                                    Podés agregar conocimientos hijos y completar sus líneas mientras estén disponibles para edición.
+                                    Las líneas con embalaje 05 y condición H/P válida permiten vincular contenedores existentes o registrar otros nuevos.
+                                    Este expediente no permite editar los datos CSC/ACEP de contenedores ya registrados; revisá su documentación antes del envío.
+                                    Guardar estos datos no realiza una transmisión. Para enviarlos a Aduana, seleccioná la operación y confirmala expresamente.
                                 </p>
                             </div>
                         </div>
@@ -422,7 +422,7 @@
                                     <p class="text-sm font-bold text-gray-900">2. Cargar conocimientos hijos</p>
                                     <p class="mt-1 text-xs leading-5 text-gray-600">
                                         {{ $operation->bills_of_lading_count > 0
-                                            ? 'Ya hay conocimientos guardados. Podés agregar otros. Podés editar sus borradores.'
+                                            ? 'Ya hay conocimientos guardados. Podés agregar otros y editar los que permanezcan en borrador.'
                                             : 'Podés agregar ahora el primer conocimiento hijo. Quedará guardado como borrador.' }}
                                     </p>
                                 </div>
@@ -438,7 +438,7 @@
                                 <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-sm font-bold text-gray-500">4</span>
                                 <div>
                                     <p class="text-sm font-semibold text-gray-700">4. Transmitir a Aduana</p>
-                                    <p class="mt-1 text-xs leading-5 text-gray-500">Seleccioná los conocimientos, elegí Registrar, Rectificar o Eliminar y confirmá la operación. Esta acción sí se transmite a Aduana.</p>
+                                    <p class="mt-1 text-xs leading-5 text-gray-500">Seleccioná los conocimientos y la operación aduanera correspondiente. Al confirmar y ejecutar la operación se inicia la transmisión a Aduana.</p>
                                 </div>
                             </li>
                         </ol>
