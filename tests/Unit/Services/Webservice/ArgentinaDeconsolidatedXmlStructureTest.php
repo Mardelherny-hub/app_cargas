@@ -128,6 +128,8 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
     {
         $this->assertStringContainsString('<TituloDesconsolidador>', $xml);
         $this->assertStringContainsString('<FechaEmbarque>2026-09-01T00:00:00</FechaEmbarque>', $xml);
+        $this->assertStringContainsString('<FechaCargaLugarOrigen>2026-09-02T00:00:00</FechaCargaLugarOrigen>', $xml);
+        $this->assertStringContainsString('<FechaDescarga>2026-09-05T00:00:00</FechaDescarga>', $xml);
         $this->assertStringContainsString('<CodigoPuertoEmbarque>ARBUE</CodigoPuertoEmbarque>', $xml);
         $this->assertStringContainsString('<NumeroConocimiento>HOUSE001</NumeroConocimiento>', $xml);
         $this->assertStringContainsString('<CodigoPuertoDescarga>ARBUE</CodigoPuertoDescarga>', $xml);
@@ -277,12 +279,13 @@ class ArgentinaDeconsolidatedXmlStructureTest extends TestCase
         ];
         $bill->bill_number = 'HOUSE001';
         $bill->loading_date = '2026-09-01';
+        $bill->origin_loading_date = '2026-09-02';
+        $bill->discharge_date = '2026-09-05';
         $bill->destination_country_code = '200';
         $bill->cargo_marks = 'MARCAS HOUSE';
         $bill->is_consolidated = 'S';
         $bill->is_transit_transshipment = 'N';
         $bill->origin_location = null;
-        $bill->origin_loading_date = null;
         $bill->origin_country_code = null;
         $bill->notify_party_text = null;
         $bill->operational_discharge_code = '10073';
