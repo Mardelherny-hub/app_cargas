@@ -9,7 +9,7 @@
                 <span aria-hidden="true">/</span>
                 <a href="{{ route('company.simple.desconsolidado.operations.show', ['operation' => $operation->id]) }}" class="hover:text-indigo-700 focus-visible:underline">Expediente</a>
                 <span aria-hidden="true">/</span>
-                <span class="text-gray-800">Nueva línea de mercadería</span>
+                <span class="text-gray-800">{{ ($editingItem ?? null) ? 'Editar línea de mercadería' : 'Nueva línea de mercadería' }}</span>
             </nav>
             <h1 class="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">{{ ($editingItem ?? null) ? 'Editar línea de mercadería' : 'Agregar línea de mercadería' }}</h1>
             <p class="mt-1 text-sm text-gray-500">Empresa: {{ $company->legal_name }}</p>
@@ -61,7 +61,7 @@
             @if($errors->any())
                 <div role="alert" class="rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-900">
                     <p class="font-bold">Revisá estos datos antes de continuar</p>
-                    <p class="mt-1 text-red-700">Lo que escribiste se conserva. Corregí los campos indicados.</p>
+                    <p class="mt-1 text-red-700">Revisá las observaciones indicadas. Los datos ingresados se conservan.</p>
                     <ul class="mt-2 list-disc space-y-1 pl-5">
                         @foreach($errors->all() as $error)
                             <li>{{ $error }}</li>
@@ -81,7 +81,7 @@
                         <div class="border-b border-gray-100 px-5 py-5 sm:px-7">
                             <p class="text-xs font-bold uppercase tracking-wider text-indigo-700">01 · Identificación de la línea</p>
                             <h2 id="line-heading" class="mt-1 text-xl font-bold text-gray-900">¿Qué mercadería contiene?</h2>
-                            <p class="mt-1 text-sm leading-6 text-gray-500">Ingresá los datos reales de esta línea del conocimiento hijo.</p>
+                            <p class="mt-1 text-sm leading-6 text-gray-500">Completá los datos de esta línea según la documentación del conocimiento hijo.</p>
                         </div>
 
                         <div class="space-y-5 p-5 sm:p-7">
@@ -95,7 +95,7 @@
                                            placeholder="Número del documento"
                                            aria-invalid="{{ $errors->has('line_number') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
-                                    <p class="mt-1.5 text-xs text-gray-500">Entre 1 y 999; no puede repetirse en este conocimiento.</p>
+                                    <p class="mt-1.5 text-xs text-gray-500">Ingresá un número entre 1 y 999, distinto de los ya utilizados en este conocimiento.</p>
                                     @error('line_number') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                                 <div>
@@ -110,7 +110,7 @@
                                             <option value="{{ $type->id }}" @selected((string) old('cargo_type_id', $editingItem?->cargo_type_id) === (string) $type->id)>{{ $type->name }}</option>
                                         @endforeach
                                     </select>
-                                    <p class="mt-1.5 text-xs text-gray-500">Solo tipos habilitados para desconsolidación.</p>
+                                    <p class="mt-1.5 text-xs text-gray-500">La lista muestra los tipos de carga habilitados para desconsolidación.</p>
                                     @error('cargo_type_id') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                     @if($cargoTypes->isEmpty())
                                         <p role="alert" class="mt-2 text-sm font-medium text-amber-800">No hay tipos de carga habilitados. Consultá al administrador antes de continuar.</p>
@@ -158,7 +158,7 @@
                                            placeholder="Cantidad del documento"
                                            aria-invalid="{{ $errors->has('package_quantity') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
-                                    <p class="mt-1.5 text-xs leading-5 text-gray-500">Si el embalaje es 05, la cantidad manifestada a Aduana se calcula después con los contenedores vinculados.</p>
+                                    <p class="mt-1.5 text-xs leading-5 text-gray-500">Si el código de embalaje es 05, deberán vincularse los contenedores correspondientes antes de transmitir.</p>
                                     @error('package_quantity') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                                 <div>
@@ -170,7 +170,7 @@
                                            placeholder="Ej.: 40.25"
                                            aria-invalid="{{ $errors->has('gross_weight_kg') ? 'true' : 'false' }}"
                                            class="mt-2 block min-h-12 w-full rounded-xl border-gray-300 px-4 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500"/>
-                                    <p class="mt-1.5 text-xs text-gray-500">Hasta 2 decimales, con punto. No se recalcula el peso total del BL.</p>
+                                    <p class="mt-1.5 text-xs text-gray-500">Admite hasta 2 decimales, con punto. El peso total declarado del conocimiento se conserva.</p>
                                     @error('gross_weight_kg') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                 </div>
                             </div>
@@ -183,7 +183,7 @@
                                           aria-invalid="{{ $errors->has('item_description') ? 'true' : 'false' }}"
                                           placeholder="Descripción de esta línea según la documentación"
                                           class="mt-2 block w-full rounded-xl border-gray-300 px-4 py-3 text-base shadow-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('item_description', $editingItem?->item_description) }}</textarea>
-                                <p class="mt-1.5 text-xs text-gray-500">Máximo 80 caracteres por línea, según el contrato ATA-DESC.</p>
+                                <p class="mt-1.5 text-xs text-gray-500">La descripción admite hasta 80 caracteres por línea.</p>
                                 @error('item_description') <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                             </div>
 
@@ -207,7 +207,7 @@
                             <p class="text-xs font-bold uppercase tracking-wider text-indigo-700">02 · Datos aduaneros</p>
                             <h2 id="customs-heading" class="mt-1 text-xl font-bold text-gray-900">Clasificación y controles</h2>
                             <p class="mt-1 text-sm leading-6 text-gray-500">
-                                La posición arancelaria y las tres respuestas deben ser coherentes en todas las líneas de este conocimiento.
+                                La posición arancelaria y los indicadores aduaneros deben coincidir en todas las líneas del conocimiento.
                             </p>
                         </div>
                         <div class="space-y-5 p-5 sm:p-7">
@@ -254,17 +254,16 @@
                             </div>
 
                             <p class="rounded-xl bg-indigo-50 px-4 py-3 text-xs leading-6 text-indigo-900">
-                                No hay respuestas precargadas: seleccioná cada una según la documentación real.
-                                El sistema rechazará valores contradictorios entre líneas.
+                                Seleccioná cada respuesta según la documentación. Los indicadores deben coincidir en todas las líneas del conocimiento.
                             </p>
                         </div>
                     </section>
 
                     <section aria-label="Aviso de guardado" class="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-900">
-                        <p class="font-bold">Guardar línea no significa transmitir a Aduana.</p>
+                        <p class="font-bold">Guardar esta línea no envía información a Aduana.</p>
                         <p class="mt-1">
                             La línea se guarda como borrador y conserva el peso total del conocimiento.
-                            Después habrá que comprobar todas las líneas y, cuando corresponda, vincular los contenedores reales antes de transmitir.
+                            Antes de transmitir, revisá las líneas y vinculá los contenedores que correspondan.
                         </p>
                     </section>
 
@@ -287,18 +286,18 @@
                     <section class="rounded-lg bg-gray-100 p-5 text-gray-800 shadow-lg sm:p-6">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-700">Guía de la operación</p>
                         <h2 class="mt-2 text-xl font-bold">Antes de guardar</h2>
-                        <ol class="mt-5 space-y-4 text-sm text-gray-200">
+                        <ol class="mt-5 space-y-4 text-sm text-gray-700">
                             <li class="flex items-start gap-3">
-                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500 font-bold">1</span>
+                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-700 font-bold text-white">1</span>
                                 <span>Verificá el número, la descripción y el peso de esta línea.</span>
                             </li>
                             <li class="flex items-start gap-3">
-                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500 font-bold">2</span>
-                                <span>Confirmá embalaje, condición H/P y posición arancelaria, sin suponer valores.</span>
+                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-700 font-bold text-white">2</span>
+                                <span>Revisá el embalaje, la condición H/P y la posición arancelaria según la documentación.</span>
                             </li>
                             <li class="flex items-start gap-3">
-                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500 font-bold">3</span>
-                                <span>Elegí expresamente Sí o No para cada indicador aduanero.</span>
+                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-700 font-bold text-white">3</span>
+                                <span>Seleccioná Sí o No en cada indicador aduanero.</span>
                             </li>
                         </ol>
                         <p class="mt-6 border-t border-gray-200 pt-5 text-xs leading-6 text-gray-600">
