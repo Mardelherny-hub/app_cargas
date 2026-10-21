@@ -113,6 +113,44 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
     }
 
     #[Test]
+    public function numeric_customs_rejection_blocks_success_even_with_voyage_identifier(): void
+    {
+        $xml = $this->soapResponse(
+            'RegistrarTitulosDesconsolidador',
+            '<ListaErrores><DetalleError>'
+            . '<Codigo>42076</Codigo>'
+            . '<Descripcion>No se permite rectificar luego de realizarse la confirmacion de arribo</Descripcion>'
+            . '</DetalleError></ListaErrores>'
+            . '<IdentificadorViaje>VIAJE123</IdentificadorViaje>'
+        );
+
+        $result = $this->parse($xml, 'RegistrarTitulosDesconsolidador');
+
+        $this->assertFalse($result['success']);
+        $this->assertNull($result['identifier']);
+        $this->assertSame('42076', $result['details'][0]['code']);
+        $this->assertStringContainsString('AFIP 42076', $result['error_message']);
+    }
+
+    #[Test]
+    public function independent_flow_never_updates_nonexistent_bill_response_timestamp(): void
+    {
+        $source = file_get_contents(app_path(
+            'Services/Simple/ArgentinaDeconsolidatedService.php'
+        ));
+
+        $start = strpos($source, 'public function ejecutarExpediente(');
+        $end = strpos($source, 'protected function independentXmlGenerator(', $start);
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+        $flow = substr($source, $start, $end - $start);
+
+        $this->assertStringNotContainsString("'webservice_response_at'", $flow);
+        $this->assertStringContainsString("'argentina_sent_at' => now()", $flow);
+        $this->assertStringContainsString("'error_code' =>", $flow);
+    }
+
+    #[Test]
     public function all_afip_errors_are_preserved_when_identifier_is_absent(): void
     {
         $xml = $this->soapResponse(
