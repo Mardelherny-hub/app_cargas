@@ -351,6 +351,18 @@ class SimpleXmlGeneratorDesconsolidado
     {
         $prefix = "Conocimiento {$bill->bill_number}";
 
+        // Manual del Desarrollador wgesinformacionanticipada v4.11:
+        // FechaEmbarque es obligatoria para registrar/rectificar títulos DESC.
+        // Rechazo XSD 41933 observado el 21/10/2026 al omitir este elemento.
+        // No reemplazar por la fecha de arribo del expediente.
+        if (!$bill->loading_date) {
+            throw new Exception(
+                "{$prefix}: falta la fecha de embarque. "
+                . 'Completala desde «Editar conocimiento hijo» antes de transmitir.'
+            );
+        }
+        $this->requiredDate($bill->loading_date, "{$prefix}: fecha de embarque");
+
         $this->masterTitleIdentifier($bill);
         $this->exactLengthString(
             $bill->destination_country_code,
