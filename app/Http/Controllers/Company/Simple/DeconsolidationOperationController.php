@@ -169,6 +169,31 @@ class DeconsolidationOperationController extends Controller
             ->with('success', 'Referencias del expediente actualizadas.');
     }
 
+    /** Actualiza únicamente la fecha documentada; no modifica títulos ni contenedores. */
+    public function updateArrivalDate(Request $request, int $operation): RedirectResponse
+    {
+        $company = $this->authorizedCompany();
+        $data = $request->validate([
+            'arrival_date' => ['nullable', 'date_format:Y-m-d'],
+        ], [
+            'arrival_date.date_format' => 'Ingresá una fecha de arribo válida.',
+        ]);
+
+        $record = DeconsolidationOperation::query()
+            ->forCompany((int) $company->id)
+            ->findOrFail($operation);
+
+        $record->update(['arrival_date' => $data['arrival_date'] ?? null]);
+
+        return redirect()
+            ->route('company.simple.desconsolidado.operations.show', [
+                'operation' => $record->id,
+            ])
+            ->with('success', $record->arrival_date
+                ? 'Fecha de arribo guardada. Podés volver a validar el expediente.'
+                : 'Fecha de arribo eliminada del expediente.');
+    }
+
     public function show(int $operation): View
     {
         $company = $this->authorizedCompany();
