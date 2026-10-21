@@ -210,7 +210,7 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
 
         $this->expectException(Exception::class);
         $this->expectExceptionMessage(
-            'entre 7 y 15 caracteres cuando IndicadorConsolidado=N'
+            'entre 7 y 15 caracteres en conocimientos no consolidados'
         );
 
         $this->generatorPrivate(
@@ -297,7 +297,7 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
 
         $this->expectException(Exception::class);
         $this->expectExceptionMessage(
-            'CodigoPuertoEmbarque del título madre'
+            'código del puerto de embarque del conocimiento madre'
         );
 
         $this->generatorPrivate('masterTitleIdentifier', [$bill]);
@@ -338,7 +338,7 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
         $bill = $this->billWithContainer($container, ['H']);
 
         $this->expectException(Exception::class);
-        $this->expectExceptionMessage('FechaVencimientoContenedor o ACEP, pero no ambos');
+        $this->expectExceptionMessage('fecha de vencimiento CSC o el código ACEP, pero no ambos');
         $this->generatorPrivate('validateContainer', [$container, $bill]);
     }
 
@@ -427,7 +427,7 @@ class ArgentinaDeconsolidatedServiceContractTest extends TestCase
         $bill = $this->billWithContainer($container, ['H', 'P']);
 
         $this->expectException(Exception::class);
-        $this->expectExceptionMessage('condiciones H/P distintas');
+        $this->expectExceptionMessage('condiciones H/P diferentes');
         $this->generatorPrivate('containerConditionForBill', [$container, $bill]);
     }
 
