@@ -73,7 +73,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         $warnings = [];
 
         if ((int) $voyage->company_id !== (int) $this->company->id) {
-            $errors[] = 'El viaje no pertenece a la empresa conectada.';
+            $errors[] = 'La empresa actual no tiene acceso a este viaje.';
         }
 
         if (empty($voyage->argentina_voyage_id)) {
@@ -92,7 +92,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             ->get();
 
         if ($bills->isEmpty()) {
-            $errors[] = 'No hay conocimientos desconsolidados con master_bill_number en este viaje.';
+            $errors[] = 'Este viaje no tiene conocimientos hijos asociados a un conocimiento madre.';
         }
 
         foreach ($bills as $bill) {
@@ -130,7 +130,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'registrar' => $this->registrarTitulos($voyage, $billIds),
             'rectificar' => $this->rectificarTitulos($voyage, $billIds),
             'eliminar' => $this->eliminarTitulos($voyage, $billIds),
-            default => throw new Exception("Método desconsolidado desconocido: {$method}"),
+            default => throw new Exception("Operación de Desconsolidados no reconocida: {$method}"),
         };
     }
 
@@ -172,24 +172,24 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
         array $billIds = []): array
     {
         if (!in_array($method, ['registrar', 'rectificar', 'eliminar'], true)) {
-            throw new Exception('Operación ATA-DESC desconocida.');
+            throw new Exception('Seleccioná una operación válida para Desconsolidados.');
         }
         if ((int) $operation->company_id !== (int) $this->company->id) {
-            throw new Exception('Expediente de otra empresa.');
+            throw new Exception('Expediente de otra empresa. No tenés acceso a esta operación.');
         }
         $ids = $this->normalizeBillIds($billIds);
         if (!$ids) {
-            throw new Exception('Seleccione los conocimientos del expediente.');
+            throw new Exception('Seleccioná los conocimientos del expediente que querés procesar.');
         }
         $bills = $operation->billsOfLading()->whereNull('shipment_id')
             ->whereIn('bills_of_lading.id', $ids)->orderBy('id')->get();
         if ($bills->count() !== count($ids)) {
-            throw new Exception('Hay conocimientos que no pertenecen al expediente.');
+            throw new Exception('Uno o más conocimientos seleccionados no pertenecen a este expediente.');
         }
         $generator = $this->independentXmlGenerator($operation);
         $validation = $generator->validateLocalData($method, $ids);
         if (!($validation['is_valid'] ?? false)) {
-            throw new Exception(implode(' | ', $validation['errors'] ?? ['Datos incompletos.']));
+            throw new Exception(implode(' | ', $validation['errors'] ?? ['Faltan datos necesarios para procesar la operación.']));
         }
 
         $transactionId = $this->generateTransactionId();
@@ -221,7 +221,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                 }
                 $shared = array_intersect($ids, array_map('intval', $meta['bill_ids'] ?? []));
                 if ($shared && in_array($entry->status, ['pending', 'sending'], true)) {
-                    throw new Exception('Existe un envío pendiente: consulte su resultado antes de reintentar.');
+                    throw new Exception('Existe una transmisión pendiente para los conocimientos seleccionados. Revisá su resultado en el historial y en Aduana antes de reenviar.');
                 }
                 if ($entry->status === 'success' && in_array($meta['method'] ?? '',
                     ['registrar', 'rectificar', 'eliminar'], true)) {
@@ -234,7 +234,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                 $active = in_array($state, ['registrar', 'rectificar'], true);
                 if (($method === 'registrar' && $active)
                     || ($method !== 'registrar' && !$active)) {
-                    throw new Exception('Secuencia aduanera inválida para el conocimiento ' . $id);
+                    throw new Exception('La operación seleccionada no corresponde al estado aduanero de uno de los conocimientos. Revisá su estado en el historial antes de continuar.');
                 }
             }
             return WebserviceTransaction::create([
@@ -274,12 +274,12 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             if (!$result['success'] && empty($transaction->response_xml)) {
                 $transaction->update([
                     'status' => 'sending',
-                    'error_message' => 'Resultado incierto; consultar Aduana antes de reintentar.',
+                    'error_message' => 'El resultado del envío aún no está confirmado. Verificá el estado en Aduana antes de reintentar.',
                     'error_details' => $result['details'] ?? [],
                 ]);
                 return array_merge($result, [
                     'transaction_id' => $transaction->id,
-                    'error_message' => 'Resultado incierto. No reenviar sin verificar Aduana.',
+                    'error_message' => 'No se confirmó el resultado del envío. Revisá el historial y consultá Aduana antes de reenviar.',
                 ]);
             }
             $transaction->update([
@@ -452,7 +452,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
     private function assertVoyageOwnership(Voyage $voyage): void
     {
         if ((int) $voyage->company_id !== (int) $this->company->id) {
-            throw new Exception('El viaje no pertenece a la empresa conectada.');
+            throw new Exception('La empresa actual no tiene acceso a este viaje.');
         }
     }
 
@@ -477,7 +477,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
         if ($invalid !== []) {
             throw new Exception(
-                'Secuencia inválida para ' . $methodType . ': ' . implode('; ', $invalid) . '.'
+                'La operación ' . $methodType . ' no se puede aplicar a estos conocimientos: ' . implode('; ', $invalid) . '. Revisá sus estados antes de continuar.'
             );
         }
     }
@@ -536,11 +536,11 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
 
         $bills = $query->orderBy('bills_of_lading.id')->get();
         if ($bills->isEmpty()) {
-            throw new Exception('No hay títulos desconsolidados para la operación solicitada.');
+            throw new Exception('No hay conocimientos hijos disponibles para la operación solicitada.');
         }
         if ($ids !== [] && $bills->count() !== count($ids)) {
             throw new Exception(
-                'Uno o más conocimientos seleccionados no pertenecen al viaje o no son desconsolidados.'
+                'Uno o más conocimientos seleccionados no pertenecen a este viaje o no están habilitados para desconsolidación.'
             );
         }
 
@@ -563,7 +563,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
             'registrar' => $this->deconsolidatedXml->generateRegistrar($transactionId, $billIds),
             'rectificar' => $this->deconsolidatedXml->generateRectificar($transactionId, $billIds),
             'eliminar' => $this->deconsolidatedXml->generateEliminar($transactionId, $billIds),
-            default => throw new Exception("Tipo de operación desconocido: {$methodType}"),
+            default => throw new Exception("Operación de Desconsolidados no reconocida: {$methodType}"),
         };
     }
 
@@ -641,7 +641,7 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                     'description' => $exception->getMessage(),
                     'additional' => null,
                 ]],
-                'error_message' => 'SOAP Fault: ' . $exception->getMessage(),
+                'error_message' => 'No se pudo completar la comunicación con Aduana: ' . $exception->getMessage(),
             ];
         }
     }
