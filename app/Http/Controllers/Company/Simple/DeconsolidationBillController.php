@@ -47,12 +47,14 @@ class DeconsolidationBillController extends Controller
         [, $operation] = $this->authorizedOperation($operation);
 
         foreach (['bill_number', 'cargo_description', 'cargo_marks',
+            'origin_location', 'origin_country_code',
             'is_consolidated', 'is_transit_transshipment'] as $field) {
             if (is_string($request->input($field))) {
                 $value = trim($request->input($field));
                 $request->merge([
                     $field => in_array($field, [
                         'is_consolidated', 'is_transit_transshipment',
+                        'origin_country_code',
                     ], true) ? strtoupper($value) : $value,
                 ]);
             }
@@ -67,6 +69,10 @@ class DeconsolidationBillController extends Controller
         $data = $request->validate([
             'bill_number' => ['required', 'string', 'max:18'],
             'loading_date' => ['nullable', 'date_format:Y-m-d'],
+            'origin_loading_date' => ['nullable', 'date_format:Y-m-d'],
+            'discharge_date' => ['nullable', 'date_format:Y-m-d'],
+            'origin_location' => ['nullable', 'string', 'max:50'],
+            'origin_country_code' => ['nullable', 'string', 'regex:/^[A-Z0-9]{3}$/'],
             'shipper_id' => ['required', 'integer', $activeClient],
             'consignee_id' => ['required', 'integer', $activeClient],
             'loading_port_id' => ['required', 'integer', $activePort],
@@ -90,6 +96,9 @@ class DeconsolidationBillController extends Controller
             'bill_number.required' => 'Ingresá el número del conocimiento hijo según la documentación.',
             'bill_number.max' => 'El número del conocimiento hijo admite hasta 18 caracteres.',
             'loading_date.date_format' => 'Ingresá una fecha de embarque válida.',
+            'origin_loading_date.date_format' => 'Ingresá una fecha válida de carga en origen.',
+            'discharge_date.date_format' => 'Ingresá una fecha de descarga válida.',
+            'origin_country_code.regex' => 'El código AFIP del país de origen debe tener 3 letras o números.',
             'shipper_id.required' => 'Seleccioná el cargador del conocimiento hijo.',
             'consignee_id.required' => 'Seleccioná el consignatario del conocimiento hijo.',
             'loading_port_id.required' => 'Seleccioná el puerto de embarque del conocimiento hijo.',
@@ -143,6 +152,10 @@ class DeconsolidationBillController extends Controller
             'house_bill_number' => $data['bill_number'],
             'master_bill_number' => $operation->master_bill_number,
             'loading_date' => $data['loading_date'] ?? null,
+            'origin_loading_date' => $data['origin_loading_date'] ?? null,
+            'discharge_date' => $data['discharge_date'] ?? null,
+            'origin_location' => $data['origin_location'] ?? null,
+            'origin_country_code' => $data['origin_country_code'] ?? null,
             'shipper_id' => $data['shipper_id'],
             'consignee_id' => $data['consignee_id'],
             'loading_port_id' => $data['loading_port_id'],
@@ -206,7 +219,8 @@ class DeconsolidationBillController extends Controller
     public function update(Request $request, int $operation, int $bill): RedirectResponse
     {
         [, $operationRecord] = $this->authorizedOperation($operation);
-        $fields = ['bill_number', 'loading_date', 'shipper_id', 'consignee_id', 'loading_port_id',
+        $fields = ['bill_number', 'loading_date', 'origin_loading_date', 'discharge_date',
+            'origin_location', 'origin_country_code', 'shipper_id', 'consignee_id', 'loading_port_id',
             'discharge_port_id', 'primary_cargo_type_id', 'gross_weight_kg',
             'cargo_description', 'cargo_marks', 'is_consolidated', 'is_transit_transshipment'];
         foreach ($fields as $field) {
@@ -214,6 +228,7 @@ class DeconsolidationBillController extends Controller
                 $value = trim($request->input($field));
                 $request->merge([$field => in_array($field, [
                     'is_consolidated', 'is_transit_transshipment',
+                    'origin_country_code',
                 ], true) ? strtoupper($value) : $value]);
             }
         }
@@ -224,6 +239,10 @@ class DeconsolidationBillController extends Controller
         $data = $request->validate([
             'bill_number' => ['required', 'string', 'max:18'],
             'loading_date' => ['nullable', 'date_format:Y-m-d'],
+            'origin_loading_date' => ['nullable', 'date_format:Y-m-d'],
+            'discharge_date' => ['nullable', 'date_format:Y-m-d'],
+            'origin_location' => ['nullable', 'string', 'max:50'],
+            'origin_country_code' => ['nullable', 'string', 'regex:/^[A-Z0-9]{3}$/'],
             'shipper_id' => ['required', 'integer', $activeClient],
             'consignee_id' => ['required', 'integer', $activeClient],
             'loading_port_id' => ['required', 'integer', $activePort],
