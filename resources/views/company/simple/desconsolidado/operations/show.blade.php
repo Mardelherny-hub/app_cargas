@@ -442,7 +442,7 @@
                                 <p class="mt-1 text-sm leading-6 text-amber-800">
                                     Podés agregar conocimientos hijos y completar sus líneas mientras estén disponibles para edición.
                                     Las líneas con embalaje 05 y condición H/P válida permiten vincular contenedores existentes o registrar otros nuevos.
-                                    Este expediente no permite editar los datos CSC/ACEP de contenedores ya registrados; revisá su documentación antes del envío.
+                                    Podés completar CSC/ACEP de contenedores vinculados a líneas en borrador, siempre que su documentación no esté compartida con otros expedientes o viajes.
                                     Guardar estos datos no realiza una transmisión. Para enviarlos a Aduana, seleccioná la operación y confirmala expresamente.
                                 </p>
                             </div>
