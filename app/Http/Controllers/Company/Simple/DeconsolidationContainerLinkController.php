@@ -237,6 +237,15 @@ class DeconsolidationContainerLinkController extends Controller
 
             $record = Container::query()->lockForUpdate()->findOrFail($container);
 
+            // El catálogo no registra empresa propietaria: limitar esta edición
+            // excepcional al usuario creador del contenedor.
+            abort_unless(
+                $record->created_by_user_id !== null
+                && (int) $record->created_by_user_id === (int) $this->getCurrentUser()?->id,
+                403,
+                'La documentación de este contenedor debe revisarse con su responsable o con el administrador.'
+            );
+
             // Los contenedores son globales: no alterar documentos si también
             // están vinculados a otro expediente o a un viaje transportista.
             $sharedOutsideOperation = DB::table('container_shipment_item as link')
