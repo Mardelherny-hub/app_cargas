@@ -867,12 +867,43 @@ class SimpleManifestController extends Controller
 
     
 
-    /**
-     * TODO FASE 5: Transbordos Argentina/Paraguay
-     */
+    /** Listado de preparación de Transbordos, sin acciones de envío a ARCA. */
     public function transbordoIndex(Request $request)
     {
-        return $this->renderComingSoon('transbordo', 'Transbordos Argentina/Paraguay');
+        $company = $this->getUserCompany();
+        abort_unless($company && $this->hasCompanyRole('Transbordos'), 403);
+
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+        ]);
+        $search = trim($validated['search'] ?? '');
+
+        $voyagesQuery = Voyage::query()
+            ->where('company_id', $company->id)
+            ->whereHas('shipments.billsOfLading', fn ($query) =>
+                $query->where('is_transit_transshipment', 'S'))
+            ->with(['shipments' => fn ($query) => $query
+                ->orderBy('id')
+                ->with([
+                    'vessel.vesselType',
+                    'billsOfLading' => fn ($bills) =>
+                        $bills->where('is_transit_transshipment', 'S'),
+                ])]);
+
+        if ($search !== '') {
+            $voyagesQuery->where(function ($query) use ($search) {
+                $query->where('voyage_number', 'like', '%' . $search . '%')
+                    ->orWhereHas('shipments.billsOfLading', fn ($bills) =>
+                        $bills->where('is_transit_transshipment', 'S')
+                            ->where('bill_number', 'like', '%' . $search . '%'));
+            });
+        }
+
+        return view('company.simple.transbordo.index', [
+            'voyages' => $voyagesQuery->orderByDesc('id')->paginate(15),
+            'company' => $company,
+            'search' => $search,
+        ]);
     }
 
     /**
