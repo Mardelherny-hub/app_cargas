@@ -22,7 +22,12 @@ class DeconsolidationOperation extends Model
         'argentina_voyage_id',
         'master_loading_port_code',
         'master_bill_number',
+        'arrival_date',
         'created_by_user_id',
+    ];
+
+    protected $casts = [
+        'arrival_date' => 'date',
     ];
 
     /**
