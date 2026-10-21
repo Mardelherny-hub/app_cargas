@@ -223,6 +223,13 @@ class ArgentinaDeconsolidatedService extends BaseWebserviceService
                 if ($shared && in_array($entry->status, ['pending', 'sending'], true)) {
                     throw new Exception('Existe una transmisión pendiente para los conocimientos seleccionados. Revisá su resultado en el historial y en Aduana antes de reenviar.');
                 }
+                if ($shared && $entry->status === 'error'
+                    && $entry->requires_manual_review && !$entry->reviewed_at) {
+                    throw new Exception(
+                        'El envío anterior tiene un rechazo aduanero pendiente de revisión. '
+                        . 'Consultá el historial y resolvé su situación con Aduana antes de reenviar.'
+                    );
+                }
                 if ($entry->status === 'success' && in_array($meta['method'] ?? '',
                     ['registrar', 'rectificar', 'eliminar'], true)) {
                     foreach ($shared as $id) {
