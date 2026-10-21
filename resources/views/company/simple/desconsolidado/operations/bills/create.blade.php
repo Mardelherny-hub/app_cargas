@@ -23,8 +23,8 @@
         $portSearchUrl = route('company.bills-of-lading.ports.search');
         $operationUrl = route('company.simple.desconsolidado.operations.show', ['operation' => $operation->id]);
         $lookupFields = [
-            ['name' => 'shipper_id', 'label' => 'Cargador / remitente', 'help' => 'Buscá por razón social o CUIT/RUC. Elegí el cliente existente de la lista.', 'kind' => 'client', 'url' => $clientSearchUrl, 'placeholder' => 'Escribí el nombre o CUIT/RUC del cargador'],
-            ['name' => 'consignee_id', 'label' => 'Consignatario', 'help' => 'Seleccioná quién figura como consignatario en este conocimiento.', 'kind' => 'client', 'url' => $clientSearchUrl, 'placeholder' => 'Escribí el nombre o CUIT/RUC del consignatario'],
+            ['name' => 'shipper_id', 'label' => 'Cargador / remitente', 'help' => 'Buscá por nombre o identificación fiscal y seleccioná el cargador que figure en el conocimiento.', 'kind' => 'client', 'url' => $clientSearchUrl, 'placeholder' => 'Nombre o identificación fiscal del cargador'],
+            ['name' => 'consignee_id', 'label' => 'Consignatario', 'help' => 'Buscá por nombre o identificación fiscal y seleccioná el consignatario que figure en el conocimiento.', 'kind' => 'client', 'url' => $clientSearchUrl, 'placeholder' => 'Nombre o identificación fiscal del consignatario'],
             ['name' => 'loading_port_id', 'label' => 'Puerto de embarque del conocimiento hijo', 'help' => 'Buscá el puerto de este conocimiento; puede diferir del puerto del título madre.', 'kind' => 'port', 'url' => $portSearchUrl, 'placeholder' => 'Buscá por nombre, ciudad o código de puerto'],
             ['name' => 'discharge_port_id', 'label' => 'Puerto de descarga en Argentina', 'help' => 'Elegí el puerto argentino donde se descargará la mercadería.', 'kind' => 'port', 'url' => $portSearchUrl, 'placeholder' => 'Buscá el puerto argentino de descarga'],
         ];
@@ -49,7 +49,7 @@
                             Puerto madre: <span class="font-semibold text-gray-900">{{ $operation->master_loading_port_code }}</span>
                         </p>
                     </div>
-                    <span class="inline-flex w-fit shrink-0 items-center rounded-lg bg-white px-3 py-2 text-xs font-semibold text-gray-100">
+                    <span class="inline-flex w-fit shrink-0 items-center rounded-lg bg-white px-3 py-2 text-xs font-semibold text-indigo-700">
                         PASO 2 · CONOCIMIENTO HIJO
                     </span>
                 </div>
@@ -58,7 +58,7 @@
             @if($errors->any())
                 <div role="alert" class="rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-900">
                     <p class="font-bold">Hay datos para revisar</p>
-                    <p class="mt-1">Corregí lo indicado. Los datos ingresados se mantienen.</p>
+                    <p class="mt-1">Revisá las observaciones indicadas. Los datos ingresados se conservan.</p>
                     <ul class="mt-2 list-disc space-y-1 pl-5">
                         @foreach($errors->all() as $error)
                             <li>{{ $error }}</li>
@@ -77,7 +77,7 @@
                         <div class="border-b border-gray-100 px-5 py-5 sm:px-7">
                             <p class="text-xs font-bold uppercase tracking-wider text-indigo-700">01 · Identificación</p>
                             <h2 id="identity-heading" class="mt-1 text-xl font-bold text-gray-900">Datos del conocimiento</h2>
-                            <p class="mt-1 text-sm text-gray-500">Indicá el número y seleccioná las empresas que figuran en el documento.</p>
+                            <p class="mt-1 text-sm text-gray-500">Ingresá el número del conocimiento y seleccioná el cargador y el consignatario indicados en la documentación.</p>
                         </div>
                         <div class="space-y-5 px-5 py-6 sm:px-7">
                             <div>
@@ -114,7 +114,7 @@
                                              aria-label="Resultados para {{ $field['label'] }}"
                                              class="absolute z-30 mt-1 hidden max-h-64 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
                                              data-lookup-results></div>
-                                        <p class="mt-1.5 text-xs text-gray-500" data-lookup-hint>Escribí 2 o más caracteres y elegí un resultado.</p>
+                                        <p class="mt-1.5 text-xs text-gray-500" data-lookup-hint>Ingresá al menos 2 caracteres y seleccioná una opción de la lista.</p>
                                         @error($field['name']) <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                     </div>
                                 @endif
@@ -126,7 +126,7 @@
                         <div class="border-b border-gray-100 px-5 py-5 sm:px-7">
                             <p class="text-xs font-bold uppercase tracking-wider text-indigo-700">02 · Recorrido</p>
                             <h2 id="route-heading" class="mt-1 text-xl font-bold text-gray-900">Puertos del conocimiento hijo</h2>
-                            <p class="mt-1 text-sm text-gray-500">Solo se buscan los puertos que necesitás. No se descarga el catálogo completo.</p>
+                            <p class="mt-1 text-sm text-gray-500">Buscá cada puerto por nombre, ciudad o código y seleccioná la opción correspondiente.</p>
                         </div>
                         <div class="space-y-5 px-5 py-6 sm:px-7">
                             @foreach($lookupFields as $field)
@@ -151,7 +151,7 @@
                                              aria-label="Resultados para {{ $field['label'] }}"
                                              class="absolute z-30 mt-1 hidden max-h-64 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
                                              data-lookup-results></div>
-                                        <p class="mt-1.5 text-xs text-gray-500" data-lookup-hint>Escribí 2 o más caracteres y elegí un resultado.</p>
+                                        <p class="mt-1.5 text-xs text-gray-500" data-lookup-hint>Ingresá al menos 2 caracteres y seleccioná una opción de la lista.</p>
                                         @error($field['name']) <p class="mt-2 text-sm font-medium text-red-700">{{ $message }}</p> @enderror
                                     </div>
                                 @endif
@@ -250,16 +250,16 @@
                     <section class="rounded-lg bg-gray-100 p-5 text-gray-800 shadow-lg sm:p-6">
                         <p class="text-xs font-bold uppercase tracking-widest text-indigo-700">Guía rápida</p>
                         <h2 class="mt-2 text-xl font-bold">¿Qué se guarda ahora?</h2>
-                        <ol class="mt-5 space-y-4 text-sm text-gray-200">
-                            <li class="flex items-start gap-3"><span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500 font-bold">1</span><span>El número del conocimiento hijo y las partes involucradas.</span></li>
-                            <li class="flex items-start gap-3"><span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500 font-bold">2</span><span>Los puertos propios de ese conocimiento.</span></li>
-                            <li class="flex items-start gap-3"><span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-500 font-bold">3</span><span>Los datos generales de mercadería declarados.</span></li>
+                        <ol class="mt-5 space-y-4 text-sm text-gray-700">
+                            <li class="flex items-start gap-3"><span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-700 font-bold text-white">1</span><span>El número del conocimiento hijo y las partes involucradas.</span></li>
+                            <li class="flex items-start gap-3"><span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-700 font-bold text-white">2</span><span>Los puertos propios de ese conocimiento.</span></li>
+                            <li class="flex items-start gap-3"><span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-700 font-bold text-white">3</span><span>Los datos generales de mercadería declarados.</span></li>
                         </ol>
                         <p class="mt-6 border-t border-gray-200 pt-5 text-xs leading-6 text-gray-600">Después del guardado regresarás al expediente. El conocimiento todavía no estará listo para transmitir.</p>
                     </section>
                     <div class="rounded-lg border border-gray-200 bg-white p-5 text-sm text-gray-600">
                         <p class="font-bold text-gray-900">¿No encontrás una empresa o un puerto?</p>
-                        <p class="mt-2 leading-6">Probá por nombre o código. Si no aparece, no selecciones otro por aproximación: primero verificá el dato en el catálogo correspondiente.</p>
+                        <p class="mt-2 leading-6">Buscá por nombre o código. Si no encontrás el registro que necesitás, verificá los datos en el catálogo correspondiente antes de continuar.</p>
                     </div>
                 </aside>
             </div>
@@ -372,7 +372,7 @@
                     if (hidden.value) return;
                     const term = input.value.trim();
                     if (term.length < 2) {
-                        hint.textContent = 'Escribí al menos 2 caracteres y elegí un resultado.';
+                        hint.textContent = 'Ingresá al menos 2 caracteres y seleccioná una opción de la lista.';
                         return;
                     }
                     const current = sequence;
@@ -396,13 +396,13 @@
                                 : (Array.isArray(payload.results) ? payload.results : []);
                             draw(source.filter(function (entry) { return entry && entry.id; }).map(function (entry) {
                                 const label = kind === 'client'
-                                    ? String(entry.legal_name || '') + (entry.tax_id ? ' · CUIT/RUC: ' + entry.tax_id : '')
+                                    ? String(entry.legal_name || '') + (entry.tax_id ? ' · Identificación fiscal: ' + entry.tax_id : '')
                                     : String(entry.label || entry.code || '') + (entry.city ? ' · ' + entry.city : '');
                                 return { id: entry.id, label: label };
                             }).filter(function (entry) { return entry.label.trim() !== ''; }));
                         } catch (error) {
                             if (error.name !== 'AbortError' && sequence === current) {
-                                message('No se pudo consultar. Comprobá la conexión e intentá otra vez.');
+                                message('No se pudieron obtener resultados en este momento. Intentá nuevamente; si el problema continúa, contactá al administrador.');
                             }
                         } finally {
                             if (controller === currentController) controller = null;
@@ -446,7 +446,7 @@
                     const hint = wrapper.querySelector('[data-lookup-hint]');
                     if (!hidden.value) {
                         event.preventDefault();
-                        input.setCustomValidity('Elegí un resultado de la lista, no solo escribas el nombre.');
+                        input.setCustomValidity('Para continuar, seleccioná una opción de la lista de resultados.');
                         hint.textContent = 'Seleccioná una opción de los resultados para continuar.';
                         hint.classList.add('text-red-700');
                         input.reportValidity();
