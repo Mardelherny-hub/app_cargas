@@ -83,6 +83,26 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * Impide transmitir por el flujo convencional títulos de Transbordos.
+     * Los viajes persistidos se verifican siempre contra la BD, no contra
+     * relaciones cargadas parcialmente en una vista.
+     */
+    private function requiresHidroviaTransshipmentFlow(Voyage $voyage): bool
+    {
+        if ($voyage->exists) {
+            return $voyage->billsOfLading()
+                ->where('is_transit_transshipment', 'S')
+                ->exists();
+        }
+
+        // Sólo para instancias sintéticas no persistidas usadas en QA local.
+        return $voyage->relationLoaded('billsOfLading')
+            && $voyage->billsOfLading->contains(
+                fn ($bill) => $bill->is_transit_transshipment === 'S'
+            );
+    }
+
+    /**
      * MIC/DTA ejecuta varios métodos remotos secuenciales.
      * No envolver toda la secuencia en una transacción DB porque AFIP no
      * participa de esa transacción: cada paso debe conservar su auditoría
@@ -91,6 +111,16 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     public function sendWebservice(Voyage $voyage, array $options = []): array
     {
         try {
+            if ($this->requiresHidroviaTransshipmentFlow($voyage)) {
+                return [
+                    'success' => false,
+                    'error_code' => 'VALIDATION_FAILED',
+                    'error_message' => 'El viaje contiene conocimientos de Transbordos: no se puede enviar por el MIC/DTA convencional.',
+                    'validation_errors' => ['Prepará la distribución entre barcazas desde el MIC/DTA del viaje. La transmisión multibarcaza todavía no está habilitada.'],
+                    'warnings' => [],
+                ];
+            }
+
             $validation = $this->canProcessVoyage($voyage);
             if (!$validation['can_process']) {
                 return [
@@ -153,6 +183,17 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         public function executeMethod(string $method, Voyage $voyage, array $data = []): array
         {
             try {
+                if (in_array($method, ['RegistrarTitEnvios', 'RegistrarEnvios', 'RegistrarMicDta'], true)
+                    && $this->requiresHidroviaTransshipmentFlow($voyage)) {
+                    return [
+                        'success' => false,
+                        'error_code' => 'PREREQUISITES_NOT_MET',
+                        'error_message' => 'El viaje contiene conocimientos de Transbordos: este método convencional no admite la distribución entre barcazas.',
+                        'validation_errors' => ['Prepará la distribución desde el MIC/DTA del viaje. La transmisión multibarcaza todavía no está habilitada.'],
+                        'warnings' => [],
+                    ];
+                }
+
                 $this->logOperation('info', 'Ejecutando método AFIP', [
                     'method' => $method,
                     'voyage_id' => $voyage->id,
