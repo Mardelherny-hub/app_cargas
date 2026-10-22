@@ -232,12 +232,16 @@ class HidroviaTransshipmentDraftServiceTest extends TestCase
         $this->assertSame(2, HidroviaTransshipmentAllocation::count());
     }
 
-    public function test_inflight_or_accepted_micdta_prevents_editing_the_distribution(): void
+    public function test_any_prior_micdta_registration_attempt_freezes_the_distribution(): void
     {
         $this->service->replaceDraft($this->voyage, 101, $this->bill,
             [$this->row(11, 10, '100.25')]);
-        foreach (['pending', 'sending', 'sent', 'success'] as $status) {
-            $transactionId = \Illuminate\Support\Facades\DB::table('webservice_transactions')->insertGetId([
+
+        // Un status=error sin sent_at/request_xml también puede provenir de un
+        // timeout: no demuestra que ARCA nunca recibió la operación.
+        foreach (['pending', 'validating', 'sending', 'retry', 'sent', 'success',
+            'error', 'expired', 'cancelled'] as $status) {
+            $transactionId = DB::table('webservice_transactions')->insertGetId([
                 'company_id' => 101,
                 'user_id' => 1,
                 'voyage_id' => 7,
@@ -250,27 +254,49 @@ class HidroviaTransshipmentDraftServiceTest extends TestCase
                 'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
                 'status' => $status,
             ]);
-            $this->reject([$this->row(12, 10, '100.25')], 'MIC/DTA iniciada');
-            $this->assertSame(11,
-                \App\Models\HidroviaTransshipmentAllocation::first()->target_shipment_id);
-            \Illuminate\Support\Facades\DB::table('webservice_transactions')->where('id', $transactionId)->delete();
+
+            $this->reject([$this->row(12, 10, '100.25')], 'resultado incierto');
+            $this->assertSame(11, (int) HidroviaTransshipmentAllocation::first()->target_shipment_id,
+                "El borrador no debe modificarse tras una transacción {$status}.");
+            $this->assertSame(1, HidroviaTransshipmentAllocation::count());
+            DB::table('webservice_transactions')->where('id', $transactionId)->delete();
         }
     }
 
-    public function test_unrelated_or_rejected_micdta_transaction_does_not_freeze_the_voyage(): void
+    public function test_unrelated_webservice_transactions_do_not_freeze_the_voyage(): void
     {
-        \Illuminate\Support\Facades\DB::table('webservice_transactions')->insert([
+        $this->service->replaceDraft($this->voyage, 101, $this->bill,
+            [$this->row(11, 10, '100.25')]);
+
+        $base = [
             'company_id' => 101, 'user_id' => 1, 'voyage_id' => 7,
-            'transaction_id' => 'QA-ERR', 'webservice_type' => 'micdta',
+            'shipment_id' => 11, 'webservice_type' => 'micdta',
             'country' => 'AR', 'webservice_url' => 'https://example.invalid',
             'environment' => 'testing',
-                'environment' => 'testing',
             'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
             'status' => 'error',
-        ]);
-        $saved = $this->service->replaceDraft($this->voyage, 101, $this->bill,
-            [$this->row(11, 10, '100.25')]);
-        $this->assertCount(1, $saved);
+        ];
+        $unrelated = [
+            'different_company' => ['company_id' => 202],
+            'different_voyage' => ['voyage_id' => 8],
+            'different_country' => ['country' => 'PY'],
+            'different_webservice' => ['webservice_type' => 'anticipada'],
+            'different_operation' => ['soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/ConsultarTitEnviosReg'],
+        ];
+        foreach ($unrelated as $name => $difference) {
+            $transactionId = DB::table('webservice_transactions')->insertGetId(array_replace(
+                $base, ['transaction_id' => 'QA-' . $name], $difference
+            ));
+
+            $target = (int) HidroviaTransshipmentAllocation::first()->target_shipment_id === 11
+                ? 12 : 11;
+            $saved = $this->service->replaceDraft($this->voyage, 101, $this->bill,
+                [$this->row($target, 10, '100.25')]);
+            $this->assertCount(1, $saved);
+            $this->assertSame($target, (int) $saved->first()->target_shipment_id,
+                "La transacción {$name} no debe inmovilizar el viaje.");
+            DB::table('webservice_transactions')->where('id', $transactionId)->delete();
+        }
     }
 
     public function test_never_transmits_or_modifies_original_title_when_draft_is_saved(): void
