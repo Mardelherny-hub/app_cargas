@@ -579,4 +579,157 @@ XML;
         $this->assertSame('validating', $transaction->fresh()->status);
         $this->assertSame(0, WebserviceTrack::count());
     }
+
+    /**
+     * Simula el transporte por completo: ningún caso construye un SoapClient
+     * real ni accede a WSAA o al servidor de homologación de ARCA.
+     *
+     * @return array{ArgentinaMicDtaService, SoapClient}
+     */
+    private function qaSoapService(string $reply, bool $timeout = false): array
+    {
+        $stub = new class($reply, $timeout) extends SoapClient {
+            public int $calls = 0;
+            public ?string $request = null;
+            public ?string $location = null;
+            public ?string $action = null;
+
+            public function __construct(private string $reply, private bool $timeout) {}
+
+            public function __doRequest(
+                string $request,
+                string $location,
+                string $action,
+                int $version,
+                bool $oneWay = false
+            ): ?string {
+                $this->calls++;
+                $this->request = $request;
+                $this->location = $location;
+                $this->action = $action;
+                if ($this->timeout) {
+                    throw new LogicException('Timeout sintético en transporte QA.');
+                }
+                return $this->reply;
+            }
+        };
+
+        $company = (new Company())->forceFill(['id' => 101, 'ws_environment' => 'testing']);
+        $user = (new User())->forceFill(['id' => 1]);
+        $service = new class($company, $user, $stub) extends ArgentinaMicDtaService {
+            public function __construct(Company $company, User $user, private SoapClient $stub)
+            {
+                parent::__construct($company, $user);
+            }
+
+            protected function createSoapClient(): SoapClient
+            {
+                return $this->stub;
+            }
+        };
+
+        return [$service, $stub];
+    }
+
+    public function test_fake_soap_success_registers_two_tracks_once(): void
+    {
+        $transaction = $this->reserve();
+        $this->markReservationReviewed($transaction);
+        [$service, $stub] = $this->qaSoapService($this->response());
+        $requestXml = $transaction->request_xml;
+
+        $result = $service->sendReservedHidroviaTitEnviosInQa(
+            $this->voyage, 31, $transaction->id
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(1, $stub->calls);
+        $this->assertSame($requestXml, $stub->request);
+        $this->assertSame(
+            'https://wsaduhomoext.afip.gob.ar/DIAV2/wgesregsintia2/wgesregsintia2.asmx',
+            $stub->location
+        );
+        $this->assertSame('Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios', $stub->action);
+        $this->assertSame('success', $transaction->fresh()->status);
+        $this->assertNotNull($transaction->fresh()->sent_at);
+        $this->assertNotNull($transaction->fresh()->response_at);
+        $this->assertSame($this->response(), $transaction->fresh()->response_xml);
+        $this->assertSame(0, (int) $transaction->fresh()->max_retries);
+        $tracks = WebserviceTrack::orderBy('shipment_id')->get();
+        $this->assertCount(2, $tracks);
+        $this->assertSame([11, 12], $tracks->pluck('shipment_id')->map(fn ($id) => (int) $id)->all());
+        $this->assertSame(['2026AR0000000011', '2026AR0000000022'],
+            $tracks->pluck('track_number')->all());
+
+        try {
+            $service->sendReservedHidroviaTitEnviosInQa($this->voyage, 31, $transaction->id);
+            $this->fail('Se permitió retransmitir un título aceptado.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('conciliación manual', $exception->getMessage());
+        }
+        $this->assertSame(1, $stub->calls);
+        $this->assertSame(2, WebserviceTrack::count());
+    }
+
+    public function test_fake_soap_arca_rejection_is_recorded_and_blocks_retries(): void
+    {
+        $transaction = $this->reserve();
+        $this->markReservationReviewed($transaction);
+        [$service, $stub] = $this->qaSoapService($this->response('41933'));
+
+        $result = $service->sendReservedHidroviaTitEnviosInQa(
+            $this->voyage, 31, $transaction->id
+        );
+
+        $this->assertFalse($result['success']);
+        $saved = $transaction->fresh();
+        $this->assertSame('sending', $saved->status);
+        $this->assertTrue($saved->requires_manual_review);
+        $this->assertTrue($saved->is_blocking_error);
+        $this->assertNotNull($saved->sent_at);
+        $this->assertNotNull($saved->response_at);
+        $this->assertSame($this->response('41933'), $saved->response_xml);
+        $this->assertNull($saved->next_retry_at);
+        $this->assertSame(0, (int) $saved->max_retries);
+        $this->assertSame(0, WebserviceTrack::count());
+        $this->assertSame(1, $stub->calls);
+        try {
+            $service->sendReservedHidroviaTitEnviosInQa($this->voyage, 31, $transaction->id);
+            $this->fail('Se permitió retransmitir una operación rechazada.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('conciliación manual', $exception->getMessage());
+        }
+        $this->assertSame(1, $stub->calls);
+    }
+
+    public function test_fake_soap_timeout_keeps_uncertainty_without_inventing_response(): void
+    {
+        $transaction = $this->reserve();
+        $this->markReservationReviewed($transaction);
+        [$service, $stub] = $this->qaSoapService('', true);
+
+        $result = $service->sendReservedHidroviaTitEnviosInQa(
+            $this->voyage, 31, $transaction->id
+        );
+
+        $this->assertFalse($result['success']);
+        $saved = $transaction->fresh();
+        $this->assertSame('sending', $saved->status);
+        $this->assertTrue($saved->is_blocking_error);
+        $this->assertTrue($saved->requires_manual_review);
+        $this->assertNotNull($saved->sent_at);
+        $this->assertNull($saved->response_at);
+        $this->assertNull($saved->response_xml);
+        $this->assertNull($saved->next_retry_at);
+        $this->assertSame(0, (int) $saved->max_retries);
+        $this->assertSame(0, WebserviceTrack::count());
+        $this->assertSame(1, $stub->calls);
+        try {
+            $service->sendReservedHidroviaTitEnviosInQa($this->voyage, 31, $transaction->id);
+            $this->fail('Se permitió retransmitir después del timeout.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('conciliación manual', $exception->getMessage());
+        }
+        $this->assertSame(1, $stub->calls);
+    }
 }
