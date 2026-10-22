@@ -382,7 +382,13 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                             </svg>
                             <h3 class="mt-2 text-sm font-medium text-gray-900">Sin viajes disponibles</h3>
-                            <p class="mt-1 text-sm text-gray-500">Comience creando un nuevo viaje.</p>
+                            @if($canUseCargasWebservices)
+                                <p class="mt-1 text-sm text-gray-500">Comience creando un nuevo viaje.</p>
+                            @elseif($company->hasCompanyRole('Desconsolidador'))
+                                <p class="mt-1 text-sm text-gray-500">Podés gestionar tus expedientes ATA-DESC sin crear un viaje.</p>
+                            @else
+                                <p class="mt-1 text-sm text-gray-500">No hay viajes disponibles para esta empresa.</p>
+                            @endif
                         </div>
 
                         {{-- ATA-DESC no depende de tener viajes. Mantener la tarjeta accesible en este caso. --}}
