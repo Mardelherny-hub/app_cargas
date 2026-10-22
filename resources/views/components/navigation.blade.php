@@ -11,6 +11,7 @@
         $company = $user->company ?? $user->companies->first();
         $companyRoles = $company->company_roles ?? [];
     }
+    $hasCargasRole = in_array('Cargas', $companyRoles, true);
 @endphp
 
 <nav x-data="{ open: false }" class="bg-white border-b border-gray-100">
@@ -141,6 +142,7 @@
                             <div x-show="open" @click.away="open = false" x-transition x-cloak
                                 class="absolute top-full left-0 mt-1 w-64 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
                                 <div class="py-1">
+                                    @if($hasCargasRole)
                                     <a href="{{ route('company.vessel-owners.index') }}"
                                     class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.vessel-owners.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         👥 {{ __('Propietarios') }}
@@ -153,6 +155,7 @@
                                     class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.vessels.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         🚢 {{ __('Embarcaciones') }}
                                     </a>
+                                    @endif
                                     <a href="{{ route('company.clients.index') }}"
                                     class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 {{ request()->routeIs('company.clients.*') ? 'bg-gray-100 text-gray-900' : '' }}">
                                         👤 {{ __('Clientes') }}
@@ -174,8 +177,8 @@
                             </div>
                         </div>
 
-                        <!-- 📋 MANIFIESTOS Dropdown - ACCESO COMPLETO para Admin y Operadores -->
-                        @if($company)
+                        <!-- 📋 MANIFIESTOS: solo empresas con rol Cargas -->
+                        @if($hasCargasRole)
                         <div class="relative h-full flex items-center" x-data="{ open: false }">
                             <button @click="open = !open"
                                 class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-medium leading-5 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none focus:text-gray-700 focus:border-gray-300 transition duration-150 ease-in-out h-full {{ request()->routeIs('company.manifests.*', 'company.voyages.*', 'company.shipments.*', 'company.bills-of-lading.*') ? 'border-indigo-400 text-gray-900' : '' }}"
@@ -415,6 +418,7 @@
                                     </a>
                                     --}}
 
+                                    @if($hasCargasRole)
                                     <!-- IMPORTAR Y ENVIAR - Nuevo para operadores -->
                                     <div class="border-t border-gray-100 mt-2 pt-2">
                                         <div class="px-4 py-1">
@@ -448,6 +452,8 @@
                                             </div>
                                         </a>
                                     </div>
+
+                                    @endif
 
                                     <!-- Certificados - Solo Company Admin puede gestionar -->
                                     @if($user->hasRole('company-admin'))
@@ -582,6 +588,7 @@
                 <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     {{ __('Gestión') }}
                 </div>
+                @if($hasCargasRole)
                 <x-responsive-nav-link :href="route('company.vessel-owners.index')" :active="request()->routeIs('company.vessel-owners.*')" class="pl-6">
                     {{ __('Propietarios') }}
                 </x-responsive-nav-link>
@@ -591,6 +598,7 @@
                 <x-responsive-nav-link :href="route('company.vessels.index')" :active="request()->routeIs('company.vessels.*')" class="pl-6">
                     🚢 {{ __('Embarcaciones') }}
                 </x-responsive-nav-link>
+                @endif
                 <x-responsive-nav-link :href="route('company.clients.index')" :active="request()->routeIs('company.clients.*')" class="pl-6">
                     {{ __('Clientes') }}
                 </x-responsive-nav-link>
@@ -600,8 +608,8 @@
                 </x-responsive-nav-link>
                 @endif
 
-                <!-- Manifiestos Group - COMPLETO para Admin y Operadores -->
-                @if($company)
+                <!-- Manifiestos: solo empresas con rol Cargas -->
+                @if($hasCargasRole)
                 <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     📋 {{ __('Manifiestos') }}
                 </div>
@@ -639,12 +647,14 @@
                 <x-responsive-nav-link :href="route('company.simple.dashboard')" :active="request()->routeIs('company.simple.dashboard')" class="pl-6">
                     {{ __('Dashboard Webservices') }}
                 </x-responsive-nav-link>
+                @if($hasCargasRole)
                 <x-responsive-nav-link :href="route('company.webservices.import')" :active="request()->routeIs('company.webservices.import')" class="pl-6">
                     📊 {{ __('Importar y Enviar') }}
                 </x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('company.webservices.history')" :active="request()->routeIs('company.webservices.history')" class="pl-6">
                     {{ __('Historial') }}
                 </x-responsive-nav-link>
+                @endif
                 @if($user->hasRole('company-admin'))
                 <x-responsive-nav-link :href="route('company.certificates.index')" :active="request()->routeIs('company.certificates.*')" class="pl-6">
                     🔐 {{ __('Certificados') }}
