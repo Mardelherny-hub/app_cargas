@@ -9,10 +9,12 @@
                    class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors">
                     ← Dashboard
                 </a> --}}
+                @if($company->hasCompanyRole('Cargas'))
                 <a href="{{ route('company.webservices.query') }}" 
                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
                     🔍 Consultar Estado
                 </a>
+                @endif
             </div>
         </div>
     </x-slot>
@@ -202,7 +204,7 @@
                                         </button>
                                         
                                         {{-- Reintentar si falló --}}
-                                        @if($transaction->status === 'error')
+                                        @if($company->hasCompanyRole('Cargas') && $transaction->status === 'error')
                                         <button onclick="retryTransaction({{ $transaction->id }})" 
                                                 class="text-green-600 hover:text-green-900">
                                             Reintentar
@@ -244,10 +246,12 @@
                             Limpiar Filtros
                         </a>
                         @endif
+                        @if($company->hasCompanyRole('Cargas'))
                         <a href="{{ route('company.manifests.import.index') }}" 
                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
                             Importar Manifiestos
                         </a>
+                        @endif
                     </div>
                 </div>
                 @endif
@@ -278,6 +282,7 @@
 
     {{-- JavaScript --}}
     <script>
+    const canRetryTransactions = @json($company->hasCompanyRole('Cargas'));
 
        // Reemplazar la función showTransactionDetails() en resources/views/company/webservices/history.blade.php
 
@@ -538,7 +543,7 @@ function renderTechnicalDetails(transaction) {
 function renderAvailableActions(transaction) {
     const actions = [];
     
-    if (transaction.status === 'error' && transaction.retry_count < transaction.max_retries) {
+    if (canRetryTransactions && transaction.status === 'error' && transaction.retry_count < transaction.max_retries) {
         actions.push(`
             <button onclick="retryTransaction(${transaction.id})" 
                     class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
@@ -867,7 +872,7 @@ function showErrorModal(message) {
         function renderAvailableActions(transaction) {
             const actions = [];
             
-            if (transaction.status === 'error' && transaction.retry_count < transaction.max_retries) {
+            if (canRetryTransactions && transaction.status === 'error' && transaction.retry_count < transaction.max_retries) {
                 actions.push(`
                     <button onclick="retryTransaction(${transaction.id})" 
                             class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
