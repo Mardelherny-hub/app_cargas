@@ -231,6 +231,75 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * Reclama UNA sola vez una reserva revisada para el futuro transporte QA.
+     *
+     * No llama a SOAP ni declara que la solicitud fue enviada. El estado
+     * sending bloquea cualquier repetición incluso si el proceso se interrumpe
+     * antes de recibir respuesta. Queda pendiente la conciliación manual.
+     *
+     * Sólo se admite bajo APP_ENV=testing y con revisión previa persistida;
+     * la transmisión real sigue deshabilitada.
+     */
+    public function claimHidroviaTitEnviosForQaDispatch(
+        Voyage $voyage,
+        int $transactionId
+    ): \App\Models\WebserviceTransaction {
+        if (!app()->environment('testing') || !$voyage->exists || $transactionId < 1
+            || (int) $voyage->company_id !== (int) $this->company->id) {
+            throw new \InvalidArgumentException('Despacho de transbordos no habilitado. Sólo QA local.');
+        }
+
+        return DB::transaction(function () use ($voyage, $transactionId) {
+            Voyage::query()->where('company_id', $this->company->id)
+                ->lockForUpdate()->findOrFail($voyage->id);
+
+            $transaction = \App\Models\WebserviceTransaction::query()
+                ->where('company_id', $this->company->id)
+                ->where('voyage_id', $voyage->id)
+                ->lockForUpdate()->findOrFail($transactionId);
+
+            if ($transaction->status !== 'validating'
+                || $transaction->webservice_type !== 'micdta'
+                || $transaction->country !== 'AR'
+                || $transaction->soap_action !== $this->config['soap_action_titenvios']
+                || $transaction->environment !== 'testing'
+                || $transaction->requires_manual_review
+                || !$transaction->reviewer_user_id || !$transaction->reviewed_at
+                || $transaction->is_blocking_error
+                || (int) $transaction->retry_count !== 0 || (int) $transaction->max_retries !== 0
+                || $transaction->next_retry_at !== null
+                || $transaction->sent_at !== null || $transaction->response_at !== null
+                || trim((string) $transaction->response_xml) !== '') {
+                throw new \InvalidArgumentException(
+                    'Reserva no aprobada o con intento anterior: requiere conciliación manual.'
+                );
+            }
+
+            $xml = new \DOMDocument();
+            if (!@$xml->loadXML((string) $transaction->request_xml, LIBXML_NONET)) {
+                throw new \InvalidArgumentException('Falta el SOAP original de la reserva.');
+            }
+            $xpath = new \DOMXPath($xml);
+            $ids = $xpath->query('//*[local-name()="RegistrarTitEnvios"]'
+                . '/*[local-name()="argRegistrarTitEnviosParam"]'
+                . '/*[local-name()="idTransaccion"]');
+            if ($ids->length !== 1
+                || trim($ids->item(0)->textContent) !== $transaction->transaction_id) {
+                throw new \InvalidArgumentException('La transacción reservada no coincide con el XML.');
+            }
+
+            $transaction->update([
+                'status' => 'sending',
+                'requires_manual_review' => true,
+                'is_blocking_error' => true,
+                'next_retry_at' => null,
+            ]);
+
+            return $transaction->refresh();
+        });
+    }
+
+    /**
      * Asocia TRACKs de un RegistrarTitEnvios multibarcaza ya aceptado.
      * Reutiliza la auditoría y los TRACKs del MIC/DTA existente, pero nunca
      * ejecuta SOAP, inicia una transmisión ni inventa idEnvio/identificadores.
