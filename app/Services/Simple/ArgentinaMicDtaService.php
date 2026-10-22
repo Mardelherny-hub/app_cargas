@@ -356,6 +356,51 @@ class ArgentinaMicDtaService extends BaseWebserviceService
             );
         }
 
+        // La revisión anterior no reemplaza la validación final del SOAP
+        // guardado. Rechazar XML incompleto ANTES de reclamar o llamar a ARCA.
+        $operations = $xpath->query(
+            '/*[local-name()="Envelope" and namespace-uri()="http://schemas.xmlsoap.org/soap/envelope/"]'
+            . '/*[local-name()="Body"]/*[local-name()="RegistrarTitEnvios"'
+            . ' and namespace-uri()="Ar.Gob.Afip.Dga.wgesregsintia2"]'
+        );
+        if ($operations->length !== 1) {
+            throw new \InvalidArgumentException('La reserva no contiene un único RegistrarTitEnvios válido.');
+        }
+        $previousLibxml = libxml_use_internal_errors(true);
+        try {
+            $wsdl = new \DOMDocument();
+            if (!$wsdl->load(base_path('wgesregsintia2.wsdl'), LIBXML_NONET)) {
+                throw new \InvalidArgumentException('No se pudo verificar el WSDL local de MIC/DTA.');
+            }
+            $wsdlXpath = new \DOMXPath($wsdl);
+            $wsdlXpath->registerNamespace('xsd', 'http://www.w3.org/2001/XMLSchema');
+            $schemas = $wsdlXpath->query(
+                '//xsd:schema[@targetNamespace="Ar.Gob.Afip.Dga.wgesregsintia2"]'
+            );
+            if ($schemas->length !== 1) {
+                throw new \InvalidArgumentException('No se encontró el esquema MIC/DTA en el WSDL local.');
+            }
+            $schema = new \DOMDocument('1.0', 'UTF-8');
+            $root = $schema->importNode($schemas->item(0), true);
+            $schema->appendChild($root);
+            $root->setAttributeNS('http://www.w3.org/2000/xmlns/',
+                'xmlns:s', 'http://www.w3.org/2001/XMLSchema');
+            $root->setAttributeNS('http://www.w3.org/2000/xmlns/',
+                'xmlns:tns', 'Ar.Gob.Afip.Dga.wgesregsintia2');
+
+            $operation = new \DOMDocument('1.0', 'UTF-8');
+            $operation->appendChild($operation->importNode($operations->item(0), true));
+            libxml_clear_errors();
+            if (!$operation->schemaValidateSource($schema->saveXML())) {
+                throw new \InvalidArgumentException(
+                    'El SOAP reservado no cumple el XSD de MIC/DTA. No se transmitió.'
+                );
+            }
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previousLibxml);
+        }
+
         // Se reclama ANTES de cualquier posible transmisión. Nunca reintentar.
         $transaction = $this->claimHidroviaTitEnviosForQaDispatch(
             $voyage, $transactionId
