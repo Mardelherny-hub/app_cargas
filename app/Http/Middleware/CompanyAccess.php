@@ -66,7 +66,9 @@ public function handle(Request $request, Closure $next, ...$companyParams): Resp
                     'company.simple.manifiesto.*',
                 ];
 
-                if ($request->routeIs(...$cargasRoutes)
+                // ATA-DESC reutiliza este buscador de solo lectura para sus puertos.
+                if (($request->routeIs(...$cargasRoutes)
+                    && !$request->routeIs('company.bills-of-lading.ports.search'))
                     || ($request->routeIs('company.simple.micdta.*')
                         && !$company->hasCompanyRole('Transbordos'))
                     || ($request->routeIs('company.simple.transbordo.*')
