@@ -237,14 +237,17 @@ class ArgentinaMicDtaService extends BaseWebserviceService
      * sending bloquea cualquier repetición incluso si el proceso se interrumpe
      * antes de recibir respuesta. Queda pendiente la conciliación manual.
      *
-     * Sólo se admite bajo APP_ENV=testing y con revisión previa persistida;
-     * la transmisión real sigue deshabilitada.
+     * APP_ENV=testing opera como antes. En un servidor Laravel production
+     * sólo se admite homologación con autorización INTERNA explícita,
+     * empresa testing y endpoint de prueba exacto. No es una opción HTTP.
      */
     public function claimHidroviaTitEnviosForQaDispatch(
         Voyage $voyage,
-        int $transactionId
+        int $transactionId,
+        bool $allowHostedHomologation = false
     ): \App\Models\WebserviceTransaction {
-        if (!app()->environment('testing') || !$voyage->exists || $transactionId < 1
+        if (!$this->canDispatchHidroviaHomologation($allowHostedHomologation)
+            || !$voyage->exists || $transactionId < 1
             || (int) $voyage->company_id !== (int) $this->company->id) {
             throw new \InvalidArgumentException('Despacho de transbordos no habilitado. Sólo QA local.');
         }
@@ -263,6 +266,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 || $transaction->country !== 'AR'
                 || $transaction->soap_action !== $this->config['soap_action_titenvios']
                 || $transaction->environment !== 'testing'
+                || $transaction->webservice_url !== $this->config['webservice_url']
                 || $transaction->requires_manual_review
                 || !$transaction->reviewer_user_id || !$transaction->reviewed_at
                 || $transaction->is_blocking_error
@@ -300,6 +304,25 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * El ambiente aduanero depende de la empresa, no de APP_ENV.
+     * La autorización adicional permite homologar desde un Stage alojado
+     * con Laravel en modo production sin abrir jamás el endpoint productivo.
+     */
+    private function canDispatchHidroviaHomologation(bool $allowHostedHomologation): bool
+    {
+        return (app()->environment('testing')
+                || ($allowHostedHomologation && app()->environment('production')))
+            && WebserviceEnvironment::resolve($this->company) === 'testing'
+            && $this->config['environment'] === 'testing'
+            && $this->config['webservice_url'] === WebserviceEnvironment::argentinaEndpoint(
+                $this->company, 'wgesregsintia2'
+            )
+            && parse_url($this->config['webservice_url'], PHP_URL_SCHEME) === 'https'
+            && parse_url($this->config['webservice_url'], PHP_URL_HOST)
+                === 'wsaduhomoext.afip.gob.ar';
+    }
+
+    /**
      * Transmite UNA reserva de transbordo al servicio de homologación.
      * No expuesto a rutas HTTP. Nunca usa el flujo MIC/DTA convencional.
      *
@@ -312,12 +335,10 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     public function sendReservedHidroviaTitEnviosInQa(
         Voyage $voyage,
         int $billId,
-        int $transactionId
+        int $transactionId,
+        bool $allowHostedHomologation = false
     ): array {
-        if (!app()->environment('testing')
-            || $this->config['environment'] !== 'testing'
-            || parse_url((string) $this->config['webservice_url'], PHP_URL_HOST)
-                !== 'wsaduhomoext.afip.gob.ar') {
+        if (!$this->canDispatchHidroviaHomologation($allowHostedHomologation)) {
             throw new \InvalidArgumentException(
                 'Transbordos sólo permite el servicio de homologación en QA local.'
             );
@@ -403,7 +424,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
 
         // Se reclama ANTES de cualquier posible transmisión. Nunca reintentar.
         $transaction = $this->claimHidroviaTitEnviosForQaDispatch(
-            $voyage, $transactionId
+            $voyage, $transactionId, $allowHostedHomologation
         );
 
         try {
