@@ -62,10 +62,84 @@ class HidroviaTransshipmentDraftController extends Controller
                 'gross_weight_kg' => $row->gross_weight_kg,
             ]);
 
+        // Recuperar el estado de una reserva previa sin exponer Token, Sign,
+        // XML ni respuesta de Aduana. Otro intento MIC/DTA del mismo viaje
+        // también debe bloquear la creación de una nueva reserva.
+        $homologation = null;
+        $company = $this->getUserCompany();
+        if ($this->isCompanyAdmin() && $company?->ws_environment === 'testing'
+            && $billRecord->is_transit_transshipment === 'S') {
+            $transaction = \App\Models\WebserviceTransaction::query()
+                ->where('company_id', $company->id)
+                ->where('voyage_id', $voyageRecord->id)
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->whereIn('soap_action', [
+                    'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
+                    'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarEnvios',
+                    'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta',
+                ])->orderByDesc('id')->first();
+
+            if ($transaction) {
+                $sameBill = (int) $transaction->shipment_id === (int) $billRecord->shipment_id
+                    && $transaction->soap_action
+                        === 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios'
+                    && $transaction->environment === 'testing'
+                    && $transaction->webservice_url
+                        === \App\Services\Simple\WebserviceEnvironment::argentinaEndpoint(
+                            $company, 'wgesregsintia2'
+                        );
+
+                // Un envío convencional puede compartir shipment_id: sólo
+                // reanudar una reserva con UN título y VARIOS envíos reales.
+                $matchingXml = false;
+                if ($sameBill && trim((string) $transaction->request_xml) !== '') {
+                    $document = new \DOMDocument();
+                    $previous = libxml_use_internal_errors(true);
+                    try {
+                        $loaded = $document->loadXML($transaction->request_xml, LIBXML_NONET);
+                    } finally {
+                        libxml_clear_errors();
+                        libxml_use_internal_errors($previous);
+                    }
+                    if ($loaded) {
+                        $xpath = new \DOMXPath($document);
+                        $titles = $xpath->query('//*[local-name()="titulosTransEnvios"]'
+                            . '/*[local-name()="TitTransEnvio"]');
+                        $matchingXml = $titles->length === 1
+                            && trim($xpath->evaluate('string(./*[local-name()="idTitTrans"])',
+                                $titles->item(0))) === trim((string) $billRecord->bill_number)
+                            && $xpath->query('./*[local-name()="envios"]'
+                                . '/*[local-name()="Envio"]', $titles->item(0))->length >= 2;
+                    }
+                }
+
+                $canConfirm = $matchingXml
+                    && $transaction->status === 'validating'
+                    && $transaction->requires_manual_review
+                    && !$transaction->reviewer_user_id && !$transaction->reviewed_at
+                    && !$transaction->is_blocking_error
+                    && (int) $transaction->retry_count === 0
+                    && (int) $transaction->max_retries === 0
+                    && $transaction->next_retry_at === null
+                    && $transaction->sent_at === null && $transaction->response_at === null
+                    && trim((string) $transaction->response_xml) === '';
+
+                $homologation = [
+                    'transaction_record_id' => $matchingXml ? (int) $transaction->id : null,
+                    'status' => $matchingXml ? $transaction->status : 'blocked',
+                    'can_confirm' => $canConfirm,
+                    'requires_manual_review' => $matchingXml
+                        ? (bool) $transaction->requires_manual_review : true,
+                ];
+            }
+        }
+
         return response()->json([
             'voyage_id' => $voyageRecord->id,
             'bill_of_lading_id' => $billRecord->id,
             'allocations' => $rows,
+            'homologation' => $homologation,
         ]);
     }
 
