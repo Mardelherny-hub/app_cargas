@@ -25,6 +25,10 @@
                     : ($user && $user->userable_type === 'App\Models\Operator'
                         ? $user->userable?->company
                         : null);
+                $hasCargasRole = $company && in_array('Cargas', $company->company_roles ?? [], true);
+                $hasSimpleWebservicesRole = $company
+                    && (in_array('Desconsolidador', $company->company_roles ?? [], true)
+                        || in_array('Transbordos', $company->company_roles ?? [], true));
             @endphp
 
             {{-- Dashboard --}}
@@ -43,7 +47,17 @@
                 </a>
             @endif
 
-            {{-- CREAR VIAJE COMPLETO --}}
+            {{-- El panel de webservices sigue disponible para Desconsolidados y Transbordos,
+                 aunque esa empresa no gestione viajes de Cargas. --}}
+            @if(!$hasCargasRole && $hasSimpleWebservicesRole)
+                <a href="{{ route('company.simple.dashboard') }}"
+                   class="flex items-center px-3 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.simple.dashboard') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-700 hover:bg-gray-100' }}">
+                    🏛️ Enviar a AFIP/DNA
+                </a>
+            @endif
+
+            {{-- CREAR VIAJE COMPLETO: solamente para empresas con rol Cargas. --}}
+            @if($hasCargasRole)
             <div class="pt-4">
                 <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                     📋 Crear Viaje Completo
@@ -105,6 +119,7 @@
                     @endif
                 </div>
             </div>
+            @endif
 
             {{-- GESTIÓN --}}
             <div class="pt-4" x-data="{ open: false }">
@@ -115,6 +130,7 @@
                     </svg>
                 </button>
                 <div x-show="open" x-transition class="mt-2 space-y-1">
+                    @if($hasCargasRole)
                     <a href="{{ route('company.vessel-owners.index') }}" 
                        class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.vessel-owners.*') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
                         👥 Propietarios
@@ -127,6 +143,7 @@
                        class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.vessels.*') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
                         🚢 Embarcaciones
                     </a>
+                    @endif
                     <a href="{{ route('company.clients.index') }}" 
                        class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.clients.*') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
                         👤 Clientes
@@ -141,7 +158,7 @@
             </div>
 
             {{-- MANIFIESTOS --}}
-            @if($company)
+            @if($hasCargasRole)
             <div class="pt-4" x-data="{ open: false }">
                 <button @click="open = !open" class="flex items-center w-full px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-gray-700">
                     <span>📊 Manifiestos</span>
@@ -183,7 +200,7 @@
             @endif
 
             {{-- REPORTES --}}
-            @if($company)
+            @if($hasCargasRole)
             <div class="pt-4" x-data="{ open: false }">
                 <button @click="open = !open" class="flex items-center w-full px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider hover:text-gray-700">
                     <span>📊 Reportes</span>
