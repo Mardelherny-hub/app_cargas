@@ -61,28 +61,6 @@
                 </div>
             @endif
 
-            {{-- ATA-DESC es independiente de los viajes y se muestra solo a empresas habilitadas. --}}
-            @if($company->hasCompanyRole('Desconsolidador'))
-                <div class="mb-6 flex flex-col gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h3 class="font-semibold text-indigo-900">Desconsolidados Argentina — ATA-DESC</h3>
-                        <p class="mt-1 text-sm text-indigo-700">Gestioná expedientes y conocimientos hijos. Este circuito no depende de un viaje ni del envío de Información Anticipada.</p>
-                    </div>
-                    <a href="{{ route('company.simple.desconsolidado.operations.index') }}"
-                       class="inline-flex shrink-0 items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                        Ingresar a Desconsolidados
-                    </a>
-                </div>
-            @else
-                <div class="mb-6 flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h3 class="font-semibold text-gray-800">Desconsolidados Argentina — ATA-DESC</h3>
-                        <p class="mt-1 text-sm text-gray-600">Gestión independiente de los viajes y de Información Anticipada.</p>
-                    </div>
-                    <span class="inline-flex shrink-0 items-center rounded-md bg-gray-200 px-3 py-2 text-sm font-medium text-gray-700">No habilitado para esta empresa</span>
-                </div>
-            @endif
-
             {{-- Lista de Viajes con Estados de Webservices --}}
             <div class="bg-white overflow-hidden shadow rounded-lg">
                 <div class="px-4 py-5 sm:p-6">
@@ -259,6 +237,34 @@
                                                 </div>
                                             </div>
 
+                                            {{-- ATA-DESC es independiente del viaje; solo se enlaza al expediente. --}}
+                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-white">
+                                                <div class="flex items-start justify-between gap-2 mb-2">
+                                                    <div class="min-w-0">
+                                                        <span class="text-xs font-medium text-gray-600 block">Argentina · ATA-DESC</span>
+                                                        <span class="text-sm font-semibold text-gray-900 block">Desconsolidados</span>
+                                                    </div>
+                                                    @if($company->hasCompanyRole('Desconsolidador'))
+                                                        <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800">Disponible</span>
+                                                    @else
+                                                        <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700">Sin permiso</span>
+                                                    @endif
+                                                </div>
+                                                <p class="mb-3 text-xs text-gray-600">Expedientes independientes de este viaje.</p>
+                                                <div class="mt-auto">
+                                                    @if($company->hasCompanyRole('Desconsolidador'))
+                                                        <a href="{{ route('company.simple.desconsolidado.operations.index') }}"
+                                                           class="block w-full text-center rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
+                                                            Gestionar expedientes
+                                                        </a>
+                                                    @else
+                                                        <span aria-disabled="true" class="block w-full text-center rounded bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">
+                                                            No habilitado
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            </div>
+
                                             {{-- TRANSBORDOS: preparación de borradores, sin conexión SOAP. --}}
                                             <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-white">
                                                 <div class="flex items-start justify-between gap-2 mb-2">
@@ -349,6 +355,36 @@
                             </svg>
                             <h3 class="mt-2 text-sm font-medium text-gray-900">Sin viajes disponibles</h3>
                             <p class="mt-1 text-sm text-gray-500">Comience creando un nuevo viaje.</p>
+                        </div>
+
+                        {{-- ATA-DESC no depende de tener viajes. Mantener la tarjeta accesible en este caso. --}}
+                        <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-white">
+                                <div class="flex items-start justify-between gap-2 mb-2">
+                                    <div class="min-w-0">
+                                        <span class="text-xs font-medium text-gray-600 block">Argentina · ATA-DESC</span>
+                                        <span class="text-sm font-semibold text-gray-900 block">Desconsolidados</span>
+                                    </div>
+                                    @if($company->hasCompanyRole('Desconsolidador'))
+                                        <span class="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800">Disponible</span>
+                                    @else
+                                        <span class="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">Sin permiso</span>
+                                    @endif
+                                </div>
+                                <p class="mb-3 text-xs text-gray-600">Expedientes independientes de un viaje.</p>
+                                <div class="mt-auto">
+                                    @if($company->hasCompanyRole('Desconsolidador'))
+                                        <a href="{{ route('company.simple.desconsolidado.operations.index') }}"
+                                           class="block w-full rounded bg-indigo-600 px-3 py-1.5 text-center text-xs font-medium text-white hover:bg-indigo-700">
+                                            Gestionar expedientes
+                                        </a>
+                                    @else
+                                        <span aria-disabled="true" class="block w-full rounded bg-gray-100 px-3 py-1.5 text-center text-xs font-medium text-gray-600">
+                                            No habilitado
+                                        </span>
+                                    @endif
+                                </div>
+                            </div>
                         </div>
                     @endif
                 </div>
