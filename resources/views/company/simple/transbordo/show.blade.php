@@ -323,7 +323,8 @@
                 add.disabled = value || frozen;
                 @if($canHomologate)
                 reserve.disabled = value || frozen || !validated || reservationAttempted;
-                send.disabled = value || sendAttempted || !reservationId || !confirmSend.checked;
+                send.disabled = value || sendAttempted || !validated
+                    || !reservationId || !confirmSend.checked;
                 @endif
             };
             add.addEventListener('click', () => { addRow(); invalidate(); });
@@ -419,7 +420,8 @@
 
             confirmSend.addEventListener('change', () => lock(busy));
             send.addEventListener('click', async () => {
-                if (busy || !reservationId || !confirmSend.checked || sendAttempted) return;
+                if (busy || !validated || !reservationId
+                    || !confirmSend.checked || sendAttempted) return;
                 if (!window.confirm(
                     'Vas a transmitir este conocimiento y sus envíos a HOMOLOGACIÓN ARCA. ¿Confirmás el envío único?'
                 )) return;
@@ -455,13 +457,97 @@
                     setMessage('Resultado aduanero incierto. No se permite reenviar.', true);
                 } finally { lock(false); }
             });
+
+            // Recuperar desde BD después de recargar: nunca confiar en un
+            // identificador guardado en el navegador ni generar otra reserva.
+            const restoreHomologation = async (previous) => {
+                if (!previous) return false;
+
+                // Ante cualquier operación MIC/DTA previa, congelar primero.
+                // Sólo un preflight NUEVO habilita continuar una reserva
+                // pendiente que el servidor marcó expresamente como confirmable.
+                frozen = true;
+                reservationAttempted = true;
+                sendAttempted = true;
+                validated = false;
+                preparedShipments = [];
+                confirmSend.checked = false;
+                reservationId = Number.isSafeInteger(previous.transaction_record_id)
+                    && previous.transaction_record_id > 0
+                    ? previous.transaction_record_id : null;
+
+                for (const input of rows.querySelectorAll('input,select,button')) {
+                    input.disabled = true;
+                }
+                reserve.disabled = true;
+                homologation.classList.remove('hidden');
+                reservedPanel.classList.toggle('hidden', !reservationId);
+                reservationIdLabel.textContent = reservationId ? String(reservationId) : '';
+
+                if (previous.status === 'success') {
+                    homologationResult.textContent =
+                        'La operación ya fue aceptada por ARCA. No se puede volver a enviar.';
+                    setMessage('Transbordo registrado. No repetir la transmisión.');
+                    return true;
+                }
+                if (previous.status !== 'validating'
+                    || previous.can_confirm !== true || !reservationId) {
+                    homologationResult.textContent =
+                        'Existe una operación MIC/DTA anterior (estado: ' +
+                        String(previous.status ?? 'desconocido') +
+                        '). No se permite reservar ni reenviar. Solicitá revisión técnica.';
+                    setMessage('Operación previa detectada: envío bloqueado.', true);
+                    return true;
+                }
+
+                try {
+                    // No llama a WSAA ni SOAP. Revalida el reparto ACTUAL
+                    // antes de permitir confirmar una reserva persistida.
+                    const ready = await request(routes.preflight, 'POST');
+                    const shipmentsReady = ready.distribution?.shipments;
+                    if (ready.valid !== true || ready.transmitted !== false
+                        || !Array.isArray(shipmentsReady) || shipmentsReady.length < 2
+                        || shipmentsReady.some(shipment => !Number.isSafeInteger(
+                            shipment.shipment_id
+                        ) || !Number.isSafeInteger(shipment.id_envio))) {
+                        throw new Error('Distribución guardada no verificable.');
+                    }
+                    preparedShipments = shipmentsReady;
+                    validated = true;
+                    sendAttempted = false;
+                    homologationResult.textContent =
+                        'Reserva ' + reservationId +
+                        ' recuperada sin reenviar. La distribución fue validada nuevamente.';
+                    setMessage('Reserva pendiente recuperada. Revisá y confirmá solo si corresponde.');
+                } catch (error) {
+                    homologationResult.textContent =
+                        'Reserva ' + reservationId +
+                        ': no se pudo validar el reparto actual. ' + error.message +
+                        '. No se permite enviar; solicitá revisión técnica.';
+                    setMessage('Reserva encontrada, pero no habilitada para envío.', true);
+                }
+                return true;
+            };
             @endif
             lock(true);
-            request(routes.show, 'GET').then(data => {
+            request(routes.show, 'GET').then(async data => {
                 (data.allocations?.length ? data.allocations : [{}]).forEach(addRow);
                 dirty = false;
+                @if($canHomologate)
+                if (await restoreHomologation(data.homologation)) return;
+                @endif
                 setMessage('Distribución cargada. Revisá las asignaciones antes de guardarlas.');
-            }).catch(error => setMessage(error.message, true)).finally(() => lock(false));
+            }).catch(error => {
+                @if($canHomologate)
+                // Sin consulta de estado no sabemos si ya se reservó/envió.
+                // Bloquear acciones hasta recuperar la conexión y recargar.
+                frozen = true;
+                reservationAttempted = true;
+                sendAttempted = true;
+                @endif
+                setMessage('No se pudo consultar el estado del viaje: ' + error.message +
+                    '. Recargá cuando se restablezca la conexión. No repitas operaciones.', true);
+            }).finally(() => lock(false));
         });
     </script>
 </x-app-layout>
