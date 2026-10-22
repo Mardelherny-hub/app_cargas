@@ -57,6 +57,8 @@ public function handle(Request $request, Closure $next, ...$companyParams): Resp
                     'company.captains.*',
                     'company.manifests.*',
                     'company.reports.*',
+                    'company.webservices.*',
+                    'diagnostic.webservices',
                     'company.mane.*',
                     'company.imports.*',
                     'company.dashboard-estados.*',
