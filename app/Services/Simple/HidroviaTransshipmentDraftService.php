@@ -45,7 +45,10 @@ final class HidroviaTransshipmentDraftService
                 ->where('voyage_id', $voyage->id)
                 ->where('webservice_type', 'micdta')
                 ->where('country', 'AR')
-                ->whereIn('status', ['pending', 'validating', 'sending', 'retry', 'sent', 'success'])
+                // Cualquier intento registrado bloquea el reparto. El SOAP
+                // existente puede persistir status=error tras un timeout SIN
+                // request_xml ni sent_at: la ausencia de esos campos no prueba
+                // que ARCA no haya recibido el envío. Revisión manual primero.
                 ->where(function ($query) {
                     $query->where('soap_action', 'like', '%/RegistrarTitEnvios')
                         ->orWhere('soap_action', 'like', '%/RegistrarEnvios')
@@ -53,7 +56,7 @@ final class HidroviaTransshipmentDraftService
                 })
                 ->exists();
             if ($micDtaIniciado) {
-                $this->reject('El viaje ya tiene una operación MIC/DTA iniciada: no se puede alterar su distribución.');
+                $this->reject('El viaje ya tiene una operación MIC/DTA iniciada o de resultado incierto: no se puede alterar su distribución.');
             }
 
             // Serializa las modificaciones concurrentes del mismo título.

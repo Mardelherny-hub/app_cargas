@@ -62,10 +62,84 @@ class HidroviaTransshipmentDraftController extends Controller
                 'gross_weight_kg' => $row->gross_weight_kg,
             ]);
 
+        // Recuperar el estado de una reserva previa sin exponer Token, Sign,
+        // XML ni respuesta de Aduana. Otro intento MIC/DTA del mismo viaje
+        // también debe bloquear la creación de una nueva reserva.
+        $homologation = null;
+        $company = $this->getUserCompany();
+        if ($this->isCompanyAdmin() && $company?->ws_environment === 'testing'
+            && $billRecord->is_transit_transshipment === 'S') {
+            $transaction = \App\Models\WebserviceTransaction::query()
+                ->where('company_id', $company->id)
+                ->where('voyage_id', $voyageRecord->id)
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->whereIn('soap_action', [
+                    'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
+                    'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarEnvios',
+                    'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta',
+                ])->orderByDesc('id')->first();
+
+            if ($transaction) {
+                $sameBill = (int) $transaction->shipment_id === (int) $billRecord->shipment_id
+                    && $transaction->soap_action
+                        === 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios'
+                    && $transaction->environment === 'testing'
+                    && $transaction->webservice_url
+                        === \App\Services\Simple\WebserviceEnvironment::argentinaEndpoint(
+                            $company, 'wgesregsintia2'
+                        );
+
+                // Un envío convencional puede compartir shipment_id: sólo
+                // reanudar una reserva con UN título y VARIOS envíos reales.
+                $matchingXml = false;
+                if ($sameBill && trim((string) $transaction->request_xml) !== '') {
+                    $document = new \DOMDocument();
+                    $previous = libxml_use_internal_errors(true);
+                    try {
+                        $loaded = $document->loadXML($transaction->request_xml, LIBXML_NONET);
+                    } finally {
+                        libxml_clear_errors();
+                        libxml_use_internal_errors($previous);
+                    }
+                    if ($loaded) {
+                        $xpath = new \DOMXPath($document);
+                        $titles = $xpath->query('//*[local-name()="titulosTransEnvios"]'
+                            . '/*[local-name()="TitTransEnvio"]');
+                        $matchingXml = $titles->length === 1
+                            && trim($xpath->evaluate('string(./*[local-name()="idTitTrans"])',
+                                $titles->item(0))) === trim((string) $billRecord->bill_number)
+                            && $xpath->query('./*[local-name()="envios"]'
+                                . '/*[local-name()="Envio"]', $titles->item(0))->length >= 2;
+                    }
+                }
+
+                $canConfirm = $matchingXml
+                    && $transaction->status === 'validating'
+                    && $transaction->requires_manual_review
+                    && !$transaction->reviewer_user_id && !$transaction->reviewed_at
+                    && !$transaction->is_blocking_error
+                    && (int) $transaction->retry_count === 0
+                    && (int) $transaction->max_retries === 0
+                    && $transaction->next_retry_at === null
+                    && $transaction->sent_at === null && $transaction->response_at === null
+                    && trim((string) $transaction->response_xml) === '';
+
+                $homologation = [
+                    'transaction_record_id' => $matchingXml ? (int) $transaction->id : null,
+                    'status' => $matchingXml ? $transaction->status : 'blocked',
+                    'can_confirm' => $canConfirm,
+                    'requires_manual_review' => $matchingXml
+                        ? (bool) $transaction->requires_manual_review : true,
+                ];
+            }
+        }
+
         return response()->json([
             'voyage_id' => $voyageRecord->id,
             'bill_of_lading_id' => $billRecord->id,
             'allocations' => $rows,
+            'homologation' => $homologation,
         ]);
     }
 
@@ -104,6 +178,195 @@ class HidroviaTransshipmentDraftController extends Controller
             'transmitted' => false,
             'distribution' => $ready,
         ]);
+    }
+
+    /**
+     * Prepara y reserva, SIN TRANSMITIR, un título de carga suelta repartido
+     * entre barcazas. Usa la autenticación del generador MIC/DTA existente.
+     * ATA y lugares operativos se reciben explícitamente por barcaza:
+     * el sistema no los deduce ni crea datos aduaneros.
+     *
+     * Esta acción todavía no tiene ruta HTTP: se habilita en otra intervención.
+     */
+    public function reserveHomologation(Request $request, int $voyage, int $bill): JsonResponse
+    {
+        [$voyageRecord, $billRecord, $companyId] = $this->authorizedBill($voyage, $bill);
+        $user = $this->getCurrentUser();
+        $company = $this->getUserCompany();
+        abort_unless($user && $this->isCompanyAdmin() && $company
+            && \App\Services\Simple\WebserviceEnvironment::resolve($company) === 'testing', 403);
+        abort_unless($billRecord->is_transit_transshipment === 'S' && !$billRecord->is_fractional, 422);
+
+        $data = $request->validate([
+            'customsByShipmentId' => ['required', 'array', 'min:2', 'max:999'],
+            'customsByShipmentId.*.idFiscalATAMIC' => ['required', 'string', 'regex:/^[0-9]{11,14}$/'],
+            'customsByShipmentId.*.lugOperOrigen.codLugOper' => ['required', 'string', 'max:5'],
+            'customsByShipmentId.*.lugOperOrigen.codCiu' => ['required', 'string', 'regex:/^[A-Za-z]{2}[A-Za-z0-9]{3}$/'],
+            'customsByShipmentId.*.lugOperDestino.codLugOper' => ['required', 'string', 'max:7'],
+            'customsByShipmentId.*.lugOperDestino.codCiu' => ['required', 'string', 'regex:/^[A-Za-z]{2}[A-Za-z0-9]{3}$/'],
+        ]);
+
+        // El generador actual emite TODOS los títulos del shipment de origen.
+        // Para esta primera operación, impedir que una reserva incluya otros BL.
+        $origin = $billRecord->shipment;
+        if (!$origin || $origin->billsOfLading()->count() !== 1) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'bill' => 'El generador MIC/DTA requiere un único conocimiento en el embarque de origen.',
+            ]);
+        }
+
+        $billRecord->load('shipmentItems.containers');
+        if ($billRecord->shipmentItems->contains(
+            fn ($item) => $item->containers->isNotEmpty()
+        )) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'bill' => 'Los contenedores requieren homologación específica; no se prepara un envío real.',
+            ]);
+        }
+
+        $prepared = app(HidroviaTransshipmentReadinessService::class)->prepare(
+            $voyageRecord, $companyId, $billRecord
+        );
+        $supplied = $data['customsByShipmentId'];
+        if (count($supplied) !== count($prepared['shipments'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'customsByShipmentId' => 'Los datos aduaneros deben corresponder a todas las barcazas.',
+            ]);
+        }
+        foreach ($prepared['shipments'] as $shipment) {
+            if (!isset($supplied[$shipment['shipment_id']])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'customsByShipmentId' =>
+                        'Faltan datos ATA y lugares operativos de una barcaza del reparto.',
+                ]);
+            }
+        }
+
+        // Evitar obtener credenciales WSAA si ya hubo una operación MIC/DTA
+        // de este viaje. reserveHidroviaTitEnviosForReview repite el bloqueo
+        // bajo lock en BD para evitar carreras y duplicaciones.
+        $attempted = \App\Models\WebserviceTransaction::query()
+            ->where('company_id', $companyId)
+            ->where('voyage_id', $voyageRecord->id)
+            ->where('webservice_type', 'micdta')
+            ->where('country', 'AR')
+            ->whereIn('soap_action', [
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarEnvios',
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta',
+            ])->exists();
+        if ($attempted) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'bill' => 'El viaje ya tiene una operación MIC/DTA; se requiere revisión antes de otra reserva.',
+            ]);
+        }
+
+        $service = new \App\Services\Simple\ArgentinaMicDtaService($company, $user);
+        $transactionReference = 'TIT' . bin2hex(random_bytes(6));
+        $template = $service->getXmlSerializer()
+            ->createRegistrarTitEnviosXml($origin, $transactionReference);
+        $transaction = $service->reserveHidroviaTitEnviosForReview(
+            $voyageRecord, $billRecord->id, $template, $supplied
+        );
+
+        // Nunca devolver XML con Token/Sign, ni credenciales WSAA.
+        return response()->json([
+            'transaction_record_id' => (int) $transaction->id,
+            'bill_of_lading_id' => (int) $billRecord->id,
+            'status' => $transaction->status,
+            'shipments_count' => count($prepared['shipments']),
+            'transmitted' => false,
+            'message' => 'Reserva guardada para revisión. No se transmitió a ARCA.',
+        ], 201);
+    }
+
+    /**
+     * Confirma y despacha UNA reserva ya preparada hacia homologación ARCA.
+     * El formulario nunca proporciona SOAP, credenciales ni ambiente.
+     */
+    public function sendHomologation(Request $request, int $voyage, int $bill): JsonResponse
+    {
+        [$voyageRecord, $billRecord, $companyId] = $this->authorizedBill($voyage, $bill);
+        $user = $this->getCurrentUser();
+        abort_unless($user && $this->isCompanyAdmin(), 403);
+
+        $company = $this->getUserCompany();
+        abort_unless($company
+            && \App\Services\Simple\WebserviceEnvironment::resolve($company) === 'testing'
+            && (app()->environment('testing') || app()->environment('production')), 403);
+
+        $data = $request->validate([
+            'transaction_record_id' => ['required', 'integer', 'min:1'],
+            'confirm' => ['required', 'accepted'],
+        ]);
+
+        $transactionId = \Illuminate\Support\Facades\DB::transaction(function () use (
+            $voyageRecord, $billRecord, $companyId, $user, $data, $company
+        ): int {
+            Voyage::query()->where('company_id', $companyId)
+                ->lockForUpdate()->findOrFail($voyageRecord->id);
+
+            $transaction = \App\Models\WebserviceTransaction::query()
+                ->where('company_id', $companyId)
+                ->where('voyage_id', $voyageRecord->id)
+                ->lockForUpdate()->findOrFail((int) $data['transaction_record_id']);
+
+            if ((int) $transaction->shipment_id !== (int) $billRecord->shipment_id
+                || $billRecord->is_transit_transshipment !== 'S'
+                || $billRecord->is_fractional
+                || $transaction->webservice_type !== 'micdta'
+                || $transaction->country !== 'AR'
+                || $transaction->soap_action
+                    !== 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios'
+                || $transaction->environment !== 'testing'
+                || $transaction->webservice_url
+                    !== \App\Services\Simple\WebserviceEnvironment::argentinaEndpoint(
+                        $company, 'wgesregsintia2'
+                    )
+                || $transaction->status !== 'validating'
+                || !$transaction->requires_manual_review
+                || $transaction->reviewer_user_id !== null
+                || $transaction->reviewed_at !== null
+                || $transaction->sent_at !== null
+                || $transaction->response_at !== null
+                || trim((string) $transaction->response_xml) !== ''
+                || trim((string) $transaction->request_xml) === ''
+                || $transaction->is_blocking_error
+                || (int) $transaction->retry_count !== 0
+                || (int) $transaction->max_retries !== 0
+                || $transaction->next_retry_at !== null) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'transaction_record_id' =>
+                        'La reserva no está disponible para homologación o requiere conciliación.',
+                ]);
+            }
+
+            $transaction->update([
+                'requires_manual_review' => false,
+                'reviewer_user_id' => (string) $user->id,
+                'reviewed_at' => now(),
+            ]);
+
+            return (int) $transaction->id;
+        });
+
+        $service = app()->makeWith(\App\Services\Simple\ArgentinaMicDtaService::class, [
+            'company' => $company,
+            'user' => $user,
+        ]);
+        $result = $service->sendReservedHidroviaTitEnviosInQa(
+            $voyageRecord, (int) $billRecord->id, $transactionId, true
+        );
+
+        return response()->json([
+            'success' => (bool) ($result['success'] ?? false),
+            'transaction_record_id' => $transactionId,
+            'requires_manual_review' => (bool) ($result['requires_manual_review'] ?? false),
+            'tracks' => $result['success'] ? ($result['tracks'] ?? []) : [],
+            'message' => $result['success']
+                ? 'Homologación registrada. Revisá los TRACKs devueltos por ARCA.'
+                : 'Resultado no confirmado: revisar la transacción antes de volver a operar.',
+        ], $result['success'] ? 200 : 409);
     }
 
     /** Empresa y rol provienen del usuario, nunca del formulario. */
