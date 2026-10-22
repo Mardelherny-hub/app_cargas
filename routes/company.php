@@ -806,6 +806,14 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
             [App\Http\Controllers\Company\Simple\HidroviaTransshipmentDraftController::class, 'preflight'])
             ->whereNumber('voyage')->whereNumber('bill')->name('drafts.preflight');
 
+        // Preparar reserva sin enviar a ARCA. Sólo admin de empresa con
+        // Transbordos; el controlador verifica además ambiente testing,
+        // datos aduaneros por barcaza y ausencia de operaciones previas.
+        Route::post('/{voyage}/bills/{bill}/homologation/reserve',
+            [App\Http\Controllers\Company\Simple\HidroviaTransshipmentDraftController::class, 'reserveHomologation'])
+            ->middleware('role:company-admin')
+            ->whereNumber('voyage')->whereNumber('bill')->name('homologation.reserve');
+
         // Confirmación y envío exclusivamente a homologación ARCA.
         // El controlador vuelve a comprobar empresa, rol, reserva y ambiente.
         // Sin botón público ni habilitación del MIC/DTA convencional.
