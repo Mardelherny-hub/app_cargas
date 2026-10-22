@@ -300,6 +300,130 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * Transmite UNA reserva de transbordo al servicio de homologación.
+     * No expuesto a rutas HTTP. Nunca usa el flujo MIC/DTA convencional.
+     *
+     * La reserva ya debe estar revisada; cualquier corte, rechazo o respuesta
+     * ambigua deja la transacción bloqueada para conciliación manual.
+     * Los TRACKs sólo se confirman con el validador existente.
+     *
+     * @return array<string, mixed>
+     */
+    public function sendReservedHidroviaTitEnviosInQa(
+        Voyage $voyage,
+        int $billId,
+        int $transactionId
+    ): array {
+        if (!app()->environment('testing')
+            || $this->config['environment'] !== 'testing'
+            || parse_url((string) $this->config['webservice_url'], PHP_URL_HOST)
+                !== 'wsaduhomoext.afip.gob.ar') {
+            throw new \InvalidArgumentException(
+                'Transbordos sólo permite el servicio de homologación en QA local.'
+            );
+        }
+
+        // Evitar que el XML de contenedores no homologado llegue a ARCA.
+        $reserved = \App\Models\WebserviceTransaction::query()
+            ->where('company_id', $this->company->id)
+            ->where('voyage_id', $voyage->id)
+            ->findOrFail($transactionId);
+        $bill = $voyage->billsOfLading()
+            ->where('is_transit_transshipment', 'S')->findOrFail($billId);
+        if ((int) $reserved->shipment_id !== (int) $bill->shipment_id) {
+            throw new \InvalidArgumentException('La reserva no pertenece al conocimiento elegido.');
+        }
+        // Validar la distribución ACTUAL antes de iniciar el transporte.
+        $prepared = app(HidroviaTransshipmentReadinessService::class)
+            ->prepare($voyage, (int) $this->company->id, $bill);
+        $request = new \DOMDocument();
+        if (!@$request->loadXML((string) $reserved->request_xml, LIBXML_NONET)) {
+            throw new \InvalidArgumentException('Falta el XML original de la reserva.');
+        }
+        $xpath = new \DOMXPath($request);
+        $titles = $xpath->query('//*[local-name()="titulosTransEnvios"]'
+            . '/*[local-name()="TitTransEnvio"]');
+        if ($titles->length !== 1
+            || trim($xpath->evaluate('string(./*[local-name()="idTitTrans"])', $titles->item(0)))
+                !== trim((string) $bill->bill_number)
+            || $xpath->query('./*[local-name()="envios"]/*[local-name()="Envio"]', $titles->item(0))->length
+                !== count($prepared['shipments'])) {
+            throw new \InvalidArgumentException('Título o barcazas del SOAP distintos del reparto actual.');
+        }
+        if ($xpath->query('//*[local-name()="Bulto"]/*[local-name()="idContenedor"]')->length > 0) {
+            throw new \InvalidArgumentException(
+                'Transbordo contenedorizado pendiente de validación del contrato XSD.'
+            );
+        }
+
+        // Se reclama ANTES de cualquier posible transmisión. Nunca reintentar.
+        $transaction = $this->claimHidroviaTitEnviosForQaDispatch(
+            $voyage, $transactionId
+        );
+
+        try {
+            $client = $this->createSoapClient();
+            $transaction->update(['sent_at' => now()]);
+            $response = $client->__doRequest(
+                $transaction->request_xml,
+                $this->config['webservice_url'],
+                $this->config['soap_action_titenvios'],
+                SOAP_1_1,
+                false
+            );
+            if (!is_string($response) || trim($response) === '') {
+                throw new \RuntimeException('Respuesta SOAP vacía o ausente.');
+            }
+
+            // La evidencia se guarda incluso cuando el XML sea rechazado.
+            $transaction->update([
+                'response_xml' => $response,
+                'response_at' => now(),
+            ]);
+
+            // Sólo una respuesta consistente permite el paso a success.
+            // El rollback de esta transacción mantiene estado sending,
+            // evidencia de respuesta y bloqueo ante un resultado incierto.
+            $tracks = DB::transaction(function () use ($transaction, $billId) {
+                $locked = \App\Models\WebserviceTransaction::query()
+                    ->lockForUpdate()->findOrFail($transaction->id);
+                $locked->update([
+                    'status' => 'sent',
+                    'requires_manual_review' => false,
+                    'is_blocking_error' => false,
+                ]);
+                return app(HidroviaTransshipmentRecordedTrackService::class)
+                    ->confirmRecordedResponse(
+                        (int) $this->company->id, (int) $locked->id, $billId
+                    );
+            });
+
+            return [
+                'success' => true,
+                'transaction_record_id' => (int) $transaction->id,
+                'tracks' => array_map(fn ($track) => $track->track_number, $tracks),
+            ];
+        } catch (\Throwable $exception) {
+            // Nunca retornar éxito ni generar reintentos ante timeout, Fault
+            // o respuesta incorrecta. La revisión será necesariamente manual.
+            $transaction->refresh();
+            $transaction->update([
+                'status' => 'sending',
+                'requires_manual_review' => true,
+                'is_blocking_error' => true,
+                'next_retry_at' => null,
+                'error_message' => mb_substr($exception->getMessage(), 0, 2000),
+            ]);
+            return [
+                'success' => false,
+                'transaction_record_id' => (int) $transaction->id,
+                'requires_manual_review' => true,
+                'error_message' => 'Resultado SOAP no confirmado; verificar en ARCA antes de actuar.',
+            ];
+        }
+    }
+
+    /**
      * Asocia TRACKs de un RegistrarTitEnvios multibarcaza ya aceptado.
      * Reutiliza la auditoría y los TRACKs del MIC/DTA existente, pero nunca
      * ejecuta SOAP, inicia una transmisión ni inventa idEnvio/identificadores.
