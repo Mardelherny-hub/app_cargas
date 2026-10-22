@@ -262,6 +262,19 @@ class DeconsolidationOperationController extends Controller
             'bill_ids.*' => ['required', 'integer', 'distinct', 'min:1'],
             'confirmation' => ['required', 'accepted'],
         ]);
+
+        // Diferenciar faltantes locales de un resultado SOAP incierto.
+        // El mismo validador se ejecuta en el servicio antes de pedir WSAA;
+        // aquí devolvemos sus errores al formulario sin crear transacciones.
+        $validation = (new SimpleXmlGeneratorDesconsolidado($record, [
+            'environment' => WebserviceEnvironment::resolve($company),
+        ]))->validateLocalData($data['method'], $data['bill_ids']);
+        if (!($validation['is_valid'] ?? false)) {
+            return redirect()->route('company.simple.desconsolidado.operations.show', [
+                'operation' => $record->id,
+            ])->withErrors($validation['errors'] ?? ['Revisá los datos de los conocimientos seleccionados.']);
+        }
+
         try {
             $result = (new ArgentinaDeconsolidatedService(
                 $company, $this->getCurrentUser()
@@ -271,7 +284,9 @@ class DeconsolidationOperationController extends Controller
             ])->with($result['success'] ? 'success' : 'error',
                 $result['success']
                     ? 'Aduana aceptó la operación. Referencia de transacción: ' . $result['transaction_id']
-                    : 'No se confirmó la aceptación de la operación. Revisá el historial de transmisiones y el resultado informado por Aduana.');
+                    : (trim((string) ($result['error_message'] ?? '')) !== ''
+                        ? $result['error_message']
+                        : 'No se confirmó la aceptación de la operación. Revisá el historial de transmisiones y el resultado informado por Aduana.'));
         } catch (Throwable $exception) {
             Log::error('ATA-DESC: resultado de transmisión no confirmado', [
                 'operation_id' => $record->id,
