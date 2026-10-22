@@ -103,6 +103,52 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * Prepara en el servicio MIC/DTA un RegistrarTitEnvios multibarcaza
+     * sólo para revisión técnica. La plantilla SOAP es suministrada por el
+     * generador existente: no se solicitan credenciales, no se crea una
+     * transacción y NUNCA se ejecuta una llamada SOAP desde aquí.
+     *
+     * No exponer el XML autenticado en una respuesta pública; se conserva
+     * bloqueado el envío real mientras falte homologación aduanera.
+     *
+     * @return array<string, mixed>
+     */
+    public function prepareHidroviaTitEnviosForReview(
+        Voyage $voyage,
+        int $billId,
+        string $templateSoapXml,
+        array $customsByShipmentId
+    ): array {
+        if (!$voyage->exists || $billId < 1
+            || (int) $voyage->company_id !== (int) $this->company->id) {
+            throw new \InvalidArgumentException('El viaje o conocimiento de transbordo no pertenece a la empresa.');
+        }
+
+        $bill = $voyage->billsOfLading()
+            ->where('is_transit_transshipment', 'S')
+            ->findOrFail($billId);
+        $bill->load(['shipmentItems.packagingType', 'shipmentItems.containers']);
+
+        // Recalcular desde asignaciones persistidas; nunca aceptar un reparto
+        // inventado por quien solicita la preparación.
+        $prepared = app(HidroviaTransshipmentReadinessService::class)
+            ->prepare($voyage, (int) $this->company->id, $bill);
+        $expected = app(HidroviaTransshipmentTrackExpectationBuilder::class)
+            ->fromPrepared($bill, $prepared);
+        $xml = app(HidroviaTransshipmentRegistrarTitEnviosXmlAssembler::class)
+            ->assemble($templateSoapXml, $bill, $prepared, $customsByShipmentId);
+
+        return [
+            'voyage_id' => (int) $voyage->id,
+            'bill_of_lading_id' => (int) $bill->id,
+            'soap_xml_for_review' => $xml,
+            'expected_envios' => $expected,
+            'transmitted' => false,
+            'transmittable' => false,
+        ];
+    }
+
+    /**
      * MIC/DTA ejecuta varios métodos remotos secuenciales.
      * No envolver toda la secuencia en una transacción DB porque AFIP no
      * participa de esa transacción: cada paso debe conservar su auditoría
