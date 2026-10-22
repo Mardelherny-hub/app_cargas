@@ -45,6 +45,13 @@ public function handle(Request $request, Closure $next, ...$companyParams): Resp
                     ? $user->userable?->company
                     : null);
 
+            // Las rutas propias de Transbordos requieren su rol, incluso si
+            // la empresa también tiene habilitado el módulo Cargas.
+            if ($company && $request->routeIs('company.simple.transbordo.*')
+                && !$company->hasCompanyRole('Transbordos')) {
+                abort(403, 'El módulo Transbordos no está habilitado para su empresa.');
+            }
+
             if ($company && !$company->hasCompanyRole('Cargas')) {
                 $cargasRoutes = [
                     'company.shipments.*',
@@ -78,8 +85,7 @@ public function handle(Request $request, Closure $next, ...$companyParams): Resp
                     && !$readonlyHistory)
                     || ($request->routeIs('company.simple.micdta.*')
                         && !$company->hasCompanyRole('Transbordos'))
-                    || ($request->routeIs('company.simple.transbordo.*')
-                        && !$company->hasCompanyRole('Transbordos'))) {
+) {
                     abort(403, 'Este módulo pertenece a Cargas y no está habilitado para su empresa.');
                 }
             }
