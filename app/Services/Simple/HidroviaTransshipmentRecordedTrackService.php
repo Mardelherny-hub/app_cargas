@@ -8,6 +8,7 @@ use App\Models\WebserviceTrack;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 /**
@@ -21,6 +22,51 @@ final class HidroviaTransshipmentRecordedTrackService
         private readonly HidroviaTransshipmentTrackExpectationBuilder $expectations,
         private readonly HidroviaTransshipmentTrackPersistenceService $persistence,
     ) {}
+
+    /**
+     * Confirma una respuesta ya recibida y conservada en webservice_transactions.
+     * Nunca envía SOAP ni acepta XML aportado por el consumidor: requiere
+     * solicitud/respuesta y fechas previamente guardadas por el transporte.
+     * Si el mapeo falla, revierte el estado success y todos los TRACKs.
+     *
+     * @return array<int, WebserviceTrack>
+     */
+    public function confirmRecordedResponse(int $companyId, int $transactionId, int $billId): array
+    {
+        if ($companyId < 1 || $transactionId < 1 || $billId < 1) {
+            throw new InvalidArgumentException('Empresa, transacción y conocimiento inválidos.');
+        }
+
+        return DB::transaction(function () use ($companyId, $transactionId, $billId): array {
+            $transaction = WebserviceTransaction::query()
+                ->where('company_id', $companyId)
+                ->lockForUpdate()
+                ->findOrFail($transactionId);
+            if (!in_array($transaction->status, ['sent', 'success'], true)
+                || $transaction->webservice_type !== 'micdta'
+                || $transaction->country !== 'AR'
+                || $transaction->soap_action !== 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios'
+                || !$transaction->voyage_id || !$transaction->user_id
+                || trim((string) $transaction->request_xml) === ''
+                || trim((string) $transaction->response_xml) === ''
+                || !$transaction->sent_at || !$transaction->response_at
+                || $transaction->response_at->lessThan($transaction->sent_at)
+                || $transaction->is_blocking_error || $transaction->requires_manual_review) {
+                throw new InvalidArgumentException(
+                    'La operación no tiene una solicitud y respuesta ARCA completas para confirmar.'
+                );
+            }
+
+            if ($transaction->status === 'sent') {
+                $transaction->update(['status' => 'success']);
+            }
+
+            // El servicio existente valida el XML enviado, el reparto actual,
+            // el código de respuesta, la unicidad de TRACKs y su idempotencia.
+            // Su fallo revierte también el cambio de estado en esta transacción.
+            return $this->persistAcceptedResponse($companyId, $transactionId, $billId);
+        });
+    }
 
     /** @return array<int, WebserviceTrack> */
     public function persistAcceptedResponse(int $companyId, int $transactionId, int $billId): array
