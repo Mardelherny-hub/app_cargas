@@ -806,6 +806,14 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
             [App\Http\Controllers\Company\Simple\HidroviaTransshipmentDraftController::class, 'preflight'])
             ->whereNumber('voyage')->whereNumber('bill')->name('drafts.preflight');
 
+        // Confirmación y envío exclusivamente a homologación ARCA.
+        // El controlador vuelve a comprobar empresa, rol, reserva y ambiente.
+        // Sin botón público ni habilitación del MIC/DTA convencional.
+        Route::post('/{voyage}/bills/{bill}/homologation/send',
+            [App\Http\Controllers\Company\Simple\HidroviaTransshipmentDraftController::class, 'sendHomologation'])
+            ->middleware('role:company-admin')
+            ->whereNumber('voyage')->whereNumber('bill')->name('homologation.send');
+
         // TODO FASE 5: Rutas específicas transbordo
         // Route::get('/{voyage}', [SimpleManifestController::class, 'transbordoShow'])->name('show');
         // Route::post('/{voyage}/send', [SimpleManifestController::class, 'transbordoSend'])->name('send');
