@@ -47,27 +47,26 @@
                 </div>
             @endif
 
-            {{-- ATA-DESC es independiente de los viajes y se muestra solo a empresas habilitadas. --}}
-            @if($company->hasCompanyRole('Desconsolidador'))
-                <div class="mb-6 flex flex-col gap-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+
+            {{-- Acceso directo a la preparación de Transbordos, independiente de Anticipada. --}}
+            @if($company->hasCompanyRole('Transbordos'))
+                <div class="mb-6 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h3 class="font-semibold text-indigo-900">Desconsolidados Argentina — ATA-DESC</h3>
-                        <p class="mt-1 text-sm text-indigo-700">Gestioná expedientes y conocimientos hijos. Este circuito no depende de un viaje ni del envío de Información Anticipada.</p>
+                        <h3 class="font-semibold text-blue-900">Transbordos — Preparación de cargas</h3>
+                        <p class="mt-1 text-sm text-blue-700">Distribuí conocimientos entre barcazas, guardá borradores y validalos. Sin transmisión a ARCA.</p>
                     </div>
-                    <a href="{{ route('company.simple.desconsolidado.operations.index') }}"
-                       class="inline-flex shrink-0 items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                        Ingresar a Desconsolidados
+                    <a href="{{ route('company.simple.transbordo.index') }}"
+                       class="inline-flex shrink-0 items-center justify-center rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">
+                        Ingresar a Transbordos
                     </a>
                 </div>
-            @else
-                <div class="mb-6 flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h3 class="font-semibold text-gray-800">Desconsolidados Argentina — ATA-DESC</h3>
-                        <p class="mt-1 text-sm text-gray-600">Gestión independiente de los viajes y de Información Anticipada.</p>
-                    </div>
-                    <span class="inline-flex shrink-0 items-center rounded-md bg-gray-200 px-3 py-2 text-sm font-medium text-gray-700">No habilitado para esta empresa</span>
-                </div>
             @endif
+
+            @php
+                $canUseCargasWebservices = $company->hasCompanyRole('Cargas');
+                $canUseMicDta = $canUseCargasWebservices || $company->hasCompanyRole('Transbordos');
+            @endphp
+
 
             {{-- Lista de Viajes con Estados de Webservices --}}
             <div class="bg-white overflow-hidden shadow rounded-lg">
@@ -80,12 +79,14 @@
                             Viajes Disponibles ({{ $voyages->total() }})
                         </h3>
                         
+                        @if($canUseCargasWebservices)
                         <div class="flex items-center space-x-2">
                             <a href="{{ route('company.voyages.index') }}" 
                             class="text-sm text-indigo-600 hover:text-indigo-900">
                                 Ver todos los voyages
                             </a>
                         </div>
+                        @endif
                     </div>
 
                     @if($voyages->count() > 0)
@@ -159,7 +160,7 @@
                                         
                                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                             {{-- ANTICIPADA - PASO 1 OBLIGATORIO --}}
-                                            <div class="border rounded-lg p-3 bg-gradient-to-br from-indigo-50 to-white min-h-[120px] flex flex-col">
+                                            <div class="border rounded-lg p-3 {{ $canUseCargasWebservices ? 'bg-gradient-to-br from-indigo-50 to-white' : 'bg-gray-50 opacity-75' }} min-h-[120px] flex flex-col">
                                                 <div class="flex items-start justify-between mb-2">
                                                     <div class="flex-1 min-w-0">
                                                         <div class="flex items-center mb-1">
@@ -183,7 +184,11 @@
                                                 </div>
                                                 
                                                 <div class="mt-auto">
-                                                    @if(!$anticipadaStatus || in_array($anticipadaStatus['status'] ?? '', ['pending', 'error']))
+                                                    @if(!$canUseCargasWebservices)
+                                                        <span aria-disabled="true" class="block w-full text-center px-3 py-1.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">
+                                                            No habilitado
+                                                        </span>
+                                                    @elseif(!$anticipadaStatus || in_array($anticipadaStatus['status'] ?? '', ['pending', 'error']))
                                                         <a href="{{ route('company.simple.anticipada.show', $voyage) }}" 
                                                         class="block w-full text-center px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded transition">
                                                             Enviar Ahora
@@ -198,7 +203,7 @@
                                             </div>
 
                                             {{-- MIC/DTA - EXPORTACIÓN (Independiente) --}}
-                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-gradient-to-br from-purple-50 to-white">
+                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col {{ $canUseMicDta ? 'bg-gradient-to-br from-purple-50 to-white' : 'bg-gray-50 opacity-75' }}">
                                                 <div class="flex items-start justify-between mb-2">
                                                     <div class="flex-1 min-w-0">
                                                         <div class="flex items-center mb-1">
@@ -228,7 +233,11 @@
                                                 
                                                 <div class="mt-auto">
                                                     <div class="mt-auto">
-                                                        @if(!$micdtaStatus || in_array($micdtaStatus['status'] ?? '', ['pending', 'error']))
+                                                        @if(!$canUseMicDta)
+                                                            <span aria-disabled="true" class="block w-full text-center px-3 py-1.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">
+                                                                No habilitado
+                                                            </span>
+                                                        @elseif(!$micdtaStatus || in_array($micdtaStatus['status'] ?? '', ['pending', 'error']))
                                                             <a href="{{ route('company.simple.micdta.show', $voyage) }}"
                                                             class="block w-full text-center px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition">
                                                                 Enviar Ahora
@@ -243,10 +252,72 @@
                                                 </div>
                                             </div>
 
+
+                                            {{-- ATA-DESC es independiente del viaje; solo se enlaza al expediente. --}}
+                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-white">
+                                                <div class="flex items-start justify-between gap-2 mb-2">
+                                                    <div class="min-w-0">
+                                                        <span class="text-xs font-medium text-gray-600 block">Argentina · ATA-DESC</span>
+                                                        <span class="text-sm font-semibold text-gray-900 block">Desconsolidados</span>
+                                                    </div>
+                                                    @if($company->hasCompanyRole('Desconsolidador'))
+                                                        <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800">Disponible</span>
+                                                    @else
+                                                        <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700">Sin permiso</span>
+                                                    @endif
+                                                </div>
+                                                <p class="mb-3 text-xs text-gray-600">Expedientes independientes de este viaje.</p>
+                                                <div class="mt-auto">
+                                                    @if($company->hasCompanyRole('Desconsolidador'))
+                                                        <a href="{{ route('company.simple.desconsolidado.operations.index') }}"
+                                                           class="block w-full text-center rounded bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
+                                                            Gestionar expedientes
+                                                        </a>
+                                                    @else
+                                                        <span aria-disabled="true" class="block w-full text-center rounded bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">
+                                                            No habilitado
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            </div>
+
+                                            {{-- TRANSBORDOS: preparación de borradores, sin conexión SOAP. --}}
+                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-white">
+                                                <div class="flex items-start justify-between gap-2 mb-2">
+                                                    <div class="min-w-0">
+                                                        <span class="text-xs font-medium text-gray-600 block">Preparación</span>
+                                                        <span class="text-sm font-semibold text-gray-900 block truncate">Transbordos</span>
+                                                    </div>
+                                                    @if($company->hasCompanyRole('Transbordos'))
+                                                        <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">Borradores</span>
+                                                    @else
+                                                        <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700">Sin permiso</span>
+                                                    @endif
+                                                </div>
+                                                <div class="mt-auto">
+                                                    @if($company->hasCompanyRole('Transbordos'))
+                                                        <a href="{{ route('company.simple.transbordo.index', ['search' => $voyage->voyage_number]) }}"
+                                                           class="block w-full text-center rounded bg-blue-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-800">
+                                                            Ver conocimientos
+                                                        </a>
+                                                    @else
+                                                        <span class="block w-full text-center rounded bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">
+                                                            No habilitado
+                                                        </span>
+                                                    @endif
+                                                </div>
+                                            </div>
+
                                         </div>
                                     </div>
 
                                     {{-- Sección de Webservices Paraguay --}}
+                                    <div class="mb-4">
+                                        <div class="flex items-center mb-3">
+                                            <span class="text-lg mr-2">🇵🇾</span>
+                                            <h5 class="text-sm font-semibold text-gray-700">Paraguay - DNA</h5>
+                                        </div>
+
                                     {{-- MANIFIESTO PARAGUAY --}}
                                     @php
                                         // Habilitamos la tarjeta como activa.
@@ -254,7 +325,7 @@
                                         $canOpenManifiesto = \Illuminate\Support\Facades\Route::has('company.simple.manifiesto.show');
                                     @endphp
 
-                                    <div class="border rounded-lg p-3 bg-white min-h-[120px] flex flex-col">
+                                    <div class="border rounded-lg p-3 {{ $canUseCargasWebservices ? 'bg-white' : 'bg-gray-50 opacity-75' }} min-h-[120px] flex flex-col">
                                         <div class="flex items-start justify-between mb-2">
                                             <div class="flex-1 min-w-0">
                                                 <span class="text-sm font-semibold text-gray-900 block truncate">Manifiesto</span>
@@ -278,7 +349,11 @@
                                         </div>
 
                                         <div class="mt-auto">
-                                            @if($canOpenManifiesto)
+                                            @if(!$canUseCargasWebservices)
+                                                <span aria-disabled="true" class="block w-full text-center px-3 py-1.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">
+                                                    No habilitado
+                                                </span>
+                                            @elseif($canOpenManifiesto)
                                                 <a href="{{ route('company.simple.manifiesto.show', $voyage) }}"
                                                 class="block w-full text-center px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded transition">
                                                     Enviar Ahora
@@ -291,6 +366,7 @@
                                             @endif
                                         </div>
                                     </div>
+                                    </div> {{-- Fin de la sección Paraguay --}}
 
                                 </div>
                             @endforeach
@@ -307,6 +383,36 @@
                             </svg>
                             <h3 class="mt-2 text-sm font-medium text-gray-900">Sin viajes disponibles</h3>
                             <p class="mt-1 text-sm text-gray-500">Comience creando un nuevo viaje.</p>
+                        </div>
+
+                        {{-- ATA-DESC no depende de tener viajes. Mantener la tarjeta accesible en este caso. --}}
+                        <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-white">
+                                <div class="flex items-start justify-between gap-2 mb-2">
+                                    <div class="min-w-0">
+                                        <span class="text-xs font-medium text-gray-600 block">Argentina · ATA-DESC</span>
+                                        <span class="text-sm font-semibold text-gray-900 block">Desconsolidados</span>
+                                    </div>
+                                    @if($company->hasCompanyRole('Desconsolidador'))
+                                        <span class="rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-800">Disponible</span>
+                                    @else
+                                        <span class="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">Sin permiso</span>
+                                    @endif
+                                </div>
+                                <p class="mb-3 text-xs text-gray-600">Expedientes independientes de un viaje.</p>
+                                <div class="mt-auto">
+                                    @if($company->hasCompanyRole('Desconsolidador'))
+                                        <a href="{{ route('company.simple.desconsolidado.operations.index') }}"
+                                           class="block w-full rounded bg-indigo-600 px-3 py-1.5 text-center text-xs font-medium text-white hover:bg-indigo-700">
+                                            Gestionar expedientes
+                                        </a>
+                                    @else
+                                        <span aria-disabled="true" class="block w-full rounded bg-gray-100 px-3 py-1.5 text-center text-xs font-medium text-gray-600">
+                                            No habilitado
+                                        </span>
+                                    @endif
+                                </div>
+                            </div>
                         </div>
                     @endif
                 </div>
