@@ -5,6 +5,10 @@
         </h2>
     </x-slot>
 
+    @php
+        $canUseCargas = $company->hasCompanyRole('Cargas');
+    @endphp
+
     <div class="py-6">
         <!-- Header con información de la empresa -->
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -73,9 +77,13 @@
                     </div>
                     <div class="bg-gray-50 px-5 py-3">
                         <div class="text-sm">
+                            @if($canUseCargas)
                             <a href="{{ route('company.voyages.index') }}" class="font-medium text-blue-700 hover:text-blue-900">
                                 Ver todos los viajes
                             </a>
+                            @else
+                            <span aria-disabled="true" class="font-medium text-gray-500">No habilitado para esta empresa</span>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -99,9 +107,13 @@
                     </div>
                     <div class="bg-gray-50 px-5 py-3">
                         <div class="text-sm">
+                            @if($canUseCargas)
                             <a href="{{ route('company.shipments.index') }}" class="font-medium text-green-700 hover:text-green-900">
                                 Gestionar cargas
                             </a>
+                            @else
+                            <span aria-disabled="true" class="font-medium text-gray-500">No habilitado para esta empresa</span>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -125,9 +137,13 @@
                     </div>
                     <div class="bg-gray-50 px-5 py-3">
                         <div class="text-sm">
+                            @if($canUseCargas)
                             <a href="{{ route('company.manifests.index') }}" class="font-medium text-purple-700 hover:text-purple-900">
                                 Ver manifiestos
                             </a>
+                            @else
+                            <span aria-disabled="true" class="font-medium text-gray-500">No habilitado para esta empresa</span>
+                            @endif
                         </div>
                     </div>
                 </div>
@@ -196,6 +212,7 @@
                 </div>
                 <div class="bg-gray-50 px-5 py-3">
                     <div class="text-sm">
+                        @if($canUseCargas)
                         <a href="{{ route('company.dashboard-estados.index') }}" 
                         class="font-medium text-indigo-700 hover:text-indigo-900 flex items-center">
                             <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -203,6 +220,9 @@
                             </svg>
                             Gestionar Estados
                         </a>
+                        @else
+                        <span aria-disabled="true" class="font-medium text-gray-500">No habilitado para esta empresa</span>
+                        @endif
                     </div>
                     <div class="text-xs text-gray-500 mt-1">
                         Vista consolidada • Cambios masivos • Filtros
@@ -264,7 +284,9 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                                     </svg>
                                     <h3 class="mt-2 text-sm font-medium text-gray-900">Sin actividad reciente</h3>
-                                    <p class="mt-1 text-sm text-gray-500">Comience creando un viaje o carga.</p>
+                                    <p class="mt-1 text-sm text-gray-500">
+                                        {{ $canUseCargas ? 'Comience creando un viaje o carga.' : 'Consultá las funciones habilitadas para tu empresa.' }}
+                                    </p>
                                 </div>
                             </div>
                         </div>
