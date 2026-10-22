@@ -37,16 +37,15 @@ public function handle(Request $request, Closure $next, ...$companyParams): Resp
 
         // Company admin and users need to verify company access
         if ($user->hasRole('company-admin') || $user->hasRole('user')) {
-            // Una empresa solo Desconsolidadora no puede ingresar al circuito
-            // Cargas por URL directa. Clientes y ATA-DESC permanecen accesibles.
+            // Sin el rol Cargas, las empresas de Desconsolidados o Transbordos
+            // solo acceden a sus circuitos y consultas compartidas autorizadas.
             $company = $user->userable_type === \App\Models\Company::class
                 ? $user->userable
                 : ($user->userable_type === \App\Models\Operator::class
                     ? $user->userable?->company
                     : null);
 
-            if ($company && $company->hasCompanyRole('Desconsolidador')
-                && !$company->hasCompanyRole('Cargas')) {
+            if ($company && !$company->hasCompanyRole('Cargas')) {
                 $cargasRoutes = [
                     'company.shipments.*',
                     'company.shipment-items.*',
