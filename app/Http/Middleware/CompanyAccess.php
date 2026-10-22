@@ -37,6 +37,42 @@ public function handle(Request $request, Closure $next, ...$companyParams): Resp
 
         // Company admin and users need to verify company access
         if ($user->hasRole('company-admin') || $user->hasRole('user')) {
+            // Una empresa solo Desconsolidadora no puede ingresar al circuito
+            // Cargas por URL directa. Clientes y ATA-DESC permanecen accesibles.
+            $company = $user->userable_type === \App\Models\Company::class
+                ? $user->userable
+                : ($user->userable_type === \App\Models\Operator::class
+                    ? $user->userable?->company
+                    : null);
+
+            if ($company && $company->hasCompanyRole('Desconsolidador')
+                && !$company->hasCompanyRole('Cargas')) {
+                $cargasRoutes = [
+                    'company.shipments.*',
+                    'company.shipment-items.*',
+                    'company.bills-of-lading.*',
+                    'company.voyages.*',
+                    'company.vessel-owners.*',
+                    'company.vessels.*',
+                    'company.captains.*',
+                    'company.manifests.*',
+                    'company.reports.*',
+                    'company.mane.*',
+                    'company.imports.*',
+                    'company.dashboard-estados.*',
+                    'company.simple.anticipada.*',
+                    'company.simple.manifiesto.*',
+                ];
+
+                if ($request->routeIs(...$cargasRoutes)
+                    || ($request->routeIs('company.simple.micdta.*')
+                        && !$company->hasCompanyRole('Transbordos'))
+                    || ($request->routeIs('company.simple.transbordo.*')
+                        && !$company->hasCompanyRole('Transbordos'))) {
+                    abort(403, 'Este módulo pertenece a Cargas y no está habilitado para su empresa.');
+                }
+            }
+
             $companyId = $this->getCompanyIdFromRequest($request, $companyParams);
             
             \Log::info('CompanyAccess - Company ID from request', ['company_id' => $companyId]);
