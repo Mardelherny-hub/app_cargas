@@ -149,6 +149,36 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * Asocia TRACKs de un RegistrarTitEnvios multibarcaza ya aceptado.
+     * Reutiliza la auditoría y los TRACKs del MIC/DTA existente, pero nunca
+     * ejecuta SOAP, inicia una transmisión ni inventa idEnvio/identificadores.
+     *
+     * El puente contrasta el XML original, la respuesta ARCA y la distribución
+     * real antes de guardar, y rechaza reintentos con asociaciones distintas.
+     * No habilitar hasta que exista un envío multibarcaza certificado.
+     *
+     * @return array<int, WebserviceTrack>
+     */
+    public function reconcileHidroviaTitEnviosTracks(
+        Voyage $voyage,
+        int $billId,
+        int $transactionId
+    ): array {
+        if (!$voyage->exists || $billId < 1 || $transactionId < 1
+            || (int) $voyage->company_id !== (int) $this->company->id) {
+            throw new \InvalidArgumentException('Viaje, conocimiento o transacción ajenos a la empresa.');
+        }
+
+        $transaction = \App\Models\WebserviceTransaction::query()
+            ->where('company_id', $this->company->id)
+            ->where('voyage_id', $voyage->id)
+            ->findOrFail($transactionId);
+
+        return app(HidroviaTransshipmentRecordedTrackService::class)
+            ->persistAcceptedResponse((int) $this->company->id, (int) $transaction->id, $billId);
+    }
+
+    /**
      * MIC/DTA ejecuta varios métodos remotos secuenciales.
      * No envolver toda la secuencia en una transacción DB porque AFIP no
      * participa de esa transacción: cada paso debe conservar su auditoría
