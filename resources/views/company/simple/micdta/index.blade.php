@@ -14,12 +14,17 @@
 
 <x-app-layout>
     <x-slot name="header">
-    @include('company.simple.partials.afip-header', [
-        'voyage'  => $voyage,
-        'company' => $company ?? null,
-        'active'  => 'micdta',
-    ])
-</x-slot>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h2 class="text-xl font-semibold text-gray-800">MIC/DTA Argentina</h2>
+                <p class="mt-1 text-sm text-gray-600">Seleccioná un viaje para consultar o gestionar MIC/DTA.</p>
+            </div>
+            <a href="{{ route('company.simple.dashboard') }}"
+               class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                Volver a Webservices
+            </a>
+        </div>
+    </x-slot>
 
     <div class="py-6">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
