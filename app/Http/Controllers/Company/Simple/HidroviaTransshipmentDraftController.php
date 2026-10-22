@@ -106,6 +106,96 @@ class HidroviaTransshipmentDraftController extends Controller
         ]);
     }
 
+    /**
+     * Confirma y despacha UNA reserva ya preparada hacia homologación ARCA.
+     * El formulario nunca proporciona SOAP, credenciales ni ambiente.
+     * Sin ruta HTTP hasta validar esta acción y habilitarla expresamente.
+     */
+    public function sendHomologation(Request $request, int $voyage, int $bill): JsonResponse
+    {
+        [$voyageRecord, $billRecord, $companyId] = $this->authorizedBill($voyage, $bill);
+        $user = $this->getCurrentUser();
+        abort_unless($user && $this->isCompanyAdmin(), 403);
+
+        $company = $this->getUserCompany();
+        abort_unless($company
+            && \App\Services\Simple\WebserviceEnvironment::resolve($company) === 'testing'
+            && (app()->environment('testing') || app()->environment('production')), 403);
+
+        $data = $request->validate([
+            'transaction_record_id' => ['required', 'integer', 'min:1'],
+            'confirm' => ['required', 'accepted'],
+        ]);
+
+        $transactionId = \Illuminate\Support\Facades\DB::transaction(function () use (
+            $voyageRecord, $billRecord, $companyId, $user, $data, $company
+        ): int {
+            Voyage::query()->where('company_id', $companyId)
+                ->lockForUpdate()->findOrFail($voyageRecord->id);
+
+            $transaction = \App\Models\WebserviceTransaction::query()
+                ->where('company_id', $companyId)
+                ->where('voyage_id', $voyageRecord->id)
+                ->lockForUpdate()->findOrFail((int) $data['transaction_record_id']);
+
+            if ((int) $transaction->shipment_id !== (int) $billRecord->shipment_id
+                || $billRecord->is_transit_transshipment !== 'S'
+                || $billRecord->is_fractional
+                || $transaction->webservice_type !== 'micdta'
+                || $transaction->country !== 'AR'
+                || $transaction->soap_action
+                    !== 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios'
+                || $transaction->environment !== 'testing'
+                || $transaction->webservice_url
+                    !== \App\Services\Simple\WebserviceEnvironment::argentinaEndpoint(
+                        $company, 'wgesregsintia2'
+                    )
+                || $transaction->status !== 'validating'
+                || !$transaction->requires_manual_review
+                || $transaction->reviewer_user_id !== null
+                || $transaction->reviewed_at !== null
+                || $transaction->sent_at !== null
+                || $transaction->response_at !== null
+                || trim((string) $transaction->response_xml) !== ''
+                || trim((string) $transaction->request_xml) === ''
+                || $transaction->is_blocking_error
+                || (int) $transaction->retry_count !== 0
+                || (int) $transaction->max_retries !== 0
+                || $transaction->next_retry_at !== null) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'transaction_record_id' =>
+                        'La reserva no está disponible para homologación o requiere conciliación.',
+                ]);
+            }
+
+            $transaction->update([
+                'requires_manual_review' => false,
+                'reviewer_user_id' => (string) $user->id,
+                'reviewed_at' => now(),
+            ]);
+
+            return (int) $transaction->id;
+        });
+
+        $service = app()->makeWith(\App\Services\Simple\ArgentinaMicDtaService::class, [
+            'company' => $company,
+            'user' => $user,
+        ]);
+        $result = $service->sendReservedHidroviaTitEnviosInQa(
+            $voyageRecord, (int) $billRecord->id, $transactionId, true
+        );
+
+        return response()->json([
+            'success' => (bool) ($result['success'] ?? false),
+            'transaction_record_id' => $transactionId,
+            'requires_manual_review' => (bool) ($result['requires_manual_review'] ?? false),
+            'tracks' => $result['success'] ? ($result['tracks'] ?? []) : [],
+            'message' => $result['success']
+                ? 'Homologación registrada. Revisá los TRACKs devueltos por ARCA.'
+                : 'Resultado no confirmado: revisar la transacción antes de volver a operar.',
+        ], $result['success'] ? 200 : 409);
+    }
+
     /** Empresa y rol provienen del usuario, nunca del formulario. */
     private function authorizedBill(int $voyageId, int $billId): array
     {
