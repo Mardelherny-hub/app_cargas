@@ -61,6 +61,11 @@
                 </div>
             @endif
 
+            @php
+                $canUseCargasWebservices = $company->hasCompanyRole('Cargas');
+                $canUseMicDta = $canUseCargasWebservices || $company->hasCompanyRole('Transbordos');
+            @endphp
+
             {{-- Lista de Viajes con Estados de Webservices --}}
             <div class="bg-white overflow-hidden shadow rounded-lg">
                 <div class="px-4 py-5 sm:p-6">
@@ -72,12 +77,14 @@
                             Viajes Disponibles ({{ $voyages->total() }})
                         </h3>
                         
+                        @if($canUseCargasWebservices)
                         <div class="flex items-center space-x-2">
                             <a href="{{ route('company.voyages.index') }}" 
                             class="text-sm text-indigo-600 hover:text-indigo-900">
                                 Ver todos los voyages
                             </a>
                         </div>
+                        @endif
                     </div>
 
                     @if($voyages->count() > 0)
@@ -153,7 +160,7 @@
                                         
                                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                             {{-- ANTICIPADA - PASO 1 OBLIGATORIO --}}
-                                            <div class="border rounded-lg p-3 bg-gradient-to-br from-indigo-50 to-white min-h-[120px] flex flex-col">
+                                            <div class="border rounded-lg p-3 {{ $canUseCargasWebservices ? 'bg-gradient-to-br from-indigo-50 to-white' : 'bg-gray-50 opacity-75' }} min-h-[120px] flex flex-col">
                                                 <div class="flex items-start justify-between mb-2">
                                                     <div class="flex-1 min-w-0">
                                                         <div class="flex items-center mb-1">
@@ -177,7 +184,11 @@
                                                 </div>
                                                 
                                                 <div class="mt-auto">
-                                                    @if(!$anticipadaStatus || in_array($anticipadaStatus['status'] ?? '', ['pending', 'error']))
+                                                    @if(!$canUseCargasWebservices)
+                                                        <span aria-disabled="true" class="block w-full text-center px-3 py-1.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">
+                                                            No habilitado
+                                                        </span>
+                                                    @elseif(!$anticipadaStatus || in_array($anticipadaStatus['status'] ?? '', ['pending', 'error']))
                                                         <a href="{{ route('company.simple.anticipada.show', $voyage) }}" 
                                                         class="block w-full text-center px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded transition">
                                                             Enviar Ahora
@@ -192,7 +203,7 @@
                                             </div>
 
                                             {{-- MIC/DTA - EXPORTACIÓN (Independiente) --}}
-                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-gradient-to-br from-purple-50 to-white">
+                                            <div class="border rounded-lg p-3 min-h-[120px] flex flex-col {{ $canUseMicDta ? 'bg-gradient-to-br from-purple-50 to-white' : 'bg-gray-50 opacity-75' }}">
                                                 <div class="flex items-start justify-between mb-2">
                                                     <div class="flex-1 min-w-0">
                                                         <div class="flex items-center mb-1">
@@ -222,7 +233,11 @@
                                                 
                                                 <div class="mt-auto">
                                                     <div class="mt-auto">
-                                                        @if(!$micdtaStatus || in_array($micdtaStatus['status'] ?? '', ['pending', 'error']))
+                                                        @if(!$canUseMicDta)
+                                                            <span aria-disabled="true" class="block w-full text-center px-3 py-1.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">
+                                                                No habilitado
+                                                            </span>
+                                                        @elseif(!$micdtaStatus || in_array($micdtaStatus['status'] ?? '', ['pending', 'error']))
                                                             <a href="{{ route('company.simple.micdta.show', $voyage) }}"
                                                             class="block w-full text-center px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded transition">
                                                                 Enviar Ahora
@@ -308,7 +323,7 @@
                                         $canOpenManifiesto = \Illuminate\Support\Facades\Route::has('company.simple.manifiesto.show');
                                     @endphp
 
-                                    <div class="border rounded-lg p-3 bg-white min-h-[120px] flex flex-col">
+                                    <div class="border rounded-lg p-3 {{ $canUseCargasWebservices ? 'bg-white' : 'bg-gray-50 opacity-75' }} min-h-[120px] flex flex-col">
                                         <div class="flex items-start justify-between mb-2">
                                             <div class="flex-1 min-w-0">
                                                 <span class="text-sm font-semibold text-gray-900 block truncate">Manifiesto</span>
@@ -332,7 +347,11 @@
                                         </div>
 
                                         <div class="mt-auto">
-                                            @if($canOpenManifiesto)
+                                            @if(!$canUseCargasWebservices)
+                                                <span aria-disabled="true" class="block w-full text-center px-3 py-1.5 bg-gray-200 text-gray-600 text-xs font-medium rounded">
+                                                    No habilitado
+                                                </span>
+                                            @elseif($canOpenManifiesto)
                                                 <a href="{{ route('company.simple.manifiesto.show', $voyage) }}"
                                                 class="block w-full text-center px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded transition">
                                                     Enviar Ahora
