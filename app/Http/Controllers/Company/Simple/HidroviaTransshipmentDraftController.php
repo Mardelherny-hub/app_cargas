@@ -107,9 +107,108 @@ class HidroviaTransshipmentDraftController extends Controller
     }
 
     /**
+     * Prepara y reserva, SIN TRANSMITIR, un título de carga suelta repartido
+     * entre barcazas. Usa la autenticación del generador MIC/DTA existente.
+     * ATA y lugares operativos se reciben explícitamente por barcaza:
+     * el sistema no los deduce ni crea datos aduaneros.
+     *
+     * Esta acción todavía no tiene ruta HTTP: se habilita en otra intervención.
+     */
+    public function reserveHomologation(Request $request, int $voyage, int $bill): JsonResponse
+    {
+        [$voyageRecord, $billRecord, $companyId] = $this->authorizedBill($voyage, $bill);
+        $user = $this->getCurrentUser();
+        $company = $this->getUserCompany();
+        abort_unless($user && $this->isCompanyAdmin() && $company
+            && \App\Services\Simple\WebserviceEnvironment::resolve($company) === 'testing', 403);
+        abort_unless($billRecord->is_transit_transshipment === 'S' && !$billRecord->is_fractional, 422);
+
+        $data = $request->validate([
+            'customsByShipmentId' => ['required', 'array', 'min:2', 'max:999'],
+            'customsByShipmentId.*.idFiscalATAMIC' => ['required', 'string', 'regex:/^[0-9]{11,14}$/'],
+            'customsByShipmentId.*.lugOperOrigen.codLugOper' => ['required', 'string', 'max:5'],
+            'customsByShipmentId.*.lugOperOrigen.codCiu' => ['required', 'string', 'regex:/^[A-Za-z]{2}[A-Za-z0-9]{3}$/'],
+            'customsByShipmentId.*.lugOperDestino.codLugOper' => ['required', 'string', 'max:7'],
+            'customsByShipmentId.*.lugOperDestino.codCiu' => ['required', 'string', 'regex:/^[A-Za-z]{2}[A-Za-z0-9]{3}$/'],
+        ]);
+
+        // El generador actual emite TODOS los títulos del shipment de origen.
+        // Para esta primera operación, impedir que una reserva incluya otros BL.
+        $origin = $billRecord->shipment;
+        if (!$origin || $origin->billsOfLading()->count() !== 1) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'bill' => 'El generador MIC/DTA requiere un único conocimiento en el embarque de origen.',
+            ]);
+        }
+
+        $billRecord->load('shipmentItems.containers');
+        if ($billRecord->shipmentItems->contains(
+            fn ($item) => $item->containers->isNotEmpty()
+        )) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'bill' => 'Los contenedores requieren homologación específica; no se prepara un envío real.',
+            ]);
+        }
+
+        $prepared = app(HidroviaTransshipmentReadinessService::class)->prepare(
+            $voyageRecord, $companyId, $billRecord
+        );
+        $supplied = $data['customsByShipmentId'];
+        if (count($supplied) !== count($prepared['shipments'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'customsByShipmentId' => 'Los datos aduaneros deben corresponder a todas las barcazas.',
+            ]);
+        }
+        foreach ($prepared['shipments'] as $shipment) {
+            if (!isset($supplied[$shipment['shipment_id']])) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'customsByShipmentId' =>
+                        'Faltan datos ATA y lugares operativos de una barcaza del reparto.',
+                ]);
+            }
+        }
+
+        // Evitar obtener credenciales WSAA si ya hubo una operación MIC/DTA
+        // de este viaje. reserveHidroviaTitEnviosForReview repite el bloqueo
+        // bajo lock en BD para evitar carreras y duplicaciones.
+        $attempted = \App\Models\WebserviceTransaction::query()
+            ->where('company_id', $companyId)
+            ->where('voyage_id', $voyageRecord->id)
+            ->where('webservice_type', 'micdta')
+            ->where('country', 'AR')
+            ->whereIn('soap_action', [
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarTitEnvios',
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarEnvios',
+                'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta',
+            ])->exists();
+        if ($attempted) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'bill' => 'El viaje ya tiene una operación MIC/DTA; se requiere revisión antes de otra reserva.',
+            ]);
+        }
+
+        $service = new \App\Services\Simple\ArgentinaMicDtaService($company, $user);
+        $transactionReference = 'TIT' . bin2hex(random_bytes(6));
+        $template = $service->getXmlSerializer()
+            ->createRegistrarTitEnviosXml($origin, $transactionReference);
+        $transaction = $service->reserveHidroviaTitEnviosForReview(
+            $voyageRecord, $billRecord->id, $template, $supplied
+        );
+
+        // Nunca devolver XML con Token/Sign, ni credenciales WSAA.
+        return response()->json([
+            'transaction_record_id' => (int) $transaction->id,
+            'bill_of_lading_id' => (int) $billRecord->id,
+            'status' => $transaction->status,
+            'shipments_count' => count($prepared['shipments']),
+            'transmitted' => false,
+            'message' => 'Reserva guardada para revisión. No se transmitió a ARCA.',
+        ], 201);
+    }
+
+    /**
      * Confirma y despacha UNA reserva ya preparada hacia homologación ARCA.
      * El formulario nunca proporciona SOAP, credenciales ni ambiente.
-     * Sin ruta HTTP hasta validar esta acción y habilitarla expresamente.
      */
     public function sendHomologation(Request $request, int $voyage, int $bill): JsonResponse
     {
