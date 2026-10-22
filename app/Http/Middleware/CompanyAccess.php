@@ -66,9 +66,17 @@ public function handle(Request $request, Closure $next, ...$companyParams): Resp
                     'company.simple.manifiesto.*',
                 ];
 
-                // ATA-DESC reutiliza este buscador de solo lectura para sus puertos.
+                // Consultas de solo lectura utilizadas por ATA-DESC.
+                // No habilitan importaciones, consultas SOAP ni reintentos.
+                $readonlyHistory = $request->isMethod('GET')
+                    && $request->routeIs(
+                        'company.webservices.history',
+                        'company.webservices.transaction',
+                        'company.webservices.transaction.xml'
+                    );
                 if (($request->routeIs(...$cargasRoutes)
-                    && !$request->routeIs('company.bills-of-lading.ports.search'))
+                    && !$request->routeIs('company.bills-of-lading.ports.search')
+                    && !$readonlyHistory)
                     || ($request->routeIs('company.simple.micdta.*')
                         && !$company->hasCompanyRole('Transbordos'))
                     || ($request->routeIs('company.simple.transbordo.*')
