@@ -58,21 +58,3 @@ Route::middleware(['auth', 'verified', CompanyAccess::class])->group(function ()
 // RUTAS DE UTILIDAD Y DESARROLLO
 // ========================================
 
-// Limpiar caché (producción: restringir a admin)
-Route::get('/clear', function() {
-    \Artisan::call('config:clear');
-    \Artisan::call('config:cache');
-    \Artisan::call('cache:clear');
-    \Artisan::call('route:clear');
-    \Artisan::call('view:clear');
-    \Artisan::call('event:clear');
-    \Artisan::call('clear-compiled');
-    \Artisan::call('optimize:clear');
-    return "Cache is cleared";
-});
-
-// Crear symlink de storage
-Route::get('/symlink', function () {
-    \Artisan::call('storage:link');
-    return 'The storage link has been created!';
-});
