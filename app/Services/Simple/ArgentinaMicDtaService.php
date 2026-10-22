@@ -149,6 +149,88 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * Reserva exclusivamente para QA/revisión la solicitud multibarcaza.
+     * Persiste el SOAP exacto ANTES de un posible envío posterior, sin llamar
+     * al webservice y sin dejarla apta para reintentos automáticos.
+     *
+     * El bloqueo de voyage se comparte con replaceDraft(): después de esta
+     * reserva no puede cambiarse el reparto ni crearse otra operación del
+     * mismo viaje por este método. La habilitación SOAP sigue separada.
+     */
+    public function reserveHidroviaTitEnviosForReview(
+        Voyage $voyage,
+        int $billId,
+        string $templateSoapXml,
+        array $customsByShipmentId
+    ): \App\Models\WebserviceTransaction {
+        if (!$voyage->exists || $billId < 1 || !$this->user->id
+            || (int) $voyage->company_id !== (int) $this->company->id) {
+            throw new \InvalidArgumentException('Viaje, conocimiento o usuario no autorizados.');
+        }
+
+        return DB::transaction(function () use (
+            $voyage, $billId, $templateSoapXml, $customsByShipmentId
+        ) {
+            Voyage::query()->where('company_id', $this->company->id)
+                ->lockForUpdate()->findOrFail($voyage->id);
+
+            // Incluye resultados inciertos, cancelaciones y errores: el estado
+            // local no demuestra que Aduana NO haya recibido el título.
+            $alreadyAttempted = \App\Models\WebserviceTransaction::query()
+                ->where('company_id', $this->company->id)
+                ->where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->whereIn('soap_action', [
+                    $this->config['soap_action_titenvios'],
+                    $this->config['soap_action_envios'],
+                    $this->config['soap_action_micdta'],
+                ])->exists();
+            if ($alreadyAttempted) {
+                throw new \InvalidArgumentException(
+                    'El viaje ya registra un intento MIC/DTA. No se reserva otro envío automático.'
+                );
+            }
+
+            // Reutiliza el preflight y el ensamblador revisados; no se acepta
+            // un XML multibarcaza arbitrario aportado por el consumidor.
+            $review = $this->prepareHidroviaTitEnviosForReview(
+                $voyage, $billId, $templateSoapXml, $customsByShipmentId
+            );
+            $xml = new \DOMDocument();
+            if (!@$xml->loadXML($review['soap_xml_for_review'], LIBXML_NONET)) {
+                throw new \InvalidArgumentException('SOAP multibarcaza inválido para reservar.');
+            }
+            $xpath = new \DOMXPath($xml);
+            $ids = $xpath->query('//*[local-name()="argRegistrarTitEnviosParam"]'
+                . '/*[local-name()="idTransaccion"]');
+            if ($ids->length !== 1 || trim($ids->item(0)->textContent) === '') {
+                throw new \InvalidArgumentException('Falta la transacción real del SOAP multibarcaza.');
+            }
+            $bill = $voyage->billsOfLading()->findOrFail($billId);
+
+            return \App\Models\WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'voyage_id' => $voyage->id,
+                'shipment_id' => $bill->shipment_id,
+                'transaction_id' => trim($ids->item(0)->textContent),
+                'webservice_type' => 'micdta',
+                'country' => 'AR',
+                'soap_action' => $this->config['soap_action_titenvios'],
+                'webservice_url' => $this->config['webservice_url'],
+                'environment' => $this->config['environment'],
+                'request_xml' => $review['soap_xml_for_review'],
+                'status' => 'validating',
+                'requires_manual_review' => true,
+                'max_retries' => 0,
+                'retry_count' => 0,
+                'next_retry_at' => null,
+            ]);
+        });
+    }
+
+    /**
      * Asocia TRACKs de un RegistrarTitEnvios multibarcaza ya aceptado.
      * Reutiliza la auditoría y los TRACKs del MIC/DTA existente, pero nunca
      * ejecuta SOAP, inicia una transmisión ni inventa idEnvio/identificadores.
