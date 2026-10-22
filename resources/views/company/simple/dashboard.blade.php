@@ -47,6 +47,7 @@
                 </div>
             @endif
 
+
             {{-- Acceso directo a la preparación de Transbordos, independiente de Anticipada. --}}
             @if($company->hasCompanyRole('Transbordos'))
                 <div class="mb-6 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -65,6 +66,7 @@
                 $canUseCargasWebservices = $company->hasCompanyRole('Cargas');
                 $canUseMicDta = $canUseCargasWebservices || $company->hasCompanyRole('Transbordos');
             @endphp
+
 
             {{-- Lista de Viajes con Estados de Webservices --}}
             <div class="bg-white overflow-hidden shadow rounded-lg">
@@ -95,14 +97,12 @@
                                     $anticipadaStatus = $voyage->webservice_stats['anticipada'] ?? null;
                                     $micdtaStatus = $voyage->webservice_stats['micdta'] ?? null;
                                     $desconsolidadoStatus = $voyage->webservice_stats['desconsolidado'] ?? null;
-                                    $transbordoStatus = $voyage->webservice_stats['transbordo'] ?? null;
                                     $manifiestoStatus = $voyage->webservice_stats['manifiesto'] ?? null;
                                     
                                     // Cada webservice es independiente - NO hay dependencias obligatorias
                                     $anticipadaEnviada = $anticipadaStatus && in_array($anticipadaStatus['status'], ['sent', 'approved']);
                                     $micdtaHabilitado = true; // MIC/DTA siempre habilitado (exportación)
                                     $desconsolidadoHabilitado = true; // Independiente
-                                    $transbordoHabilitado = true; // Independiente
                                     // Definir colores de estados
                                     $statusColors = [
                                         'pending' => 'bg-yellow-100 text-yellow-800',
@@ -158,7 +158,7 @@
                                             <span class="ml-2 text-xs text-gray-500">(Secuencia obligatoria)</span>
                                         </div>
                                         
-                                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                             {{-- ANTICIPADA - PASO 1 OBLIGATORIO --}}
                                             <div class="border rounded-lg p-3 {{ $canUseCargasWebservices ? 'bg-gradient-to-br from-indigo-50 to-white' : 'bg-gray-50 opacity-75' }} min-h-[120px] flex flex-col">
                                                 <div class="flex items-start justify-between mb-2">
@@ -252,6 +252,7 @@
                                                 </div>
                                             </div>
 
+
                                             {{-- ATA-DESC es independiente del viaje; solo se enlaza al expediente. --}}
                                             <div class="border rounded-lg p-3 min-h-[120px] flex flex-col bg-white">
                                                 <div class="flex items-start justify-between gap-2 mb-2">
@@ -306,6 +307,7 @@
                                                     @endif
                                                 </div>
                                             </div>
+
                                         </div>
                                     </div>
 

@@ -363,6 +363,68 @@
             @endphp
 
 
+            {{-- Distribución Hidrovía dentro del mismo viaje MIC/DTA, sin otro listado de viajes. --}}
+            @php
+                $transshipmentBills = $voyage->shipments
+                    ->flatMap(fn ($shipment) => $shipment->billsOfLading)
+                    ->filter(fn ($bill) => $bill->is_transit_transshipment === 'S')
+                    ->unique('id');
+                $transshipmentBarges = $voyage->shipments->filter(
+                    fn ($shipment) => $shipment->vessel?->vesselType?->category === 'barge'
+                )->count();
+                $transshipmentAuthorized = $company->hasCompanyRole('Transbordos');
+            @endphp
+            @if($transshipmentBills->isNotEmpty())
+                <section class="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-5" aria-label="Distribución de Transbordos">
+                    <h3 class="font-semibold text-blue-900">Distribución de Transbordos — viaje {{ $voyage->voyage_number }}</h3>
+                    <p class="mt-1 text-sm text-blue-800">
+                        Prepará los conocimientos de este viaje entre las barcazas existentes.
+                        La distribución se guarda en borrador y se valida aquí; todavía no se transmite a ARCA.
+                    </p>
+                    <div class="mt-4 divide-y divide-blue-100 rounded-md border border-blue-100 bg-white">
+                        @foreach($transshipmentBills as $transshipmentBill)
+                            @php
+                                $canDistribute = $transshipmentAuthorized
+                                    && $transshipmentBarges >= 2
+                                    && !$transshipmentBill->is_fractional
+                                    && $transshipmentBill->canBeEdited();
+                            @endphp
+                            <div class="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <span class="text-sm font-semibold text-gray-900">Conocimiento {{ $transshipmentBill->bill_number }}</span>
+                                    <p class="text-xs text-gray-600">
+                                        @if(!$transshipmentAuthorized)
+                                            La empresa no tiene habilitado el permiso Transbordos.
+                                        @elseif($transshipmentBarges < 2)
+                                            Faltan al menos dos barcazas registradas en el viaje.
+                                        @elseif($transshipmentBill->is_fractional)
+                                            El transbordo fraccionado todavía no está implementado.
+                                        @elseif(!$transshipmentBill->canBeEdited())
+                                            Este conocimiento ya no permite editar la distribución.
+                                        @else
+                                            Disponible para distribuir entre {{ $transshipmentBarges }} barcazas.
+                                        @endif
+                                    </p>
+                                </div>
+                                @if($canDistribute)
+                                    <a href="{{ route('company.simple.transbordo.drafts.edit', ['voyage' => $voyage->id, 'bill' => $transshipmentBill->id]) }}"
+                                       class="shrink-0 rounded-md bg-blue-700 px-3 py-2 text-center text-sm font-semibold text-white hover:bg-blue-800">
+                                        Distribuir entre barcazas
+                                    </a>
+                                @else
+                                    <span class="shrink-0 rounded-md bg-gray-100 px-3 py-2 text-center text-xs text-gray-600">Distribución no disponible</span>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                    <p class="mt-3 text-sm font-medium text-amber-900">
+                        Los métodos convencionales RegistrarTitEnvios, RegistrarEnvios y RegistrarMicDta
+                        no admiten todavía la distribución multibarcaza. Su transmisión permanece bloqueada
+                        para este viaje; podés seguir preparando y validando las asignaciones.
+                    </p>
+                </section>
+            @endif
+
             {{-- Panel de Métodos AFIP --}}
             <div class="bg-white shadow-sm rounded-lg">
                 <div class="px-6 py-4 border-b border-gray-200">
@@ -430,12 +492,20 @@
 
                             <div class="flex flex-col bg-white border-2 {{ $requisitosCompletos ? 'border-blue-300' : 'border-yellow-300' }} rounded-lg overflow-hidden">
                                 {{-- Botón principal --}}
-                                <button onclick="executeAfipMethod('RegistrarTitEnvios')"
-                                        class="flex flex-col items-center justify-center p-4 hover:bg-blue-50 transition-colors">
-                                    <span class="text-2xl mb-2">📋</span>
-                                    <span class="text-sm font-medium text-center">1. RegistrarTitEnvios</span>
-                                    <span class="text-xs text-gray-600 text-center mt-1">Registra títulos de transporte</span>
-                                </button>
+                                @if($transshipmentBills->isNotEmpty())
+                                    <div class="flex flex-col items-center justify-center p-4 bg-gray-100 text-gray-600" role="status">
+                                        <span class="text-2xl mb-2">📋</span>
+                                        <span class="text-sm font-medium text-center">1. RegistrarTitEnvios</span>
+                                        <span class="text-xs text-center mt-1">Envío convencional no habilitado para este viaje con Transbordos</span>
+                                    </div>
+                                @else
+                                    <button onclick="executeAfipMethod('RegistrarTitEnvios')"
+                                            class="flex flex-col items-center justify-center p-4 hover:bg-blue-50 transition-colors">
+                                        <span class="text-2xl mb-2">📋</span>
+                                        <span class="text-sm font-medium text-center">1. RegistrarTitEnvios</span>
+                                        <span class="text-xs text-gray-600 text-center mt-1">Registra títulos de transporte</span>
+                                    </button>
+                                @endif
                                 
                                 {{-- Panel de información --}}
                                 <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs space-y-1">
@@ -602,12 +672,20 @@
 
                             <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarEnvios ? 'border-blue-300' : 'border-gray-300' }} rounded-lg overflow-hidden">
                                 {{-- Botón principal --}}
-                                <button onclick="{{ $puedeEjecutarEnvios ? "executeAfipMethod('RegistrarEnvios')" : "showRequisitosPrevios('RegistrarEnvios')" }}"
-                                        class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarEnvios ? 'hover:bg-blue-50' : 'bg-gray-50 cursor-not-allowed' }} transition-colors">
-                                    <span class="text-2xl mb-2">📦</span>
-                                    <span class="text-sm font-medium text-center {{ !$puedeEjecutarEnvios ? 'text-gray-500' : '' }}">2. RegistrarEnvios</span>
-                                    <span class="text-xs text-gray-600 text-center mt-1">Agrega envíos a título existente</span>
-                                </button>
+                                @if($transshipmentBills->isNotEmpty())
+                                    <div class="flex flex-col items-center justify-center bg-gray-100 p-4 text-gray-600" role="status">
+                                        <span class="text-2xl mb-2">📦</span>
+                                        <span class="text-sm font-medium text-center">2. RegistrarEnvios</span>
+                                        <span class="text-xs text-center mt-1">Envío convencional no habilitado para este viaje con Transbordos</span>
+                                    </div>
+                                @else
+                                    <button onclick="{{ $puedeEjecutarEnvios ? "executeAfipMethod('RegistrarEnvios')" : "showRequisitosPrevios('RegistrarEnvios')" }}"
+                                            class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarEnvios ? 'hover:bg-blue-50' : 'bg-gray-50 cursor-not-allowed' }} transition-colors">
+                                        <span class="text-2xl mb-2">📦</span>
+                                        <span class="text-sm font-medium text-center {{ !$puedeEjecutarEnvios ? 'text-gray-500' : '' }}">2. RegistrarEnvios</span>
+                                        <span class="text-xs text-gray-600 text-center mt-1">Agrega envíos a título existente</span>
+                                    </button>
+                                @endif
                                 
                                 {{-- Panel de información --}}
                                 <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs space-y-1">
@@ -753,12 +831,20 @@
 
                             <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarMicDta ? 'border-blue-300' : 'border-yellow-300' }} rounded-lg overflow-hidden">
                                 {{-- Botón principal --}}
-                                <button onclick="{{ $puedeEjecutarMicDta ? "executeAfipMethod('RegistrarMicDta')" : "showRequisitosPrevios('RegistrarMicDta')" }}"
-                                        class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarMicDta ? 'hover:bg-blue-50' : 'bg-gray-50' }} transition-colors">
-                                    <span class="text-2xl mb-2">📄</span>
-                                    <span class="text-sm font-medium text-center {{ !$puedeEjecutarMicDta ? 'text-gray-500' : '' }}">3. RegistrarMicDta</span>
-                                    <span class="text-xs text-gray-600 text-center mt-1">Genera MIC/DTA oficial</span>
-                                </button>
+                                @if($transshipmentBills->isNotEmpty())
+                                    <div class="flex flex-col items-center justify-center bg-gray-100 p-4 text-gray-600" role="status">
+                                        <span class="text-2xl mb-2">📄</span>
+                                        <span class="text-sm font-medium text-center">3. RegistrarMicDta</span>
+                                        <span class="text-xs text-center mt-1">Envío convencional no habilitado para este viaje con Transbordos</span>
+                                    </div>
+                                @else
+                                    <button onclick="{{ $puedeEjecutarMicDta ? "executeAfipMethod('RegistrarMicDta')" : "showRequisitosPrevios('RegistrarMicDta')" }}"
+                                            class="flex flex-col items-center justify-center p-4 {{ $puedeEjecutarMicDta ? 'hover:bg-blue-50' : 'bg-gray-50' }} transition-colors">
+                                        <span class="text-2xl mb-2">📄</span>
+                                        <span class="text-sm font-medium text-center {{ !$puedeEjecutarMicDta ? 'text-gray-500' : '' }}">3. RegistrarMicDta</span>
+                                        <span class="text-xs text-gray-600 text-center mt-1">Genera MIC/DTA oficial</span>
+                                    </button>
+                                @endif
                                 
                                 {{-- Panel de información --}}
                                 <div class="px-3 py-2 bg-gray-50 border-t border-blue-200 text-xs space-y-1">

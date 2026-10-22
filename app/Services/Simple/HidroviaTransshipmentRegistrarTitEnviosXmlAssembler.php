@@ -169,6 +169,79 @@ final class HidroviaTransshipmentRegistrarTitEnviosXmlAssembler
         return $xml->saveXML();
     }
 
+    /**
+     * Candidato EXCLUSIVO para QA: contenedores no fraccionados.
+     *
+     * El WSDL obliga a informar ambos contadores, aunque el manual indica
+     * omitir cantBultos para contenedores de transbordo. Los valores 0/1
+     * tienen antecedente de aceptación en Stage para títulos de UN envío,
+     * no para multibarcaza. Esto NO certifica aceptación aduanera.
+     *
+     * No altera assemble(), el MIC/DTA convencional ni transmite SOAP.
+     */
+    public function assembleContainerHomologationCandidate(
+        string $templateSoapXml,
+        BillOfLading $bill,
+        array $prepared,
+        array $customsByShipmentId
+    ): string {
+        if (!app()->environment('testing')) {
+            throw new InvalidArgumentException('El candidato de contenedores es sólo para QA local.');
+        }
+
+        $xml = $this->parse($this->assemble(
+            $templateSoapXml, $bill, $prepared, $customsByShipmentId
+        ));
+        $body = $this->child($xml->documentElement, 'Body', self::SOAP_NS);
+        $operation = $this->child($body, 'RegistrarTitEnvios', self::ARCA_NS);
+        $params = $this->child($operation, 'argRegistrarTitEnviosParam', self::ARCA_NS);
+        $titles = $this->child($params, 'titulosTransEnvios', self::ARCA_NS);
+        $title = $this->child($titles, 'TitTransEnvio', self::ARCA_NS);
+        $envios = $this->children($this->child($title, 'envios', self::ARCA_NS),
+            'Envio', self::ARCA_NS);
+        if (count($envios) !== count($prepared['shipments'] ?? [])) {
+            throw new InvalidArgumentException('El candidato no coincide con las barcazas preparadas.');
+        }
+
+        $numbers = [];
+        foreach ($envios as $index => $envio) {
+            $lines = $prepared['shipments'][$index]['lines'] ?? [];
+            $destinations = $this->child($envio, 'destinaciones', self::ARCA_NS);
+            $destination = $this->child($destinations, 'Destinacion', self::ARCA_NS);
+            $bultos = $this->children(
+                $this->child($destination, 'bultos', self::ARCA_NS), 'Bulto', self::ARCA_NS
+            );
+            if (count($bultos) !== count($lines) || $bultos === []) {
+                throw new InvalidArgumentException('Cada contenedor debe tener un Bulto real.');
+            }
+            foreach ($bultos as $position => $bulto) {
+                if (empty($lines[$position]['container_id'])
+                    || trim($this->child($bulto, 'codTipEmbalaje', self::ARCA_NS)->textContent) !== 'CN'
+                    || trim($this->child($bulto, 'indCargSuelt', self::ARCA_NS)->textContent) !== 'N'
+                    || $this->optionalChild($bulto, 'marcaNro', self::ARCA_NS) !== null
+                    || $this->optionalChild($bulto, 'cantBultos', self::ARCA_NS) !== null
+                    || $this->optionalChild($bulto, 'cantBultosTotFrac', self::ARCA_NS) !== null) {
+                    throw new InvalidArgumentException('El candidato sólo admite contenedores de carga identificados.');
+                }
+                $number = trim($this->child($bulto, 'idContenedor', self::ARCA_NS)->textContent);
+                if ($number === '' || isset($numbers[$number])) {
+                    throw new InvalidArgumentException('El candidato tiene un contenedor repetido o vacío.');
+                }
+                $numbers[$number] = true;
+
+                // Cada Bulto representa exactamente un idContenedor, no el
+                // número de paquetes internos ni los totales del conocimiento.
+                $weight = $this->child($bulto, 'pesoBruto', self::ARCA_NS);
+                $bulto->insertBefore($xml->createElementNS(self::ARCA_NS,
+                    'cantBultos', '0'), $weight);
+                $bulto->insertBefore($xml->createElementNS(self::ARCA_NS,
+                    'cantBultosTotFrac', '1'), $weight);
+            }
+        }
+
+        return $xml->saveXML();
+    }
+
     private function parse(string $xml): DOMDocument
     {
         $document = new DOMDocument();

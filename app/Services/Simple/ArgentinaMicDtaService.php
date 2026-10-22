@@ -83,6 +83,443 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
+     * Impide transmitir por el flujo convencional títulos de Transbordos.
+     * Los viajes persistidos se verifican siempre contra la BD, no contra
+     * relaciones cargadas parcialmente en una vista.
+     */
+    private function requiresHidroviaTransshipmentFlow(Voyage $voyage): bool
+    {
+        if ($voyage->exists) {
+            return $voyage->billsOfLading()
+                ->where('is_transit_transshipment', 'S')
+                ->exists();
+        }
+
+        // Sólo para instancias sintéticas no persistidas usadas en QA local.
+        return $voyage->relationLoaded('billsOfLading')
+            && $voyage->billsOfLading->contains(
+                fn ($bill) => $bill->is_transit_transshipment === 'S'
+            );
+    }
+
+    /**
+     * Prepara en el servicio MIC/DTA un RegistrarTitEnvios multibarcaza
+     * sólo para revisión técnica. La plantilla SOAP es suministrada por el
+     * generador existente: no se solicitan credenciales, no se crea una
+     * transacción y NUNCA se ejecuta una llamada SOAP desde aquí.
+     *
+     * No exponer el XML autenticado en una respuesta pública; se conserva
+     * bloqueado el envío real mientras falte homologación aduanera.
+     *
+     * @return array<string, mixed>
+     */
+    public function prepareHidroviaTitEnviosForReview(
+        Voyage $voyage,
+        int $billId,
+        string $templateSoapXml,
+        array $customsByShipmentId
+    ): array {
+        if (!$voyage->exists || $billId < 1
+            || (int) $voyage->company_id !== (int) $this->company->id) {
+            throw new \InvalidArgumentException('El viaje o conocimiento de transbordo no pertenece a la empresa.');
+        }
+
+        $bill = $voyage->billsOfLading()
+            ->where('is_transit_transshipment', 'S')
+            ->findOrFail($billId);
+        $bill->load(['shipmentItems.packagingType', 'shipmentItems.containers']);
+
+        // Recalcular desde asignaciones persistidas; nunca aceptar un reparto
+        // inventado por quien solicita la preparación.
+        $prepared = app(HidroviaTransshipmentReadinessService::class)
+            ->prepare($voyage, (int) $this->company->id, $bill);
+        $expected = app(HidroviaTransshipmentTrackExpectationBuilder::class)
+            ->fromPrepared($bill, $prepared);
+        $xml = app(HidroviaTransshipmentRegistrarTitEnviosXmlAssembler::class)
+            ->assemble($templateSoapXml, $bill, $prepared, $customsByShipmentId);
+
+        return [
+            'voyage_id' => (int) $voyage->id,
+            'bill_of_lading_id' => (int) $bill->id,
+            'soap_xml_for_review' => $xml,
+            'expected_envios' => $expected,
+            'transmitted' => false,
+            'transmittable' => false,
+        ];
+    }
+
+    /**
+     * Reserva exclusivamente para QA/revisión la solicitud multibarcaza.
+     * Persiste el SOAP exacto ANTES de un posible envío posterior, sin llamar
+     * al webservice y sin dejarla apta para reintentos automáticos.
+     *
+     * El bloqueo de voyage se comparte con replaceDraft(): después de esta
+     * reserva no puede cambiarse el reparto ni crearse otra operación del
+     * mismo viaje por este método. La habilitación SOAP sigue separada.
+     */
+    public function reserveHidroviaTitEnviosForReview(
+        Voyage $voyage,
+        int $billId,
+        string $templateSoapXml,
+        array $customsByShipmentId
+    ): \App\Models\WebserviceTransaction {
+        if (!$voyage->exists || $billId < 1 || !$this->user->id
+            || (int) $voyage->company_id !== (int) $this->company->id) {
+            throw new \InvalidArgumentException('Viaje, conocimiento o usuario no autorizados.');
+        }
+
+        return DB::transaction(function () use (
+            $voyage, $billId, $templateSoapXml, $customsByShipmentId
+        ) {
+            Voyage::query()->where('company_id', $this->company->id)
+                ->lockForUpdate()->findOrFail($voyage->id);
+
+            // Incluye resultados inciertos, cancelaciones y errores: el estado
+            // local no demuestra que Aduana NO haya recibido el título.
+            $alreadyAttempted = \App\Models\WebserviceTransaction::query()
+                ->where('company_id', $this->company->id)
+                ->where('voyage_id', $voyage->id)
+                ->where('webservice_type', 'micdta')
+                ->where('country', 'AR')
+                ->whereIn('soap_action', [
+                    $this->config['soap_action_titenvios'],
+                    $this->config['soap_action_envios'],
+                    $this->config['soap_action_micdta'],
+                ])->exists();
+            if ($alreadyAttempted) {
+                throw new \InvalidArgumentException(
+                    'El viaje ya registra un intento MIC/DTA. No se reserva otro envío automático.'
+                );
+            }
+
+            // Reutiliza el preflight y el ensamblador revisados; no se acepta
+            // un XML multibarcaza arbitrario aportado por el consumidor.
+            $review = $this->prepareHidroviaTitEnviosForReview(
+                $voyage, $billId, $templateSoapXml, $customsByShipmentId
+            );
+            $xml = new \DOMDocument();
+            if (!@$xml->loadXML($review['soap_xml_for_review'], LIBXML_NONET)) {
+                throw new \InvalidArgumentException('SOAP multibarcaza inválido para reservar.');
+            }
+            $xpath = new \DOMXPath($xml);
+            $ids = $xpath->query('//*[local-name()="argRegistrarTitEnviosParam"]'
+                . '/*[local-name()="idTransaccion"]');
+            if ($ids->length !== 1 || trim($ids->item(0)->textContent) === '') {
+                throw new \InvalidArgumentException('Falta la transacción real del SOAP multibarcaza.');
+            }
+            $bill = $voyage->billsOfLading()->findOrFail($billId);
+
+            return \App\Models\WebserviceTransaction::create([
+                'company_id' => $this->company->id,
+                'user_id' => $this->user->id,
+                'voyage_id' => $voyage->id,
+                'shipment_id' => $bill->shipment_id,
+                'transaction_id' => trim($ids->item(0)->textContent),
+                'webservice_type' => 'micdta',
+                'country' => 'AR',
+                'soap_action' => $this->config['soap_action_titenvios'],
+                'webservice_url' => $this->config['webservice_url'],
+                'environment' => $this->config['environment'],
+                'request_xml' => $review['soap_xml_for_review'],
+                'status' => 'validating',
+                'requires_manual_review' => true,
+                'max_retries' => 0,
+                'retry_count' => 0,
+                'next_retry_at' => null,
+            ]);
+        });
+    }
+
+    /**
+     * Reclama UNA sola vez una reserva revisada para el futuro transporte QA.
+     *
+     * No llama a SOAP ni declara que la solicitud fue enviada. El estado
+     * sending bloquea cualquier repetición incluso si el proceso se interrumpe
+     * antes de recibir respuesta. Queda pendiente la conciliación manual.
+     *
+     * APP_ENV=testing opera como antes. En un servidor Laravel production
+     * sólo se admite homologación con autorización INTERNA explícita,
+     * empresa testing y endpoint de prueba exacto. No es una opción HTTP.
+     */
+    public function claimHidroviaTitEnviosForQaDispatch(
+        Voyage $voyage,
+        int $transactionId,
+        bool $allowHostedHomologation = false
+    ): \App\Models\WebserviceTransaction {
+        if (!$this->canDispatchHidroviaHomologation($allowHostedHomologation)
+            || !$voyage->exists || $transactionId < 1
+            || (int) $voyage->company_id !== (int) $this->company->id) {
+            throw new \InvalidArgumentException('Despacho de transbordos no habilitado. Sólo QA local.');
+        }
+
+        return DB::transaction(function () use ($voyage, $transactionId) {
+            Voyage::query()->where('company_id', $this->company->id)
+                ->lockForUpdate()->findOrFail($voyage->id);
+
+            $transaction = \App\Models\WebserviceTransaction::query()
+                ->where('company_id', $this->company->id)
+                ->where('voyage_id', $voyage->id)
+                ->lockForUpdate()->findOrFail($transactionId);
+
+            if ($transaction->status !== 'validating'
+                || $transaction->webservice_type !== 'micdta'
+                || $transaction->country !== 'AR'
+                || $transaction->soap_action !== $this->config['soap_action_titenvios']
+                || $transaction->environment !== 'testing'
+                || $transaction->webservice_url !== $this->config['webservice_url']
+                || $transaction->requires_manual_review
+                || !$transaction->reviewer_user_id || !$transaction->reviewed_at
+                || $transaction->is_blocking_error
+                || (int) $transaction->retry_count !== 0 || (int) $transaction->max_retries !== 0
+                || $transaction->next_retry_at !== null
+                || $transaction->sent_at !== null || $transaction->response_at !== null
+                || trim((string) $transaction->response_xml) !== '') {
+                throw new \InvalidArgumentException(
+                    'Reserva no aprobada o con intento anterior: requiere conciliación manual.'
+                );
+            }
+
+            $xml = new \DOMDocument();
+            if (!@$xml->loadXML((string) $transaction->request_xml, LIBXML_NONET)) {
+                throw new \InvalidArgumentException('Falta el SOAP original de la reserva.');
+            }
+            $xpath = new \DOMXPath($xml);
+            $ids = $xpath->query('//*[local-name()="RegistrarTitEnvios"]'
+                . '/*[local-name()="argRegistrarTitEnviosParam"]'
+                . '/*[local-name()="idTransaccion"]');
+            if ($ids->length !== 1
+                || trim($ids->item(0)->textContent) !== $transaction->transaction_id) {
+                throw new \InvalidArgumentException('La transacción reservada no coincide con el XML.');
+            }
+
+            $transaction->update([
+                'status' => 'sending',
+                'requires_manual_review' => true,
+                'is_blocking_error' => true,
+                'next_retry_at' => null,
+            ]);
+
+            return $transaction->refresh();
+        });
+    }
+
+    /**
+     * El ambiente aduanero depende de la empresa, no de APP_ENV.
+     * La autorización adicional permite homologar desde un Stage alojado
+     * con Laravel en modo production sin abrir jamás el endpoint productivo.
+     */
+    private function canDispatchHidroviaHomologation(bool $allowHostedHomologation): bool
+    {
+        return (app()->environment('testing')
+                || ($allowHostedHomologation && app()->environment('production')))
+            && WebserviceEnvironment::resolve($this->company) === 'testing'
+            && $this->config['environment'] === 'testing'
+            && $this->config['webservice_url'] === WebserviceEnvironment::argentinaEndpoint(
+                $this->company, 'wgesregsintia2'
+            )
+            && parse_url($this->config['webservice_url'], PHP_URL_SCHEME) === 'https'
+            && parse_url($this->config['webservice_url'], PHP_URL_HOST)
+                === 'wsaduhomoext.afip.gob.ar';
+    }
+
+    /**
+     * Transmite UNA reserva de transbordo al servicio de homologación.
+     * No expuesto a rutas HTTP. Nunca usa el flujo MIC/DTA convencional.
+     *
+     * La reserva ya debe estar revisada; cualquier corte, rechazo o respuesta
+     * ambigua deja la transacción bloqueada para conciliación manual.
+     * Los TRACKs sólo se confirman con el validador existente.
+     *
+     * @return array<string, mixed>
+     */
+    public function sendReservedHidroviaTitEnviosInQa(
+        Voyage $voyage,
+        int $billId,
+        int $transactionId,
+        bool $allowHostedHomologation = false
+    ): array {
+        if (!$this->canDispatchHidroviaHomologation($allowHostedHomologation)) {
+            throw new \InvalidArgumentException(
+                'Transbordos sólo permite el servicio de homologación en QA local.'
+            );
+        }
+
+        // Evitar que el XML de contenedores no homologado llegue a ARCA.
+        $reserved = \App\Models\WebserviceTransaction::query()
+            ->where('company_id', $this->company->id)
+            ->where('voyage_id', $voyage->id)
+            ->findOrFail($transactionId);
+        $bill = $voyage->billsOfLading()
+            ->where('is_transit_transshipment', 'S')->findOrFail($billId);
+        if ((int) $reserved->shipment_id !== (int) $bill->shipment_id) {
+            throw new \InvalidArgumentException('La reserva no pertenece al conocimiento elegido.');
+        }
+        // Validar la distribución ACTUAL antes de iniciar el transporte.
+        $prepared = app(HidroviaTransshipmentReadinessService::class)
+            ->prepare($voyage, (int) $this->company->id, $bill);
+        $request = new \DOMDocument();
+        if (!@$request->loadXML((string) $reserved->request_xml, LIBXML_NONET)) {
+            throw new \InvalidArgumentException('Falta el XML original de la reserva.');
+        }
+        $xpath = new \DOMXPath($request);
+        $titles = $xpath->query('//*[local-name()="titulosTransEnvios"]'
+            . '/*[local-name()="TitTransEnvio"]');
+        if ($titles->length !== 1
+            || trim($xpath->evaluate('string(./*[local-name()="idTitTrans"])', $titles->item(0)))
+                !== trim((string) $bill->bill_number)
+            || $xpath->query('./*[local-name()="envios"]/*[local-name()="Envio"]', $titles->item(0))->length
+                !== count($prepared['shipments'])) {
+            throw new \InvalidArgumentException('Título o barcazas del SOAP distintos del reparto actual.');
+        }
+        if ($xpath->query('//*[local-name()="Bulto"]/*[local-name()="idContenedor"]')->length > 0) {
+            throw new \InvalidArgumentException(
+                'Transbordo contenedorizado pendiente de validación del contrato XSD.'
+            );
+        }
+
+        // La revisión anterior no reemplaza la validación final del SOAP
+        // guardado. Rechazar XML incompleto ANTES de reclamar o llamar a ARCA.
+        $operations = $xpath->query(
+            '/*[local-name()="Envelope" and namespace-uri()="http://schemas.xmlsoap.org/soap/envelope/"]'
+            . '/*[local-name()="Body"]/*[local-name()="RegistrarTitEnvios"'
+            . ' and namespace-uri()="Ar.Gob.Afip.Dga.wgesregsintia2"]'
+        );
+        if ($operations->length !== 1) {
+            throw new \InvalidArgumentException('La reserva no contiene un único RegistrarTitEnvios válido.');
+        }
+        $previousLibxml = libxml_use_internal_errors(true);
+        try {
+            $wsdl = new \DOMDocument();
+            if (!$wsdl->load(base_path('wgesregsintia2.wsdl'), LIBXML_NONET)) {
+                throw new \InvalidArgumentException('No se pudo verificar el WSDL local de MIC/DTA.');
+            }
+            $wsdlXpath = new \DOMXPath($wsdl);
+            $wsdlXpath->registerNamespace('xsd', 'http://www.w3.org/2001/XMLSchema');
+            $schemas = $wsdlXpath->query(
+                '//xsd:schema[@targetNamespace="Ar.Gob.Afip.Dga.wgesregsintia2"]'
+            );
+            if ($schemas->length !== 1) {
+                throw new \InvalidArgumentException('No se encontró el esquema MIC/DTA en el WSDL local.');
+            }
+            $schema = new \DOMDocument('1.0', 'UTF-8');
+            $root = $schema->importNode($schemas->item(0), true);
+            $schema->appendChild($root);
+            $root->setAttributeNS('http://www.w3.org/2000/xmlns/',
+                'xmlns:s', 'http://www.w3.org/2001/XMLSchema');
+            $root->setAttributeNS('http://www.w3.org/2000/xmlns/',
+                'xmlns:tns', 'Ar.Gob.Afip.Dga.wgesregsintia2');
+
+            $operation = new \DOMDocument('1.0', 'UTF-8');
+            $operation->appendChild($operation->importNode($operations->item(0), true));
+            libxml_clear_errors();
+            if (!$operation->schemaValidateSource($schema->saveXML())) {
+                throw new \InvalidArgumentException(
+                    'El SOAP reservado no cumple el XSD de MIC/DTA. No se transmitió.'
+                );
+            }
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previousLibxml);
+        }
+
+        // Se reclama ANTES de cualquier posible transmisión. Nunca reintentar.
+        $transaction = $this->claimHidroviaTitEnviosForQaDispatch(
+            $voyage, $transactionId, $allowHostedHomologation
+        );
+
+        try {
+            $client = $this->createSoapClient();
+            $transaction->update(['sent_at' => now()]);
+            $response = $client->__doRequest(
+                $transaction->request_xml,
+                $this->config['webservice_url'],
+                $this->config['soap_action_titenvios'],
+                SOAP_1_1,
+                false
+            );
+            if (!is_string($response) || trim($response) === '') {
+                throw new \RuntimeException('Respuesta SOAP vacía o ausente.');
+            }
+
+            // La evidencia se guarda incluso cuando el XML sea rechazado.
+            $transaction->update([
+                'response_xml' => $response,
+                'response_at' => now(),
+            ]);
+
+            // Sólo una respuesta consistente permite el paso a success.
+            // El rollback de esta transacción mantiene estado sending,
+            // evidencia de respuesta y bloqueo ante un resultado incierto.
+            $tracks = DB::transaction(function () use ($transaction, $billId) {
+                $locked = \App\Models\WebserviceTransaction::query()
+                    ->lockForUpdate()->findOrFail($transaction->id);
+                $locked->update([
+                    'status' => 'sent',
+                    'requires_manual_review' => false,
+                    'is_blocking_error' => false,
+                ]);
+                return app(HidroviaTransshipmentRecordedTrackService::class)
+                    ->confirmRecordedResponse(
+                        (int) $this->company->id, (int) $locked->id, $billId
+                    );
+            });
+
+            return [
+                'success' => true,
+                'transaction_record_id' => (int) $transaction->id,
+                'tracks' => array_map(fn ($track) => $track->track_number, $tracks),
+            ];
+        } catch (\Throwable $exception) {
+            // Nunca retornar éxito ni generar reintentos ante timeout, Fault
+            // o respuesta incorrecta. La revisión será necesariamente manual.
+            $transaction->refresh();
+            $transaction->update([
+                'status' => 'sending',
+                'requires_manual_review' => true,
+                'is_blocking_error' => true,
+                'next_retry_at' => null,
+                'error_message' => mb_substr($exception->getMessage(), 0, 2000),
+            ]);
+            return [
+                'success' => false,
+                'transaction_record_id' => (int) $transaction->id,
+                'requires_manual_review' => true,
+                'error_message' => 'Resultado SOAP no confirmado; verificar en ARCA antes de actuar.',
+            ];
+        }
+    }
+
+    /**
+     * Asocia TRACKs de un RegistrarTitEnvios multibarcaza ya aceptado.
+     * Reutiliza la auditoría y los TRACKs del MIC/DTA existente, pero nunca
+     * ejecuta SOAP, inicia una transmisión ni inventa idEnvio/identificadores.
+     *
+     * El puente contrasta el XML original, la respuesta ARCA y la distribución
+     * real antes de guardar, y rechaza reintentos con asociaciones distintas.
+     * No habilitar hasta que exista un envío multibarcaza certificado.
+     *
+     * @return array<int, WebserviceTrack>
+     */
+    public function reconcileHidroviaTitEnviosTracks(
+        Voyage $voyage,
+        int $billId,
+        int $transactionId
+    ): array {
+        if (!$voyage->exists || $billId < 1 || $transactionId < 1
+            || (int) $voyage->company_id !== (int) $this->company->id) {
+            throw new \InvalidArgumentException('Viaje, conocimiento o transacción ajenos a la empresa.');
+        }
+
+        $transaction = \App\Models\WebserviceTransaction::query()
+            ->where('company_id', $this->company->id)
+            ->where('voyage_id', $voyage->id)
+            ->findOrFail($transactionId);
+
+        return app(HidroviaTransshipmentRecordedTrackService::class)
+            ->persistAcceptedResponse((int) $this->company->id, (int) $transaction->id, $billId);
+    }
+
+    /**
      * MIC/DTA ejecuta varios métodos remotos secuenciales.
      * No envolver toda la secuencia en una transacción DB porque AFIP no
      * participa de esa transacción: cada paso debe conservar su auditoría
@@ -91,6 +528,16 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     public function sendWebservice(Voyage $voyage, array $options = []): array
     {
         try {
+            if ($this->requiresHidroviaTransshipmentFlow($voyage)) {
+                return [
+                    'success' => false,
+                    'error_code' => 'VALIDATION_FAILED',
+                    'error_message' => 'El viaje contiene conocimientos de Transbordos: no se puede enviar por el MIC/DTA convencional.',
+                    'validation_errors' => ['Prepará la distribución entre barcazas desde el MIC/DTA del viaje. La transmisión multibarcaza todavía no está habilitada.'],
+                    'warnings' => [],
+                ];
+            }
+
             $validation = $this->canProcessVoyage($voyage);
             if (!$validation['can_process']) {
                 return [
@@ -153,6 +600,17 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         public function executeMethod(string $method, Voyage $voyage, array $data = []): array
         {
             try {
+                if (in_array($method, ['RegistrarTitEnvios', 'RegistrarEnvios', 'RegistrarMicDta'], true)
+                    && $this->requiresHidroviaTransshipmentFlow($voyage)) {
+                    return [
+                        'success' => false,
+                        'error_code' => 'PREREQUISITES_NOT_MET',
+                        'error_message' => 'El viaje contiene conocimientos de Transbordos: este método convencional no admite la distribución entre barcazas.',
+                        'validation_errors' => ['Prepará la distribución desde el MIC/DTA del viaje. La transmisión multibarcaza todavía no está habilitada.'],
+                        'warnings' => [],
+                    ];
+                }
+
                 $this->logOperation('info', 'Ejecutando método AFIP', [
                     'method' => $method,
                     'voyage_id' => $voyage->id,
