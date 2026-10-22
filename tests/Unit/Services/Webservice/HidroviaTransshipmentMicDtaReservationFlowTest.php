@@ -366,4 +366,217 @@ XML;
         $this->assertSame(2, HidroviaTransshipmentAllocation::count());
         $this->assertSame(0, WebserviceTrack::count());
     }
+
+    /**
+     * La revisión se persiste como dato de QA. Todavía no hay una operación
+     * de aprobación de negocio habilitada ni se autoriza ninguna llamada SOAP.
+     */
+    private function markReservationReviewed(WebserviceTransaction $transaction): void
+    {
+        $transaction->update([
+            'requires_manual_review' => false,
+            'reviewer_user_id' => '1',
+            'reviewed_at' => now(),
+        ]);
+    }
+
+    public function test_claim_needs_persisted_review_before_leaving_validating(): void
+    {
+        $transaction = $this->reserve();
+
+        foreach ([
+            [],
+            ['requires_manual_review' => false],
+            ['requires_manual_review' => false, 'reviewer_user_id' => '1'],
+        ] as $attributes) {
+            $transaction->update($attributes);
+            try {
+                $this->micDta->claimHidroviaTitEnviosForQaDispatch(
+                    $this->voyage, $transaction->id
+                );
+                $this->fail('La solicitud avanzó sin revisión completa.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertStringContainsString(
+                    'requiere conciliación manual', $exception->getMessage()
+                );
+            }
+            $this->assertSame('validating', $transaction->fresh()->status);
+        }
+
+        $this->markReservationReviewed($transaction);
+        $claimed = $this->micDta->claimHidroviaTitEnviosForQaDispatch(
+            $this->voyage, $transaction->id
+        );
+
+        $this->assertSame('sending', $claimed->status);
+        $this->assertTrue($claimed->requires_manual_review);
+        $this->assertTrue($claimed->is_blocking_error);
+        $this->assertSame(0, (int) $claimed->max_retries);
+        $this->assertSame(0, (int) $claimed->retry_count);
+        $this->assertNull($claimed->next_retry_at);
+        $this->assertNull($claimed->sent_at);
+        $this->assertNull($claimed->response_at);
+        $this->assertNull($claimed->response_xml);
+        $this->assertSame($transaction->request_xml, $claimed->request_xml);
+        $this->assertSame(0, WebserviceTrack::count());
+    }
+
+    public function test_claim_is_single_use_and_blocks_edits_new_reservations_and_tracks(): void
+    {
+        $transaction = $this->reserve();
+        $this->markReservationReviewed($transaction);
+        $this->micDta->claimHidroviaTitEnviosForQaDispatch(
+            $this->voyage, $transaction->id
+        );
+
+        try {
+            $this->micDta->claimHidroviaTitEnviosForQaDispatch(
+                $this->voyage, $transaction->id
+            );
+            $this->fail('Se permitió reclamar nuevamente una solicitud.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('conciliación manual', $exception->getMessage());
+        }
+
+        try {
+            $this->reserve();
+            $this->fail('Se permitió reservar un segundo SOAP.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('ya registra un intento', $exception->getMessage());
+        }
+
+        try {
+            app(\App\Services\Simple\HidroviaTransshipmentDraftService::class)
+                ->replaceDraft($this->voyage, 101, BillOfLading::findOrFail(31), [
+                    ['shipment_id' => 11, 'shipment_item_id' => 41,
+                        'package_quantity' => 10, 'gross_weight_kg' => '100.25'],
+                ]);
+            $this->fail('Se modificó el reparto después de reclamar.');
+        } catch (ValidationException $exception) {
+            $this->assertStringContainsString('resultado incierto', $exception->getMessage());
+        }
+
+        try {
+            app(HidroviaTransshipmentRecordedTrackService::class)
+                ->confirmRecordedResponse(101, $transaction->id, 31);
+            $this->fail('Se confirmó una solicitud sin respuesta aduanera.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString(
+                'solicitud y respuesta ARCA completas', $exception->getMessage()
+            );
+        }
+
+        $this->assertSame(1, WebserviceTransaction::count());
+        $this->assertSame('sending', $transaction->fresh()->status);
+        $this->assertSame(2, HidroviaTransshipmentAllocation::count());
+        $this->assertSame(0, WebserviceTrack::count());
+    }
+
+    public function test_claim_never_restarts_a_transaction_in_an_uncertain_state(): void
+    {
+        $transaction = $this->reserve();
+        $this->markReservationReviewed($transaction);
+
+        // Cada estado se inyecta sólo como fixture: no simula respuesta ARCA.
+        foreach (['sending', 'error', 'expired', 'cancelled', 'sent', 'success'] as $state) {
+            $transaction->update(['status' => $state]);
+            try {
+                $this->micDta->claimHidroviaTitEnviosForQaDispatch(
+                    $this->voyage, $transaction->id
+                );
+                $this->fail("Se aceptó un segundo intento desde {$state}.");
+            } catch (InvalidArgumentException $exception) {
+                $this->assertStringContainsString('conciliación manual', $exception->getMessage());
+            }
+            $this->assertSame($state, $transaction->fresh()->status);
+        }
+
+        $this->assertSame(0, WebserviceTrack::count());
+        $this->assertSame(1, WebserviceTransaction::count());
+    }
+
+    public function test_claim_rejects_partial_evidence_retries_and_modified_transaction_xml(): void
+    {
+        $transaction = $this->reserve();
+        $this->markReservationReviewed($transaction);
+        $original = $transaction->request_xml;
+        $baseline = [
+            'status' => 'validating',
+            'request_xml' => $original,
+            'response_xml' => null,
+            'sent_at' => null,
+            'response_at' => null,
+            'retry_count' => 0,
+            'max_retries' => 0,
+            'next_retry_at' => null,
+            'is_blocking_error' => false,
+            'environment' => 'testing',
+        ];
+
+        foreach ([
+            ['sent_at' => now()],
+            ['response_at' => now()],
+            ['response_xml' => $this->response()],
+            ['retry_count' => 1],
+            ['max_retries' => 1],
+            ['next_retry_at' => now()->addMinute()],
+            ['is_blocking_error' => true],
+            ['environment' => 'production'],
+            ['request_xml' => str_replace(
+                '<idTransaccion>QA-TX-001</idTransaccion>',
+                '<idTransaccion>OTRA-TRANSACCION</idTransaccion>', $original
+            )],
+        ] as $invalid) {
+            $transaction->update(array_merge($baseline, $invalid));
+            try {
+                $this->micDta->claimHidroviaTitEnviosForQaDispatch(
+                    $this->voyage, $transaction->id
+                );
+                $this->fail('Se aceptó una reserva con datos incompatibles.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertNotSame('', $exception->getMessage());
+            }
+            $this->assertSame('validating', $transaction->fresh()->status);
+        }
+
+        $transaction->update($baseline);
+        $claimed = $this->micDta->claimHidroviaTitEnviosForQaDispatch(
+            $this->voyage, $transaction->id
+        );
+        $this->assertSame('sending', $claimed->status);
+        $this->assertSame(0, WebserviceTrack::count());
+    }
+
+    public function test_claim_is_denied_outside_testing_and_for_another_company(): void
+    {
+        $transaction = $this->reserve();
+        $this->markReservationReviewed($transaction);
+
+        try {
+            $this->micDta->claimHidroviaTitEnviosForQaDispatch(
+                Voyage::findOrFail(8), $transaction->id
+            );
+            $this->fail('Se permitió reclamar una solicitud desde otra empresa.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('Sólo QA local', $exception->getMessage());
+        }
+
+        $originalEnvironment = app()->environment();
+        try {
+            app()->detectEnvironment(fn () => 'production');
+            try {
+                $this->micDta->claimHidroviaTitEnviosForQaDispatch(
+                    $this->voyage, $transaction->id
+                );
+                $this->fail('Se permitió reclamar desde el entorno production.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertStringContainsString('Sólo QA local', $exception->getMessage());
+            }
+        } finally {
+            app()->detectEnvironment(fn () => $originalEnvironment);
+        }
+
+        $this->assertSame('validating', $transaction->fresh()->status);
+        $this->assertSame(0, WebserviceTrack::count());
+    }
 }
