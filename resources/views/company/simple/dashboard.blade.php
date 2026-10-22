@@ -295,6 +295,12 @@
                                     </div>
 
                                     {{-- Sección de Webservices Paraguay --}}
+                                    <div class="mb-4">
+                                        <div class="flex items-center mb-3">
+                                            <span class="text-lg mr-2">🇵🇾</span>
+                                            <h5 class="text-sm font-semibold text-gray-700">Paraguay - DNA</h5>
+                                        </div>
+
                                     {{-- MANIFIESTO PARAGUAY --}}
                                     @php
                                         // Habilitamos la tarjeta como activa.
@@ -339,6 +345,7 @@
                                             @endif
                                         </div>
                                     </div>
+                                    </div> {{-- Fin de la sección Paraguay --}}
 
                                 </div>
                             @endforeach
