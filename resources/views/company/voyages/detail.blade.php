@@ -138,7 +138,7 @@
                         
                         <div class="space-y-3">
                             @if($voyageStatus['can_send_to_customs'])
-                                <a href="{{ route('company.manifests.customs', $voyage) }}" 
+                                <a href="{{ route('company.simple.dashboard') }}" 
                                    class="w-full bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-center block">
                                     🏛️ Enviar a Aduanas
                                 </a>
