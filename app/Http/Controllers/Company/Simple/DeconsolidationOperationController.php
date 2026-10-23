@@ -228,18 +228,9 @@ class DeconsolidationOperationController extends Controller
         if (!$billIds) {
             $errors[] = 'Agregá al menos un conocimiento hijo para validar el expediente.';
         }
-        $pending = WebserviceTransaction::query()
-            ->where('company_id', $company->id)
-            ->where('webservice_type', 'desconsolidado')
-            ->where('country', 'AR')
-            ->whereNull('voyage_id')
-            ->whereIn('status', ['pending', 'sending'])
-            ->get(['additional_metadata'])->contains(fn ($transaction) =>
-                (int) data_get($transaction->additional_metadata,
-                    'deconsolidation_operation_id') === (int) $record->id
-            );
-        if ($pending) {
-            $errors[] = 'Hay una transmisión pendiente o cuyo resultado aún no está confirmado. Revisá el historial y consultá su estado en Aduana antes de realizar otro envío.';
+        $blocked = $this->unresolvedTransmission($company, $record, $billIds);
+        if ($blocked) {
+            $errors[] = $this->unresolvedTransmissionMessage($blocked);
         }
         if ($errors) {
             return redirect()->route('company.simple.desconsolidado.operations.show', [
@@ -275,6 +266,13 @@ class DeconsolidationOperationController extends Controller
             ])->withErrors($validation['errors'] ?? ['Revisá los datos de los conocimientos seleccionados.']);
         }
 
+        $blocked = $this->unresolvedTransmission($company, $record, $data['bill_ids']);
+        if ($blocked) {
+            return redirect()->route('company.simple.desconsolidado.operations.show', [
+                'operation' => $record->id,
+            ])->withErrors([$this->unresolvedTransmissionMessage($blocked)]);
+        }
+
         try {
             $result = (new ArgentinaDeconsolidatedService(
                 $company, $this->getCurrentUser()
@@ -297,6 +295,58 @@ class DeconsolidationOperationController extends Controller
                 'operation' => $record->id,
             ])->with('error', 'No fue posible confirmar el resultado de la operación. Antes de realizar un nuevo envío, revisá el historial y verificá el estado en Aduana.');
         }
+    }
+
+    /**
+     * Solo consulta el historial del expediente y los títulos seleccionados.
+     * El servicio vuelve a verificar el bloqueo bajo lock antes de transmitir.
+     */
+    private function unresolvedTransmission(
+        Company $company,
+        DeconsolidationOperation $operation,
+        array $billIds
+    ): ?WebserviceTransaction {
+        $selected = array_map('intval', $billIds);
+
+        return WebserviceTransaction::query()
+            ->where('company_id', $company->id)
+            ->where('webservice_type', 'desconsolidado')
+            ->where('country', 'AR')
+            ->whereNull('voyage_id')
+            ->where(function ($query) {
+                $query->whereIn('status', ['pending', 'sending'])
+                    ->orWhere(function ($rejected) {
+                        $rejected->where('status', 'error')
+                            ->where('requires_manual_review', true)
+                            ->whereNull('reviewed_at');
+                    });
+            })
+            ->orderByDesc('id')
+            ->get()
+            ->first(function (WebserviceTransaction $entry) use ($operation, $selected): bool {
+                $metadata = $entry->additional_metadata ?? [];
+                if ((int) ($metadata['deconsolidation_operation_id'] ?? 0) !== (int) $operation->id) {
+                    return false;
+                }
+                $historyIds = $metadata['bill_ids'] ?? [];
+                return is_array($historyIds)
+                    && (bool) array_intersect($selected, array_map('intval', $historyIds));
+            });
+    }
+
+    private function unresolvedTransmissionMessage(WebserviceTransaction $transaction): string
+    {
+        if ($transaction->status === 'error') {
+            $code = trim((string) ($transaction->error_code ?? ''));
+            return 'La transacción ' . $transaction->id
+                . ' tiene un rechazo pendiente de revisión'
+                . ($code !== '' ? ' (código ARCA ' . $code . ')' : '')
+                . '. Verificá y conciliá su estado con Aduana antes de reenviar.';
+        }
+
+        return 'La transacción ' . $transaction->id
+            . ' tiene un resultado pendiente o no confirmado. '
+            . 'Verificá su estado con Aduana antes de reenviar.';
     }
 
     private function authorizedCompany(): Company
