@@ -140,8 +140,6 @@ Route::prefix('voyages')->name('company.voyages.')->group(function () {
     Route::get('/{voyage}/manifest', [VoyageController::class, 'manifest'])->name('manifest');
     Route::get('/{voyage}/manifest/pdf', [VoyageController::class, 'manifestPdf'])->name('manifest-pdf');
 
-    // Validador
-    Route::post('/{voyage}/validate-customs', [VoyageController::class, 'validateForCustoms'])->name('validate-customs');
 });
 
 

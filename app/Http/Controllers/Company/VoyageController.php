@@ -781,47 +781,6 @@ class VoyageController extends Controller
             ->with('success', 'Estado del viaje actualizado exitosamente.');
     }
 
-    /**
-     * Validar viaje para webservices aduaneros
-     */
-    public function validateForCustoms(Request $request, Voyage $voyage)
-    {
-        try {
-            $request->validate([
-                'webservice_type' => 'required|string',
-                'country' => 'required|string|in:AR,PY'
-            ]);
-
-            $validator = new \App\Actions\Customs\ValidateVoyageForCustoms();
-            $result = $validator->validate(
-                $voyage,
-                $request->webservice_type,
-                $request->country,
-                ['user' => auth()->user()]
-            );
-
-            return response()->json([
-                'success' => true,
-                'validation_result' => $result,
-                'summary' => $validator->getValidationSummary(),
-                'grouped_errors' => $validator->getGroupedErrors()
-            ]);
-
-        } catch (\Exception $e) {
-            \Log::error('Error en validateForCustoms:', [
-                'error' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'voyage_id' => $voyage->id
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'error' => 'Error interno: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
     private function getVoyageStats($company)
     {
         $baseQuery = Voyage::where('company_id', $company->id);
