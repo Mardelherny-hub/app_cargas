@@ -368,9 +368,9 @@ class ParaguayDnaService extends BaseWebserviceService
                 }
 
                 // Actualizar estado del voyage
-                $this->updateWebserviceStatus($voyage, 'XFFM', [
+                $this->updateWebserviceStatus($voyage, $dnaStatus['status'], [
                     'status' => $dnaStatus['status'],
-                    'nro_viaje' => $nroViaje,
+                    'external_voyage_number' => $nroViaje,
                 ]);
 
                 DB::commit();
@@ -518,9 +518,9 @@ class ParaguayDnaService extends BaseWebserviceService
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
 
-                $this->updateWebserviceStatus($voyage, 'XFBL', [
+                $this->updateWebserviceStatus($voyage, $dnaStatus['status'], [
                     'status' => $dnaStatus['status'],
-                    'nro_viaje' => $nroViaje,
+                    'external_voyage_number' => $nroViaje,
                 ]);
 
                 DB::commit();
@@ -626,9 +626,9 @@ public function sendXfbt(Voyage $voyage, array $options = []): array
                     'request_xml' => $xml,
                 ]);
 
-                $this->updateWebserviceStatus($voyage, 'XFBT', [
+                $this->updateWebserviceStatus($voyage, $dnaStatus['status'], [
                     'status' => $dnaStatus['status'],
-                    'nro_viaje' => $nroViaje,
+                    'external_voyage_number' => $nroViaje,
                 ]);
 
                 DB::commit();
@@ -725,9 +725,9 @@ public function sendXfct(Voyage $voyage, array $options = []): array
                     'response_xml' => $soapResult['raw_response'] ?? null,
                 ]);
 
-                $this->updateWebserviceStatus($voyage, 'XFCT', [
+                $this->updateWebserviceStatus($voyage, $dnaStatus['status'], [
                     'status' => $dnaStatus['status'],
-                    'nro_viaje' => $nroViaje,
+                    'external_voyage_number' => $nroViaje,
                 ]);
 
                 DB::commit();
@@ -848,11 +848,9 @@ public function sendXfct(Voyage $voyage, array $options = []): array
                     'request_xml' => $xml,
                 ]);
 
-                $this->updateWebserviceStatus($voyage, 'XISP', [
+                $this->updateWebserviceStatus($voyage, $dnaStatus['status'], [
                     'status' => $dnaStatus['status'],
-                    'nro_viaje' => $nroViaje,
-                    'vessel_id' => $vessel->id,
-                    'vessel_name' => $vessel->name,
+                    'external_voyage_number' => $nroViaje,
                 ]);
 
                 DB::commit();
@@ -972,11 +970,9 @@ public function sendXrsp(Voyage $voyage, $vessel, array $options = []): array
                     'request_xml' => $xml,
                 ]);
 
-                $this->updateWebserviceStatus($voyage, 'XRSP', [
+                $this->updateWebserviceStatus($voyage, $dnaStatus['status'], [
                     'status' => $dnaStatus['status'],
-                    'nro_viaje' => $nroViaje,
-                    'vessel_id' => $vessel->id,
-                    'vessel_name' => $vessel->name,
+                    'external_voyage_number' => $nroViaje,
                 ]);
 
                 DB::commit();
