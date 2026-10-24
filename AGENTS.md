@@ -35,6 +35,7 @@ Fuente única de reglas para los agentes que trabajan en este repo (Codex, Claud
 - Puede haber otros frentes de trabajo modificando este repo local al mismo tiempo.
 - Al empezar una tarea, correr `git status` e identificar los cambios locales existentes. Esos cambios se **preservan**: no se leen como propios, no se stagean, no se revierten y no se commitean.
 - **Prohibido** usar `git add .`, `git add -A` y `git commit -a`. Siempre se stagean archivos explícitos.
+- Los commits se hacen SIEMPRE con pathspec (`git commit -m '...' -- <archivos>`), porque el índice es compartido entre agentes.
 
 ### Regex y parseo
 - Prototipar las regex contra muestras reales de archivos (por ejemplo, con un one-liner de Python) antes de escribirlas en PHP.
@@ -72,7 +73,7 @@ Las operaciones de escritura sobre datos en producción siguen este protocolo:
   2. Tolera variantes de formato: fechas como texto o como serial de Excel, encoding ISO-8859-1, campos vacíos y espacios extra.
   3. Fue probado con al menos 2 archivos reales distintos. Si hay una sola muestra, se documenta como "pendiente validar variantes".
 - Puertos: solo búsqueda estricta. Si el puerto es desconocido, devolver un error claro con sugerencias calculadas con `similar_text`.
-- **El número de viaje es único a nivel GLOBAL**, sin scope por empresa. Lo garantiza `guardVoyageNumberIsFree()` (trait `EnsuresUniqueVoyageNumber`), aplicado en los 8 parsers. El `catch` traduce `voyages_voyage_number_unique` a un mensaje amable y llama a `markAsFailed`.
+- **El número de viaje es único por empresa + embarcación + número**: la terna `company_id + lead_vessel_id + voyage_number`. Distintas empresas pueden usar el mismo número, y una empresa puede repetirlo en embarcaciones distintas. La migración `2026_09_25_173000_scope_voyage_number_by_company_and_vessel.php` define el índice compuesto con el nombre `voyages_voyage_number_unique`; ese nombre se conserva, pero no implica unicidad global. `guardVoyageNumberIsFree()` (trait `EnsuresUniqueVoyageNumber`) valida esa misma terna. Los parsers que capturan `voyages_voyage_number_unique` traducen la colisión a un mensaje amable y registran la importación fallida.
 - Los inserts masivos usan `Model::withoutEvents()`. Por eso hay que setear `verified_at` explícitamente en `Client::create`.
 - `normalizeDecimal()` maneja separadores decimales mezclados dentro de un mismo archivo.
 - Pesos VGM: usar `MEA+AAE+G+KGM` cuando el dato es correcto. Recurrir a VGM solo si el valor G se repite idéntico en todos los ítems del BL.
