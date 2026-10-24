@@ -1060,8 +1060,15 @@ public function update(Request $request, Shipment $shipment)
             abort(403, 'Su empresa no tiene el rol de Cargas.');
         }
 
+        $company = $this->getUserCompany();
+
+        if (!$company) {
+            return redirect()->route('company.shipments.index')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
+
         // Verificar que la carga pertenece a la empresa del usuario
-        if (!$this->isCompanyAdmin($shipment->company_id)) {
+        if ($shipment->voyage->company_id !== $company->id) {
             abort(403, 'No tiene permisos para eliminar esta carga.');
         }
 
