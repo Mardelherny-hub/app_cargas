@@ -5,6 +5,7 @@ namespace App\Livewire;
 use Livewire\Component;
 use Illuminate\Support\Facades\DB;
 use App\Models\Shipment;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use App\Models\Client;
 use App\Models\Port;
 use App\Models\CargoType;
@@ -791,6 +792,19 @@ class BillOfLadingEditForm extends Component
     }
 
     /**
+     * Verifica que la carga exista y pertenezca a la empresa del usuario.
+     */
+    private function authorizeShipmentId($shipmentId): void
+    {
+        $company = $this->getUserCompany();
+        $shipment = $shipmentId ? Shipment::with('voyage')->find($shipmentId) : null;
+
+        if (!$company || !$shipment || $shipment->voyage->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para usar esta carga.');
+        }
+    }
+
+    /**
      * Actualizar conocimiento
      */
     public function submit()
@@ -846,6 +860,8 @@ class BillOfLadingEditForm extends Component
                     ],
                 ]);
             }
+
+            $this->authorizeShipmentId($this->shipment_id);
 
             \Log::info('SUBMIT - validation passed');
 
@@ -968,6 +984,9 @@ class BillOfLadingEditForm extends Component
             return redirect()->route('company.bills-of-lading.show', $this->billOfLading);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            $this->loading = false;
+            throw $e;
+        } catch (HttpExceptionInterface $e) {
             $this->loading = false;
             throw $e;
         } catch (\Exception $e) {

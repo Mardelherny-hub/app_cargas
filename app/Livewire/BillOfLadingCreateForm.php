@@ -5,6 +5,7 @@ namespace App\Livewire;
 use Livewire\Component;
 use Illuminate\Support\Facades\DB;
 use App\Models\Shipment;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use App\Models\Client;
 use App\Models\Port;
 use App\Models\CargoType;
@@ -433,10 +434,26 @@ class BillOfLadingCreateForm extends Component
         $this->generateBillNumber();
     }
 
+    /**
+     * Verifica que la carga exista y pertenezca a la empresa del usuario.
+     */
+    private function authorizeShipmentId($shipmentId): void
+    {
+        $company = $this->getUserCompany();
+        $shipment = $shipmentId ? Shipment::with('voyage')->find($shipmentId) : null;
+
+        if (!$company || !$shipment || $shipment->voyage->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para usar esta carga.');
+        }
+    }
+
     private function setShipmentDefaults()
     {
         if ($this->shipment_id) {
-            $shipment = Shipment::with('voyage')->find($this->shipment_id);
+            $company = $this->getUserCompany();
+            $shipment = Shipment::with('voyage')
+                ->whereHas('voyage', fn ($query) => $query->where('company_id', $company?->id))
+                ->find($this->shipment_id);
             if ($shipment && $shipment->voyage) {
                 $this->loading_port_id = $shipment->voyage->origin_port_id;
                 $this->discharge_port_id = $shipment->voyage->destination_port_id;
@@ -728,7 +745,9 @@ public function selectForeignLocationDischarge($locationCode)
             \Log::info('Shipment ID buscado: ' . $this->shipment_id);
             
             // Consulta paso a paso
-            $query = BillOfLading::where('shipment_id', $this->shipment_id);
+            $company = $this->getUserCompany();
+            $query = BillOfLading::where('shipment_id', $this->shipment_id)
+                ->whereHas('shipment.voyage', fn ($q) => $q->where('company_id', $company?->id));
             \Log::info('Paso 1 - BLs del shipment: ' . $query->count());
             
             $query = $query->where('is_master_bill', true);
@@ -792,6 +811,8 @@ public function selectForeignLocationDischarge($locationCode)
             );
 
             $this->validate();
+
+            $this->authorizeShipmentId($this->shipment_id);
 
             DB::beginTransaction();
 
@@ -870,12 +891,14 @@ public function selectForeignLocationDischarge($locationCode)
         } catch (\Illuminate\Validation\ValidationException $e) {
             $this->loading = false;
             throw $e;
+        } catch (HttpExceptionInterface $e) {
+            $this->loading = false;
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             $this->loading = false;
             
             session()->flash('error', 'Error al crear el conocimiento: ' . $e->getMessage());
-                    dd('Error en submit: ' . $e->getMessage(), $e->getFile(), $e->getLine());
         }
     }
 
