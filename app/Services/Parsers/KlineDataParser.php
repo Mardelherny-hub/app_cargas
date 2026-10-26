@@ -16,6 +16,7 @@ use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
@@ -43,6 +44,7 @@ class KlineDataParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesExistingClient;
     use ResolvesVoyageCargoType;
 
     protected array $lines;
@@ -300,6 +302,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     shipments: [$shipment],
                     containers: [], // KLine DAT no maneja contenedores típicamente
                     billsOfLading: $createdBills,
+                    warnings: $this->stats['warnings'],
                     statistics: array_merge($this->stats, [
                         'processed_items' => count($allItems),
                         'total_bills' => count($createdBills),
@@ -3410,55 +3413,35 @@ protected function extractPortInfo(array $data): array
             );
         }
 
-        // 1) Buscar por identidad fiscal completa.
-        if ($normTaxId) {
-            $client = Client::query()
-                ->where('tax_id', $normTaxId)
-                ->where('country_id', $countryId)
-                ->first();
-
-            if ($client) {
-                Log::info(
-                    'Cliente existente encontrado por tax_id y país',
-                    [
-                        'client_id' => $client->id,
-                        'tax_id' => $normTaxId,
-                        'country_id' => $countryId,
-                    ]
-                );
-
-                return $client;
-            }
-        }
-
-        // 2) Buscar por nombre + país únicamente cuando la fuente NO
-        // informó identificador fiscal. Si informó tax_id, ese identificador
-        // tiene prioridad y un nombre coincidente no puede contradecirlo.
-        if (!$normTaxId) {
-            $client = Client::query()
-                ->where('legal_name', $name)
-                ->where('country_id', $countryId)
-                ->first();
-
-            if ($client) {
-                Log::info(
-                    'Cliente existente encontrado por nombre y país',
-                    [
-                        'client_id' => $client->id,
-                        'name' => $name,
-                        'country_id' => $countryId,
-                    ]
-                );
-
-                return $client;
-            }
-        }
-
         // El tipo documental sólo se asigna si la fuente aportó un número
         // fiscal y además declaró explícitamente qué tipo es.
         $documentTypeId = $normTaxId
             ? $this->resolveDocumentTypeId($taxType, $countryId)
             : null;
+
+        $resolution = $this->resolveExistingClient(
+            $normTaxId,
+            $name,
+            (int) $countryId,
+            $documentTypeId
+        );
+
+        foreach ($resolution['warnings'] as $warning) {
+            if (!in_array($warning, $this->stats['warnings'], true)) {
+                $this->stats['warnings'][] = $warning;
+            }
+        }
+
+        if ($resolution['client']) {
+            Log::info('Cliente existente encontrado desde KLine', [
+                'client_id' => $resolution['client']->id,
+                'name' => $name,
+                'tax_id' => $normTaxId,
+                'country_id' => $countryId,
+            ]);
+
+            return $resolution['client'];
+        }
 
         $client = Client::withoutEvents(fn () => Client::create([
             'tax_id' => $normTaxId,
@@ -3474,6 +3457,8 @@ protected function extractPortInfo(array $data): array
             'email' => $clientData['email'] ?? null,
             'notes' => 'Cliente creado desde archivo KLine DAT',
         ]));
+
+        $this->rememberClientIdentity($client);
 
         Log::info('Cliente creado desde KLine', [
             'client_id' => $client->id,
