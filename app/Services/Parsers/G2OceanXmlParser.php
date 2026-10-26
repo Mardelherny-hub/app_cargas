@@ -1720,12 +1720,22 @@ class G2OceanXmlParser implements ManifestParserInterface
             ),
         ]);
 
-        $importRecord->markAsCompleted([
+        $this->stats['warnings'] = array_values(array_unique($this->stats['warnings']));
+
+        $completionData = [
+            'warnings' => $this->stats['warnings'],
+            'warnings_count' => count($this->stats['warnings']),
             'voyage_id' => $voyage->id,
             'processing_time_seconds' =>
                 round($processingTime, 2),
             'notes' => 'Importación G2Ocean XML completada',
-        ]);
+        ];
+
+        if ($this->stats['warnings'] !== []) {
+            $importRecord->markAsCompletedWithWarnings($completionData);
+        } else {
+            $importRecord->markAsCompleted($completionData);
+        }
     }
 
 

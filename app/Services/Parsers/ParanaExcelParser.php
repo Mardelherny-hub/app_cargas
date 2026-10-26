@@ -1712,12 +1712,22 @@ class ParanaExcelParser implements ManifestParserInterface
             ),
         ]);
 
-        $importRecord->markAsCompleted([
+        $this->warnings = array_values(array_unique($this->warnings));
+
+        $completionData = [
+            'warnings' => $this->warnings,
+            'warnings_count' => count($this->warnings),
             'voyage_id' => $voyage->id,
             'processing_time_seconds' =>
                 round($processingTime, 2),
             'notes' => 'Importación PARANA Excel completada',
-        ]);
+        ];
+
+        if ($this->warnings !== []) {
+            $importRecord->markAsCompletedWithWarnings($completionData);
+        } else {
+            $importRecord->markAsCompleted($completionData);
+        }
     }
 
 
