@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 /**
  * MÓD SHIPMENT ITEMS
@@ -93,6 +94,16 @@ class ShipmentItemController extends Controller
         } else {
             return redirect()->route('company.shipments.index')
                 ->with('error', 'Debe especificar un shipment o conocimiento de embarque para crear el item.');
+        }
+
+        if (!$company) {
+            return redirect()->route('company.shipments.index')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
+
+        // Verificar que la carga pertenece a la empresa del usuario
+        if ($shipment->voyage->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para agregar items a este shipment.');
         }
 
         // Validar que el shipment esté en estado editable
@@ -284,6 +295,13 @@ class ShipmentItemController extends Controller
                          ->withInput();
         }
 
+        $company = $this->getUserCompany();
+
+        if (!$company) {
+            return redirect()->route('company.shipments.index')
+                ->with('error', 'No se encontró la empresa asociada.');
+        }
+
         $billOfLading = null;
         $shipment = null;
 
@@ -293,6 +311,11 @@ class ShipmentItemController extends Controller
                 \Log::info('Using existing bill_of_lading_id: ' . $validated['bill_of_lading_id']);
                 $billOfLading = \App\Models\BillOfLading::with(['shipment'])->findOrFail($validated['bill_of_lading_id']);
                 $shipment = $billOfLading->shipment;
+
+                if ($shipment->voyage->company_id !== $company->id) {
+                    abort(403, 'No tiene permisos para agregar items a este shipment.');
+                }
+
                 \Log::info('Found billOfLading and shipment:', [
                     'bill_id' => $billOfLading->id,
                     'shipment_id' => $shipment->id ?? 'NULL'
@@ -301,7 +324,11 @@ class ShipmentItemController extends Controller
                 // Flujo backward compatible: crear/usar bill of lading para shipment
                 \Log::info('Using shipment_id: ' . $validated['shipment_id']);
                 $shipment = \App\Models\Shipment::with(['voyage'])->findOrFail($validated['shipment_id']);
-                
+
+                if ($shipment->voyage->company_id !== $company->id) {
+                    abort(403, 'No tiene permisos para agregar items a este shipment.');
+                }
+
                 // Buscar bill of lading existente o crear uno nuevo
                 $billOfLading = \App\Models\BillOfLading::where('shipment_id', $shipment->id)->first();
                 
@@ -352,6 +379,8 @@ class ShipmentItemController extends Controller
 
             \Log::info('Line number check passed');
 
+        } catch (HttpExceptionInterface $e) {
+            throw $e;
         } catch (\Exception $e) {
             \Log::error('Error in pre-creation logic: ' . $e->getMessage(), [
                 'file' => $e->getFile(),
