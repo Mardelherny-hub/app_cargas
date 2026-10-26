@@ -248,7 +248,11 @@ class TfpTextParser implements ManifestParserInterface
                         'item' => array_map(fn($i) => $i->id, $allItems),
                         'container' => $createdContainerIds,
                     ]);
-                    $importRecord->markAsCompleted([
+                    $this->stats['warnings'] = array_values(array_unique($this->stats['warnings']));
+
+                    $completionData = [
+                        'warnings' => $this->stats['warnings'],
+                        'warnings_count' => count($this->stats['warnings']),
                         'voyage_id'               => $voyage->id,
                         'created_bills'           => count($allBills),
                         'created_items'           => count($allItems),
@@ -256,7 +260,13 @@ class TfpTextParser implements ManifestParserInterface
                         'processing_time_seconds' => round(microtime(true) - $startTime, 2),
                         'import_statistics'       => $this->stats,
                         'notes'                   => 'Importación TFP completada',
-                    ]);
+                    ];
+
+                    if ($this->stats['warnings'] !== []) {
+                        $importRecord->markAsCompletedWithWarnings($completionData);
+                    } else {
+                        $importRecord->markAsCompleted($completionData);
+                    }
                 }
 
                 return [
