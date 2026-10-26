@@ -15,6 +15,7 @@ use App\Models\Country;
 use App\Models\DocumentType;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
@@ -40,10 +41,13 @@ use Exception;
 class ParanaExcelParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use ResolvesExistingClient;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
     use ResolvesPorts;
+
+    protected array $warnings = [];
 
     // Mapeo exacto de columnas según análisis real
     protected array $columnMap = [
@@ -176,6 +180,8 @@ class ParanaExcelParser implements ManifestParserInterface
 
     public function parse(string $filePath, array $options = []): ManifestParseResult
     {
+        $this->warnings = [];
+
         $startTime = microtime(true);
         Log::info('Starting PARANA Excel parsing', ['file' => $filePath]);
 
@@ -270,6 +276,7 @@ class ParanaExcelParser implements ManifestParserInterface
                 shipments: [$shipment],
                 containers: $containers,
                 billsOfLading: $bills,
+                warnings: $this->warnings,
                 statistics: [
                     'processed_rows' => $highestRow - 1,
                     'unique_bills' => count($bills),
@@ -1381,43 +1388,6 @@ class ParanaExcelParser implements ManifestParserInterface
             'company_id' => $companyId,
         ]);
 
-        // Con identificador fiscal, la identidad es tax_id + country_id.
-        // Nunca degradar luego a una coincidencia solamente por nombre.
-        if ($taxId !== null) {
-            $client = Client::query()
-                ->where('tax_id', $taxId)
-                ->where('country_id', $clientCountryId)
-                ->first();
-
-            if ($client) {
-                return $client;
-            }
-        } else {
-            // Sin identificador fiscal sólo se reutiliza otro cliente
-            // igualmente sin tax_id y del mismo país.
-            $client = Client::query()
-                ->whereNull('tax_id')
-                ->where('country_id', $clientCountryId)
-                ->where(function ($query) use ($name) {
-                    $normalizedName = mb_strtoupper($name);
-
-                    $query
-                        ->whereRaw(
-                            'UPPER(TRIM(legal_name)) = ?',
-                            [$normalizedName]
-                        )
-                        ->orWhereRaw(
-                            'UPPER(TRIM(commercial_name)) = ?',
-                            [$normalizedName]
-                        );
-                })
-                ->first();
-
-            if ($client) {
-                return $client;
-            }
-        }
-
         $documentTypeId = null;
 
         if ($taxId !== null && $taxType !== null) {
@@ -1435,6 +1405,22 @@ class ParanaExcelParser implements ManifestParserInterface
             }
         }
 
+        $resolved = $this->resolveExistingClient(
+            $taxId,
+            $name,
+            $clientCountryId,
+            $documentTypeId
+        );
+
+        $this->warnings = array_values(array_unique(array_merge(
+            $this->warnings,
+            $resolved['warnings']
+        )));
+
+        if ($resolved['client'] !== null) {
+            return $resolved['client'];
+        }
+
         $client = Client::create([
             'legal_name' => $name,
             'commercial_name' => $name,
@@ -1446,6 +1432,8 @@ class ParanaExcelParser implements ManifestParserInterface
             'created_by_company_id' => $companyId,
             'verified_at' => now(),
         ]);
+
+        $this->rememberClientIdentity($client);
 
         Log::info('Cliente creado', [
             'client_id' => $client->id,
