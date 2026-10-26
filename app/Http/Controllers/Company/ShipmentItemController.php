@@ -1599,6 +1599,12 @@ private function removeAllContainers(ShipmentItem $shipmentItem)
     {
         \Log::info('Creating BillOfLading with specific data for shipment: ' . $shipment->id);
 
+        $company = $this->getUserCompany();
+
+        if (!$company || $shipment->voyage->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para agregar items a este shipment.');
+        }
+
         try {
             // Validar datos mínimos requeridos
             $requiredFields = ['shipper_id', 'consignee_id', 'loading_port_id', 'discharge_port_id', 

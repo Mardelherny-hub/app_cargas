@@ -527,6 +527,18 @@ class ShipmentItemCreateForm extends Component
         return null;
     }
 
+    /**
+     * Verifica que la carga pertenezca a la empresa del usuario antes de escribir.
+     */
+    private function authorizeShipment(?Shipment $shipment): void
+    {
+        $company = $this->getUserCompany();
+
+        if (!$company || !$shipment || $shipment->voyage->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para agregar items a este shipment.');
+        }
+    }
+
     // MÉTODOS ORIGINALES para BL (sin modificar)
     public function mount()
     {
@@ -820,6 +832,8 @@ class ShipmentItemCreateForm extends Component
             throw $e;
         }
 
+        $this->authorizeShipment($this->shipment);
+
         try {
             DB::beginTransaction();
 
@@ -920,6 +934,8 @@ class ShipmentItemCreateForm extends Component
             session()->flash('error', 'No se ha configurado el conocimiento de embarque.');
             return;
         }
+
+        $this->authorizeShipment($this->billOfLading->shipment);
 
         try {
             DB::beginTransaction();
