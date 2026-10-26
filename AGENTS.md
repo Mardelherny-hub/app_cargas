@@ -37,6 +37,10 @@ Fuente única de reglas para los agentes que trabajan en este repo (Codex, Claud
 - **Prohibido** usar `git add .`, `git add -A` y `git commit -a`. Siempre se stagean archivos explícitos.
 - Los commits se hacen SIEMPRE con pathspec (`git commit -m '...' -- <archivos>`), porque el índice es compartido entre agentes.
 
+### Sin referencias internas
+- **Prohibido** en código, comentarios y mensajes visibles al usuario cualquier referencia a agentes, tareas internas, Claude, Codex o la metodología de trabajo.
+- Los términos de negocio que coinciden por nombre (por ejemplo, `TipoAgente`) no están alcanzados.
+
 ### Regex y parseo
 - Prototipar las regex contra muestras reales de archivos (por ejemplo, con un one-liner de Python) antes de escribirlas en PHP.
 
@@ -135,3 +139,13 @@ Si falta alguno de esos datos, se pregunta antes de empezar. Ningún agente toma
 - Toda implementación queda **pendiente de validación** hasta comprobar el comportamiento.
 - Se distinguen tres niveles: validación local, validación en Stage (solo si la tarea define ese entorno) y publicación en producción.
 - Commit, push, integración y deploy se realizan solo si la tarea lo autoriza expresamente.
+
+## 6. Deploy a producción
+
+1. Antes de armar el paquete, buscar referencias internas:
+   ```bash
+   grep -rniE "Claude|Codex|AGENTS|TAREA|Co-Authored" app/ resources/ routes/ config/ database/ tests/
+   ```
+   Se ignoran `textarea` y los términos de negocio (por ejemplo, `TipoAgente`). Si queda alguna coincidencia de metodología, el deploy se frena hasta corregirla.
+2. El deploy a producción se hace solo por paquete (`git archive`), nunca con `git pull` ni copiando el repo.
+3. El paquete no incluye `.git`, `AGENTS.md`, `CLAUDE.md`, `docs/` ni `.github/`.
