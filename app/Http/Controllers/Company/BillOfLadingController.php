@@ -335,8 +335,6 @@ class BillOfLadingController extends Controller
      */
     public function store(CreateBillOfLadingRequest $request)
     {
-        dd($request->all());
-        
         // DEBUG: Ver si llegamos al store y qué datos validados tenemos
         \Log::info('=== BILL OF LADING STORE DEBUG ===', [
             'validated_data' => $request->validated(),
