@@ -19,6 +19,7 @@ use App\Models\CargoType;
 use App\Models\PackagingType;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
@@ -38,6 +39,7 @@ use Exception;
 class TfpTextParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use ResolvesExistingClient;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
@@ -1253,17 +1255,6 @@ protected function extractValue(string $scope, string $label): ?string
     }
 
     /**
-     * Identidad nominal estable para evitar duplicados puramente tipográficos
-     * (S.A. / SA, S.R.L. / SRL, coma final, espacios).
-     */
-    protected function normalizeClientIdentityName(string $name): string
-    {
-        $normalized = mb_strtoupper(trim($name), 'UTF-8');
-
-        return preg_replace('/[^\\p{L}\\p{N}]+/u', '', $normalized) ?? '';
-    }
-
-    /**
      * Cuando la fuente no trae tax_id, el nombre+país es la única identidad
      * disponible. Se reutiliza una coincidencia inequívoca y nunca se crea una
      * tercera ficha si el maestro ya es ambiguo.
@@ -1447,29 +1438,6 @@ protected function extractValue(string $scope, string $label): ?string
             $fallbackCountryId
         );
 
-        // Con identificación fiscal, la identidad primaria es tax_id + país.
-        if ($normTaxId !== null) {
-            $client = Client::query()
-                ->where('tax_id', $normTaxId)
-                ->where('country_id', $countryId)
-                ->first();
-
-            if ($client) {
-                return $client;
-            }
-        } else {
-            // Si la fuente no aporta tax_id, reutilizar una identidad nominal
-            // inequívoca del mismo país, incluso si el maestro ya fue enriquecido.
-            $client = $this->findClientByNameIdentity(
-                $name,
-                $countryId
-            );
-
-            if ($client) {
-                return $client;
-            }
-        }
-
         $documentTypeId = null;
 
         if ($normTaxId !== null && $taxType !== null) {
@@ -1484,31 +1452,22 @@ protected function extractValue(string $scope, string $label): ?string
                     "TFP: no existe un tipo documental {$taxType} activo y compatible con el país resuelto."
                 );
             }
+        }
 
-            $legacyClient = $this->findUnidentifiedClientByNameIdentity(
-                $name,
-                $countryId
-            );
+        $resolved = $this->resolveExistingClient(
+            $normTaxId,
+            $name,
+            $countryId,
+            $documentTypeId
+        );
 
-            if ($legacyClient) {
-                $legacyClient->updateQuietly([
-                    'tax_id' => $normTaxId,
-                    'document_type_id' => $documentTypeId,
-                ]);
+        $this->stats['warnings'] = array_values(array_unique(array_merge(
+            $this->stats['warnings'],
+            $resolved['warnings']
+        )));
 
-                Log::info(
-                    'TFP: ficha histórica enriquecida con identidad fiscal',
-                    [
-                        'client_id' => $legacyClient->id,
-                        'name' => $name,
-                        'tax_id' => $normTaxId,
-                        'country_id' => $countryId,
-                        'document_type_id' => $documentTypeId,
-                    ]
-                );
-
-                return $legacyClient;
-            }
+        if ($resolved['client'] !== null) {
+            return $resolved['client'];
         }
 
         Log::info('TFP: alta de cliente con identidad preservada', [
@@ -1520,7 +1479,7 @@ protected function extractValue(string $scope, string $label): ?string
             'document_type_id' => $documentTypeId,
         ]);
 
-        return Client::create([
+        $client = Client::create([
             'tax_id' => $normTaxId,
             'country_id' => $countryId,
             'document_type_id' => $documentTypeId,
@@ -1530,6 +1489,10 @@ protected function extractValue(string $scope, string $label): ?string
             'created_by_company_id' => $companyId,
             'verified_at' => now(),
         ]);
+
+        $this->rememberClientIdentity($client);
+
+        return $client;
     }
 
     /**
