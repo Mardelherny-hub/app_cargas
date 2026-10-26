@@ -252,26 +252,31 @@ class TfpTextParserCoreIntegrityTest extends TestCase
         );
     }
 
-    public function test_tfp_enriches_unique_unidentified_client_before_creating_duplicate(): void
+    public function test_tfp_delegates_client_identity_resolution_to_shared_trait(): void
     {
-        $source = file_get_contents(
-            base_path('app/Services/Parsers/TfpTextParser.php')
+        $this->assertContains(
+            \App\Services\Parsers\Concerns\ResolvesExistingClient::class,
+            class_uses_recursive(TfpTextParser::class)
         );
 
-        $this->assertStringContainsString(
-            'findUnidentifiedClientByNameIdentity',
-            $source
-        );
+        $method = new ReflectionMethod(TfpTextParser::class, 'findOrCreateClient');
+        $source = implode('', array_slice(
+            file($method->getFileName()),
+            $method->getStartLine() - 1,
+            $method->getEndLine() - $method->getStartLine() + 1
+        ));
 
-        $this->assertStringContainsString(
-            "'tax_id' => \$normTaxId",
-            $source
-        );
+        $this->assertStringContainsString('$this->resolveExistingClient(', $source);
+        $this->assertStringContainsString("\$resolved['warnings']", $source);
+        $this->assertStringContainsString("\$this->stats['warnings'] = array_values(array_unique(array_merge(", $source);
+        $this->assertStringContainsString("return \$resolved['client'];", $source);
+        $this->assertStringContainsString('$this->rememberClientIdentity($client);', $source);
 
-        $this->assertStringContainsString(
-            'ficha histórica enriquecida con identidad fiscal',
-            $source
-        );
+        $resolvePosition = strpos($source, '$this->resolveExistingClient(');
+        $createPosition = strpos($source, 'Client::create(');
+        $this->assertNotFalse($createPosition);
+        $this->assertLessThan($createPosition, $resolvePosition);
+        $this->assertStringNotContainsString('findUnidentifiedClientByNameIdentity(', $source);
     }
 
     public function test_compat_extracts_tariff_position_only_from_explicit_tfp_labels(): void
