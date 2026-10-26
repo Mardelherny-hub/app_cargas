@@ -16,6 +16,7 @@ use App\Models\ContainerType;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Services\Parsers\Concerns\ResolvesPorts;
@@ -36,6 +37,7 @@ class NavsurTextParser implements ManifestParserInterface
 {
     use EnsuresUniqueVoyageNumber;
     use ExtractsEmbeddedTaxId;
+    use ResolvesExistingClient;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
     use ResolvesPorts;
@@ -1545,30 +1547,25 @@ protected function createContainer(
 
         $taxId = $this->resolveTaxId(null, $name);
 
-        if ($taxId) {
-            $existing = Client::where(
-                'tax_id',
-                $taxId
-            )->first();
+        $documentTypeId = $this->resolveClientDocumentTypeId(
+            $taxId,
+            $countryId
+        );
 
-            if ($existing) {
-                return $existing;
-            }
-        }
+        $resolved = $this->resolveExistingClient(
+            $taxId,
+            $name,
+            $countryId,
+            $documentTypeId
+        );
 
-        $existing = Client::where(
-                'country_id',
-                $countryId
-            )
-            ->where(function ($query) use ($name) {
-                $query
-                    ->where('legal_name', $name)
-                    ->orWhere('commercial_name', $name);
-            })
-            ->first();
+        $this->stats['warnings'] = array_values(array_unique(array_merge(
+            $this->stats['warnings'],
+            $resolved['warnings']
+        )));
 
-        if ($existing) {
-            return $existing;
+        if ($resolved['client'] !== null) {
+            return $resolved['client'];
         }
 
         $user = auth()->user();
@@ -1604,11 +1601,7 @@ protected function createContainer(
         $client = Client::create([
             'tax_id' => $taxId,
             'country_id' => $countryId,
-            'document_type_id' =>
-                $this->resolveClientDocumentTypeId(
-                    $taxId,
-                    $countryId
-                ),
+            'document_type_id' => $documentTypeId,
             'legal_name' => $name,
             'commercial_name' => $name,
             'status' => 'active',
@@ -1617,6 +1610,8 @@ protected function createContainer(
             // Navsur no declara que el cliente esté verificado.
             'verified_at' => null,
         ]);
+
+        $this->rememberClientIdentity($client);
 
         if (!$taxId) {
             $this->stats['warnings'][] =
