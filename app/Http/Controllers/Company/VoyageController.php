@@ -962,7 +962,7 @@ class VoyageController extends Controller
                 'bills_count' => $billsCount,
                 'verified_bills' => $verifiedBills,
                 'items_count' => $itemsCount,
-                'completion_percentage' => $billsCount > 0 ? round($verifiedBills / $billsCount * 100) : 0,
+                'completion_percentage' => $billsCount > 0 ? (int) round($verifiedBills / $billsCount * 100) : 0,
                 'has_items' => $itemsCount > 0,
                 'ready_for_customs' => $billsCount > 0 && $verifiedBills === $billsCount && $itemsCount > 0
             ];
@@ -978,7 +978,7 @@ class VoyageController extends Controller
             ->count();
         
         $totalShipments = $voyage->shipments->count();
-        $completionPercentage = $totalShipments > 0 ? round($readyShipments / $totalShipments * 100) : 0;
+        $completionPercentage = $totalShipments > 0 ? (int) round($readyShipments / $totalShipments * 100) : 0;
         
         $overallStatus = 'draft';
         if ($completionPercentage === 100) {
