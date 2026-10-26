@@ -159,8 +159,6 @@ class ManifestImportController extends Controller
                     true
                 )
             ) {
-                Storage::delete($path);
-
                 return back()
                     ->withInput()
                     ->withErrors([
@@ -214,9 +212,6 @@ class ManifestImportController extends Controller
                 'uuid' => $tracking->uuid,
             ]);
         } catch (Exception $e) {
-            // Limpiar archivo temporal en caso de error
-            Storage::delete($path);
-            
             Log::error('Critical error during manifest import', [
                 'original_name' => $originalName,
                 'original_extension' => $originalExtension,
