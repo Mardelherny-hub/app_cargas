@@ -484,7 +484,7 @@ class VoyageController extends Controller
         $rules = [
             'voyage_number'            => 'required|string|max:50',
             'internal_reference'       => 'nullable|string|max:100',
-            'status'                   => 'required|in:draft,planning,loading,in_progress,arrived,completed,cancelled',
+            'status'                   => 'required|in:planning,approved,in_transit,at_destination,completed,cancelled,delayed',
             'cargo_type'               => 'required|in:export,import,transit,transshipment,cabotage',
             'lead_vessel_id'           => 'required|exists:vessels,id',
             'captain_id'               => 'required|exists:captains,id',
@@ -766,7 +766,7 @@ class VoyageController extends Controller
         }
 
         $request->validate([
-            'status' => 'required|in:planning,loading,in_progress,arrived,completed,cancelled',
+            'status' => 'required|in:planning,approved,in_transit,at_destination,completed,cancelled,delayed',
             'notes' => 'nullable|string|max:1000',
         ]);
 

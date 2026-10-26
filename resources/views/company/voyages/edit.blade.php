@@ -134,13 +134,13 @@
                                         @if(!$userPermissions['can_edit']) disabled @endif
                                         class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm @error('status') border-red-300 @enderror @if(!$userPermissions['can_edit']) bg-gray-100 @endif">
                                     @foreach([
-                                        'draft'       => 'Borrador',
-                                        'planning'    => 'En Planificación',
-                                        'loading'     => 'Cargando',
-                                        'in_progress' => 'En Tránsito',
-                                        'arrived'     => 'Arribado',
-                                        'completed'   => 'Completado',
-                                        'cancelled'   => 'Cancelado',
+                                        'planning'       => 'En Planificación',
+                                        'approved'       => 'Aprobado',
+                                        'in_transit'     => 'En Tránsito',
+                                        'at_destination' => 'En Destino',
+                                        'completed'      => 'Completado',
+                                        'cancelled'      => 'Cancelado',
+                                        'delayed'        => 'Demorado',
                                     ] as $val => $label)
                                         <option value="{{ $val }}" {{ old('status', $voyage->status) === $val ? 'selected' : '' }}>
                                             {{ $label }}
