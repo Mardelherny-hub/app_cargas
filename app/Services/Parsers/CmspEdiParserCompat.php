@@ -732,91 +732,7 @@ class CmspEdiParserCompat extends CmspEdiParser
             $partyData
         );
 
-        if ($taxId !== null) {
-            $client = Client::query()
-                ->where('tax_id', $taxId)
-                ->where('country_id', $countryId)
-                ->first();
-
-            if ($client) {
-                $this->persistClientAddress(
-                    $client,
-                    $partyData['address'] ?? null
-                );
-
-                return $client;
-            }
-        } else {
-            $name = trim((string) $partyData['name']);
-            $normalizedName = mb_strtoupper($name);
-
-            $client = $this->findClientByCuscarNamePrefix(
-                $name,
-                $countryId
-            );
-
-            if ($client) {
-                $this->persistClientAddress(
-                    $client,
-                    $partyData['address'] ?? null
-                );
-
-                return $client;
-            }
-
-            if ($taxType !== null) {
-                $matches = Client::query()
-                    ->where('country_id', $countryId)
-                    ->where(function ($query) use ($normalizedName) {
-                        $query
-                            ->whereRaw(
-                                'UPPER(TRIM(legal_name)) = ?',
-                                [$normalizedName]
-                            )
-                            ->orWhereRaw(
-                                'UPPER(TRIM(commercial_name)) = ?',
-                                [$normalizedName]
-                            );
-                    })
-                    ->limit(2)
-                    ->get();
-
-                if ($matches->count() === 1) {
-                    $client = $matches->first();
-                    $this->persistClientAddress(
-                        $client,
-                        $partyData['address'] ?? null
-                    );
-
-                    return $client;
-                }
-            }
-
-            $client = Client::query()
-                ->whereNull('tax_id')
-                ->where('country_id', $countryId)
-                ->where(function ($query) use ($normalizedName) {
-                    $query
-                        ->whereRaw(
-                            'UPPER(TRIM(legal_name)) = ?',
-                            [$normalizedName]
-                        )
-                        ->orWhereRaw(
-                            'UPPER(TRIM(commercial_name)) = ?',
-                            [$normalizedName]
-                        );
-                })
-                ->first();
-
-            if ($client) {
-                $this->persistClientAddress(
-                    $client,
-                    $partyData['address'] ?? null
-                );
-
-                return $client;
-            }
-        }
+        $name = trim((string) $partyData['name']);
 
         $documentTypeId = null;
 
@@ -851,44 +767,25 @@ class CmspEdiParserCompat extends CmspEdiParser
             }
         }
 
+        $client = $this->resolveExistingCmspClient(
+            $taxId,
+            $name,
+            $countryId,
+            $documentTypeId
+        );
+
         $this->contextualizePartyWarnings(
             $warningStart,
             $partyData
         );
 
-        if ($taxId !== null) {
-            $legacyClient = $this->findUnidentifiedClientByNameIdentity(
-                trim((string) $partyData['name']),
-                $countryId
+        if ($client) {
+            $this->persistClientAddress(
+                $client,
+                $partyData['address'] ?? null
             );
 
-            if ($legacyClient) {
-                $updates = ['tax_id' => $taxId];
-
-                if ($documentTypeId !== null) {
-                    $updates['document_type_id'] = $documentTypeId;
-                }
-
-                $legacyClient->updateQuietly($updates);
-
-                $this->persistClientAddress(
-                    $legacyClient,
-                    $partyData['address'] ?? null
-                );
-
-                Log::info(
-                    'CMSP compat: ficha histórica enriquecida con identidad fiscal',
-                    [
-                        'client_id' => $legacyClient->id,
-                        'name' => $partyData['name'],
-                        'tax_id' => $taxId,
-                        'country_id' => $countryId,
-                        'document_type_id' => $documentTypeId,
-                    ]
-                );
-
-                return $legacyClient;
-            }
+            return $client;
         }
 
         $client = Client::create([
@@ -899,6 +796,8 @@ class CmspEdiParserCompat extends CmspEdiParser
             'country_id' => $countryId,
             'document_type_id' => $documentTypeId,
         ]);
+
+        $this->rememberClientIdentity($client);
 
         $this->persistClientAddress(
             $client,
