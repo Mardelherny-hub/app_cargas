@@ -8,6 +8,7 @@ use App\Models\Voyage;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Models\Shipment;
 use App\Models\BillOfLading;
 use App\Models\Container;
@@ -48,6 +49,7 @@ class CmspEdiParser implements ManifestParserInterface
     use EnsuresUniqueVoyageNumber;
     use ExtractsEmbeddedTaxId;
     use ResolvesClientAddresses;
+    use ResolvesExistingClient;
 
     /**
      * Rol de la ultima parte leida, para asociarle el RFF+ADZ que viene
@@ -3253,16 +3255,6 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
-     * Identidad nominal estable, equivalente al criterio ya usado por TFP.
-     */
-    protected function normalizeClientIdentityName(string $name): string
-    {
-        $normalized = mb_strtoupper(trim($name), 'UTF-8');
-
-        return preg_replace('/[^\p{L}\p{N}]+/u', '', $normalized) ?? '';
-    }
-
-    /**
      * CUSCAR puede concatenar razón social y domicilio dentro del NAD.
      * Sólo se reutiliza una ficha cuando su nombre es un prefijo inequívoco
      * del texto fuente dentro del mismo país. Si existen varias fichas, una
@@ -3337,58 +3329,6 @@ class CmspEdiParser implements ManifestParserInterface
         throw new \DomainException(
             "CMSP: existen múltiples clientes compatibles con '{$sourceName}' y ninguno tiene identificador fiscal inequívoco."
         );
-    }
-
-    /**
-     * Si el CUSCAR aporta un identificador fiscal real para una ficha histórica
-     * que todavía no lo tiene, reutilizar esa ficha sólo cuando nombre y país
-     * la identifican inequívocamente.
-     */
-    protected function findUnidentifiedClientByNameIdentity(
-        string $name,
-        int $countryId
-    ): ?Client {
-        $wanted = $this->normalizeClientIdentityName($name);
-
-        if ($wanted === '') {
-            return null;
-        }
-
-        $matches = DB::table('clients')
-            ->where('country_id', $countryId)
-            ->whereNull('tax_id')
-            ->get([
-                'id',
-                'legal_name',
-                'commercial_name',
-            ])
-            ->filter(function ($row) use ($wanted) {
-                foreach ([$row->legal_name, $row->commercial_name] as $candidate) {
-                    if (
-                        $candidate !== null
-                        && $this->normalizeClientIdentityName(
-                            (string) $candidate
-                        ) === $wanted
-                    ) {
-                        return true;
-                    }
-                }
-
-                return false;
-            })
-            ->values();
-
-        if ($matches->count() === 1) {
-            return Client::find($matches->first()->id);
-        }
-
-        if ($matches->count() > 1) {
-            throw new \DomainException(
-                "CMSP: existen múltiples clientes sin identificador fiscal para '{$name}'."
-            );
-        }
-
-        return null;
     }
 
     /**
@@ -3633,6 +3573,45 @@ class CmspEdiParser implements ManifestParserInterface
     }
 
     /**
+     * Identificación de clientes existentes: reglas comunes del trait
+     * ResolvesExistingClient y, sólo sin tax_id, el prefijo CUSCAR
+     * (razón social + domicilio concatenados en un NAD) como respaldo.
+     * Las advertencias del trait se suman a $this->stats['warnings'].
+     */
+    protected function resolveExistingCmspClient(
+        ?string $taxId,
+        string $name,
+        int $countryId,
+        ?int $documentTypeId
+    ): ?Client {
+        $resolution = $this->resolveExistingClient(
+            $taxId,
+            $name,
+            $countryId,
+            $documentTypeId
+        );
+
+        foreach ($resolution['warnings'] as $warning) {
+            if (!in_array($warning, $this->stats['warnings'], true)) {
+                $this->stats['warnings'][] = $warning;
+            }
+        }
+
+        if ($resolution['client']) {
+            return $resolution['client'];
+        }
+
+        if ($taxId === null) {
+            return $this->findClientByCuscarNamePrefix(
+                $name,
+                $countryId
+            );
+        }
+
+        return null;
+    }
+
+    /**
      * Buscar o crear cliente sin fabricar jurisdicción ni tipo documental.
      */
     protected function findOrCreateClient(?array $partyData): ?Client
@@ -3668,77 +3647,7 @@ class CmspEdiParser implements ManifestParserInterface
             $taxType
         );
 
-        // Con identificador fiscal la identidad es tax_id + country_id.
-        // Nunca degradar luego a una coincidencia sólo por nombre.
-        if ($taxId !== null) {
-            $client = Client::query()
-                ->where('tax_id', $taxId)
-                ->where('country_id', $countryId)
-                ->first();
-
-            if ($client) {
-                $this->persistClientAddress(
-                    $client,
-                    $partyData['address'] ?? null
-                );
-
-                return $client;
-            }
-        } else {
-            $name = trim((string) $partyData['name']);
-
-            /*
-             * Algunos CUSCAR entregan razón social + domicilio en un único NAD,
-             * sin separador estructural ni RFF+ADZ fiscal. Antes de crear una
-             * ficha nueva, reutilizar únicamente una identidad inequívoca del
-             * maestro cuyo nombre real sea prefijo del texto fuente.
-             *
-             * Es el mismo criterio conservador usado por TFP: si hay más de una
-             * identidad posible no se elige una arbitrariamente.
-             */
-            $client = $this->findClientByCuscarNamePrefix(
-                $name,
-                $countryId
-            );
-
-            if ($client) {
-                $this->persistClientAddress(
-                    $client,
-                    $partyData['address'] ?? null
-                );
-
-                return $client;
-            }
-
-            // Sin coincidencia por prefijo, conservar la búsqueda exacta
-            // histórica entre fichas también carentes de tax_id.
-            $client = Client::query()
-                ->whereNull('tax_id')
-                ->where('country_id', $countryId)
-                ->where(function ($query) use ($name) {
-                    $normalizedName = mb_strtoupper($name);
-
-                    $query
-                        ->whereRaw(
-                            'UPPER(TRIM(legal_name)) = ?',
-                            [$normalizedName]
-                        )
-                        ->orWhereRaw(
-                            'UPPER(TRIM(commercial_name)) = ?',
-                            [$normalizedName]
-                        );
-                })
-                ->first();
-
-            if ($client) {
-                $this->persistClientAddress(
-                    $client,
-                    $partyData['address'] ?? null
-                );
-
-                return $client;
-            }
-        }
+        $name = trim((string) $partyData['name']);
 
         $documentTypeId = null;
 
@@ -3757,39 +3666,20 @@ class CmspEdiParser implements ManifestParserInterface
             }
         }
 
-        if ($taxId !== null) {
-            $legacyClient = $this->findUnidentifiedClientByNameIdentity(
-                trim((string) $partyData['name']),
-                $countryId
+        $client = $this->resolveExistingCmspClient(
+            $taxId,
+            $name,
+            $countryId,
+            $documentTypeId
+        );
+
+        if ($client) {
+            $this->persistClientAddress(
+                $client,
+                $partyData['address'] ?? null
             );
 
-            if ($legacyClient) {
-                $updates = ['tax_id' => $taxId];
-
-                if ($documentTypeId !== null) {
-                    $updates['document_type_id'] = $documentTypeId;
-                }
-
-                $legacyClient->updateQuietly($updates);
-
-                $this->persistClientAddress(
-                    $legacyClient,
-                    $partyData['address'] ?? null
-                );
-
-                Log::info(
-                    'CMSP: ficha histórica enriquecida con identidad fiscal',
-                    [
-                        'client_id' => $legacyClient->id,
-                        'name' => $partyData['name'],
-                        'tax_id' => $taxId,
-                        'country_id' => $countryId,
-                        'document_type_id' => $documentTypeId,
-                    ]
-                );
-
-                return $legacyClient;
-            }
+            return $client;
         }
 
         $client = Client::create([
@@ -3800,6 +3690,8 @@ class CmspEdiParser implements ManifestParserInterface
             'country_id' => $countryId,
             'document_type_id' => $documentTypeId,
         ]);
+
+        $this->rememberClientIdentity($client);
 
         Log::info('CMSP: cliente creado automáticamente', [
             'name' => $partyData['name'],
