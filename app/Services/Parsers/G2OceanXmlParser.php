@@ -14,6 +14,7 @@ use App\Models\Country;
 use App\Models\DocumentType;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
@@ -42,6 +43,7 @@ use Carbon\Carbon;
 class G2OceanXmlParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use ResolvesExistingClient;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
@@ -229,6 +231,7 @@ class G2OceanXmlParser implements ManifestParserInterface
                         shipments: [$shipment],
                         containers: [],
                         billsOfLading: $createdBills,
+                        warnings: $this->stats['warnings'],
                         statistics: array_merge(
                             $this->stats,
                             [
@@ -1356,16 +1359,6 @@ class G2OceanXmlParser implements ManifestParserInterface
         );
     }
 
-    /**
-     * Buscar/crear cliente
-     */
-    protected function normalizeClientIdentityName(string $name): string
-    {
-        $normalized = mb_strtoupper(trim($name), 'UTF-8');
-
-        return preg_replace('/[^\\p{L}\\p{N}]+/u', '', $normalized) ?? '';
-    }
-
     protected function findClientByNameIdentity(
         string $name,
         int $countryId
@@ -1520,29 +1513,6 @@ class G2OceanXmlParser implements ManifestParserInterface
             $defaultPort
         );
 
-        // Buscar existente
-        if ($taxId) {
-            // Con identificador: por (tax_id, country_id), coherente con el índice único.
-            $client = Client::where('tax_id', $taxId)
-                ->where('country_id', $countryId)
-                ->first();
-
-            if ($client) {
-                return $client;
-            }
-        } else {
-            // Sin identificador fiscal, reutilizar una identidad nominal
-            // inequívoca del mismo país. La puntuación no crea otra ficha.
-            $client = $this->findClientByNameIdentity(
-                $name,
-                $countryId
-            );
-
-            if ($client) {
-                return $client;
-            }
-        }
-
         $documentTypeId = null;
 
         if ($taxId !== null && $taxType !== null) {
@@ -1558,35 +1528,26 @@ class G2OceanXmlParser implements ManifestParserInterface
                     . 'activo y compatible con el país resuelto.'
                 );
             }
+        }
 
-            $legacyClient = $this->findUnidentifiedClientByNameIdentity(
-                $name,
-                $countryId
-            );
+        $resolved = $this->resolveExistingClient(
+            $taxId,
+            $name,
+            $countryId,
+            $documentTypeId
+        );
 
-            if ($legacyClient) {
-                $legacyClient->updateQuietly([
-                    'tax_id' => $taxId,
-                    'document_type_id' => $documentTypeId,
-                ]);
+        $this->stats['warnings'] = array_values(array_unique(array_merge(
+            $this->stats['warnings'],
+            $resolved['warnings']
+        )));
 
-                Log::info(
-                    'G2Ocean: ficha histórica enriquecida con identidad fiscal',
-                    [
-                        'client_id' => $legacyClient->id,
-                        'name' => $name,
-                        'tax_id' => $taxId,
-                        'country_id' => $countryId,
-                        'document_type_id' => $documentTypeId,
-                    ]
-                );
-
-                return $legacyClient;
-            }
+        if ($resolved['client'] !== null) {
+            return $resolved['client'];
         }
 
         // Crear nuevo sin fabricar documento fiscal.
-        return Client::create([
+        $client = Client::create([
             'tax_id' => $taxId,
             'country_id' => $countryId,
             'document_type_id' => $documentTypeId,
@@ -1598,6 +1559,10 @@ class G2OceanXmlParser implements ManifestParserInterface
             'verified_at' => now(),
             'notes' => 'Cliente creado desde archivo G2Ocean XML'
         ]);
+
+        $this->rememberClientIdentity($client);
+
+        return $client;
     }
 
     /**
