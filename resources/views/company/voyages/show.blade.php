@@ -91,7 +91,6 @@
                         <h3 class="text-lg leading-6 font-medium text-gray-900">
                             Información General
                         </h3>
-                        @livewire('status-changer', ['model' => $voyage])
                     </div>
 
                     <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -321,10 +320,6 @@
                                             <div class="flex items-center space-x-2">
                                                 <a href="{{ route('company.shipments.show', $shipment) }}"
                                                 class="text-indigo-600 hover:text-indigo-900">Ver</a>
-                                                @livewire('status-changer', [
-                                                    'model' => $shipment,
-                                                    'modelType' => 'shipment'
-                                                ], key($shipment->id))
                                             </div>
                                         </td>
                                     </tr>

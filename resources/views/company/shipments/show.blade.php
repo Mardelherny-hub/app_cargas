@@ -359,16 +359,6 @@
                             </div>
                             </div>
                             <div class="flex items-center space-x-4">
-                            <div class="text-right">
-                            <div class="text-xs text-gray-500">
-                                @livewire('status-changer', [
-                                    'model' => $bill,
-                                    'showReason' => false,
-                                    'size' => 'small',
-                                    'showAsDropdown' => true
-                                ], key('bl-status-'.$bill->id))
-                            </div>
-                            </div>
                             <div class="flex space-x-2">
                             {{-- Enlace Ver --}}
                             <a href="{{ route('company.bills-of-lading.show', $bill) }}" 
