@@ -23,6 +23,7 @@ use App\Models\User;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
+use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -52,6 +53,7 @@ class LoginXmlParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
+    use ResolvesExistingClient;
     use ResolvesVoyageCargoType;
     // Mapeo de tipos de contenedor del XML a tipos del sistema
     protected array $containerTypeMapping = [
@@ -2013,124 +2015,22 @@ class LoginXmlParser implements ManifestParserInterface
             }
         }
 
-        /*
-         * CUIT/CNPJ son identificadores fiscales específicos de país.
-         *
-         * Si ya existe exactamente ese identificador, no se crea otra
-         * persona jurídica.
-         *
-         * Si el país histórico es incompatible con la semántica fiscal,
-         * la importación se bloquea para corregir el maestro de forma
-         * controlada; el parser no cambia silenciosamente el país.
-         */
-        if ($cleanTaxId !== null) {
-            $taxMatches = Client::where(
-                    'tax_id',
-                    $cleanTaxId
-                )
-                ->get();
+        $resolution = $this->resolveExistingClient(
+            $cleanTaxId,
+            $cleanName,
+            (int) $country->id,
+            $documentType?->id
+        );
 
-            $client = $taxMatches->first(
-                static fn (Client $candidate) =>
-                    (int) $candidate->country_id
-                    === (int) $country->id
-            );
-
-            if ($client) {
-                if (
-                    $documentType
-                    && (
-                        $client->document_type_id === null
-                        || (int) $client->document_type_id
-                            !== (int) $documentType->id
-                    )
-                ) {
-                    $client->updateQuietly([
-                        'document_type_id' =>
-                            $documentType->id,
-                    ]);
-                }
-
-                if ($taxMatches->count() > 1) {
-                    $this->addWarningOnce(
-                        "Identificación fiscal {$cleanTaxId} "
-                        . "({$cleanName}): ya existen clientes "
-                        . 'duplicados; se reutilizó el registro '
-                        . "#{$client->id} compatible con "
-                        . "{$countryCode}."
-                    );
-                }
-
-                return $client;
-            }
-
-            if ($taxMatches->count() === 1) {
-                $client = $taxMatches->first();
-
-                /*
-                 * Maestro legacy inequívoco:
-                 *
-                 * - existe una sola fila con este tax_id;
-                 * - Login determinó país por CUIT/CNPJ;
-                 * - el tipo documental fue resuelto contra ese país.
-                 *
-                 * Se corrige la identidad fiscal de ESA MISMA fila.
-                 * Nunca se crea un duplicado ni se elige entre varios.
-                 */
-                $previousCountry = Country::find(
-                    $client->country_id
-                );
-
-                $previousCountryCode =
-                    $previousCountry?->alpha2_code
-                    ?? (string) $client->country_id;
-
-                Log::warning(
-                    'Login corrige maestro fiscal legacy inequívoco',
-                    [
-                        'client_id' => $client->id,
-                        'tax_id' => $cleanTaxId,
-                        'country_from' => $previousCountryCode,
-                        'country_to' => $countryCode,
-                        'document_from' =>
-                            $client->document_type_id,
-                        'document_to' =>
-                            $documentType?->id,
-                    ]
-                );
-
-                $client->updateQuietly([
-                    'country_id' => $country->id,
-                    'document_type_id' =>
-                        $documentType?->id,
-                ]);
-
-                return $client;
-            }
-
-            if ($taxMatches->count() > 1) {
-                throw new Exception(
-                    "Identificación fiscal {$cleanTaxId} "
-                    . 'corresponde a múltiples clientes y ninguno '
-                    . "coincide con el país {$countryCode}. "
-                    . 'Debe resolverse la duplicidad antes de importar.'
-                );
-            }
-        } else {
-            // Sin tax real: nombre exacto + país.
-            $client = Client::where(
-                    'legal_name',
-                    $cleanName
-                )
-                ->where('country_id', $country->id)
-                ->first();
-
-            if ($client) {
-                return $client;
-            }
+        foreach ($resolution['warnings'] as $warning) {
+            $this->addWarningOnce($warning);
         }
 
-        return Client::create([
+        if ($resolution['client']) {
+            return $resolution['client'];
+        }
+
+        $client = Client::create([
             'tax_id' => $cleanTaxId,
             'country_id' => $country->id,
             'document_type_id' => $documentType?->id,
@@ -2140,6 +2040,10 @@ class LoginXmlParser implements ManifestParserInterface
             'verified_at' => null,
             'created_by_user_id' => $context['user_id'],
         ]);
+
+        $this->rememberClientIdentity($client);
+
+        return $client;
     }
 
     /**
