@@ -14,6 +14,7 @@ use App\Models\Port;
 use App\Models\Country;
 use App\Models\Vessel;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
@@ -51,10 +52,14 @@ use Exception;
 class GuaranExcelParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use ResolvesExistingClient;
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
     use ResolvesPorts;
+
+    protected array $warnings = [];
+
     /**
      * Mapeo columnas A-BT basado en análisis real del archivo
      */
@@ -123,6 +128,8 @@ class GuaranExcelParser implements ManifestParserInterface
 
     public function parse(string $filePath, array $options = []): ManifestParseResult
     {
+        $this->warnings = [];
+
         $startTime = microtime(true);
         
         Log::info('Iniciando parseo GUARAN Excel - Solo datos reales', [
@@ -240,6 +247,7 @@ class GuaranExcelParser implements ManifestParserInterface
                 shipments: [$shipment],
                 containers: $containers,
                 billsOfLading: $bills,
+                warnings: $this->warnings,
                 statistics: [
                     'records_processed' => count($data),
                     'bills_created' => count($bills),
@@ -1847,45 +1855,6 @@ class GuaranExcelParser implements ManifestParserInterface
             $taxType
         );
 
-        // Con identificador fiscal la identidad es tax_id + country_id.
-        // Nunca degradar después a una coincidencia solamente por nombre.
-        if ($taxId !== null) {
-            $client = Client::query()
-                ->where('tax_id', $taxId)
-                ->where('country_id', $countryId)
-                ->first();
-
-            if ($client) {
-                return $client;
-            }
-        } else {
-            // Sin identificador fiscal sólo se reutiliza otra ficha
-            // igualmente sin tax_id, mismo país y mismo nombre.
-            $name = trim((string) $data['name']);
-
-            $client = Client::query()
-                ->whereNull('tax_id')
-                ->where('country_id', $countryId)
-                ->where(function ($query) use ($name) {
-                    $normalizedName = mb_strtoupper($name);
-
-                    $query
-                        ->whereRaw(
-                            'UPPER(TRIM(legal_name)) = ?',
-                            [$normalizedName]
-                        )
-                        ->orWhereRaw(
-                            'UPPER(TRIM(commercial_name)) = ?',
-                            [$normalizedName]
-                        );
-                })
-                ->first();
-
-            if ($client) {
-                return $client;
-            }
-        }
-
         $documentTypeId = null;
 
         if ($taxId !== null && $taxType !== null) {
@@ -1903,7 +1872,23 @@ class GuaranExcelParser implements ManifestParserInterface
             }
         }
 
-        return Client::create([
+        $resolved = $this->resolveExistingClient(
+            $taxId,
+            trim((string) $data['name']),
+            $countryId,
+            $documentTypeId
+        );
+
+        $this->warnings = array_values(array_unique(array_merge(
+            $this->warnings,
+            $resolved['warnings']
+        )));
+
+        if ($resolved['client'] !== null) {
+            return $resolved['client'];
+        }
+
+        $client = Client::create([
             'created_by_company_id' => $companyId,
             'legal_name' => $data['name'],
             'commercial_name' => $data['name'],
@@ -1920,6 +1905,10 @@ class GuaranExcelParser implements ManifestParserInterface
             'verified_at' => now(),
             'created_by_user_id' => auth()->id(),
         ]);
+
+        $this->rememberClientIdentity($client);
+
+        return $client;
     }
 
     protected function extractTaxId(string $text): ?string
