@@ -175,7 +175,7 @@
                                                         </span>
                                                     @endif
                                                     <div class="text-xs text-gray-500 mt-1">
-                                                        {{ $company->certificate_expires_at?->format('d/m/Y') }}
+                                                        {{ $company->certificate_effective_expires_at?->format('d/m/Y') }}
                                                     </div>
                                                 </div>
                                             @else
