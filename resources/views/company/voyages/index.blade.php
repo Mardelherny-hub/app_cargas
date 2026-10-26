@@ -140,9 +140,6 @@
                                         Embarcación
                                     </th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Estado
-                                    </th>
-                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                         Cargas
                                     </th>
                                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -212,11 +209,6 @@
                                                     Cap: {{ $voyage->captain->full_name }}
                                                 </div>
                                             @endif
-                                        </td>
-
-                                        {{-- Estado (Livewire Component) --}}
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            @livewire('voyage-status-badge', ['voyage' => $voyage], key($voyage->id))
                                         </td>
 
                                         {{-- Cargas (Corregido) --}}
@@ -312,16 +304,4 @@
     {{-- Livewire Scripts --}}
     @livewireScripts
     
-    {{-- Listener para eventos del StatusBadge --}}
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            Livewire.on('voyage-status-changed', (voyageId, newStatus) => {
-                // Mostrar notificación de éxito
-                console.log(`Viaje ${voyageId} cambió a estado: ${newStatus}`);
-                
-                // Opcional: Refrescar la página o actualizar otras partes de la UI
-                // window.location.reload();
-            });
-        });
-    </script>
 </x-app-layout>

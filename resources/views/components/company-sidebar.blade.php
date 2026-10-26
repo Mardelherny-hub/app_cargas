@@ -171,10 +171,6 @@
                        class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.manifests.index') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
                         🏠 Dashboard Manifiestos
                     </a>
-                    <a href="{{ route('company.dashboard-estados.index') }}" 
-                       class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.dashboard-estados.*') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
-                        📊 Dashboard Estados
-                    </a>
                     <a href="{{ route('company.voyages.index') }}" 
                        class="flex items-center px-6 py-2 text-sm font-medium rounded-md {{ request()->routeIs('company.voyages.*') ? 'bg-indigo-100 text-indigo-700' : 'text-gray-600 hover:bg-gray-100' }}">
                         🚢 Viajes

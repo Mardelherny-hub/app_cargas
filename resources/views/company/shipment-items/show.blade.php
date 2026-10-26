@@ -36,27 +36,6 @@
                 <div class="px-4 py-5 sm:p-6">
                     <div class="flex justify-between items-center">
                         <div class="flex items-center space-x-6">
-                            {{-- Estado del Bill of Lading (no del item) --}}
-                            <div class="flex items-center space-x-3">
-                                <span class="text-sm font-medium text-gray-600">Estado del Bill of Lading:</span>
-                                @livewire('status-changer', [
-                                    'model' => $shipmentItem->billOfLading,
-                                    'showReason' => true,
-                                    'size' => 'normal'
-                                ])
-                            </div>
-
-                            {{-- NUEVO: Estado del Item Individual --}}
-                            <div class="flex items-center space-x-3">
-                                <span class="text-sm font-medium text-gray-600">Estado del Item:</span>
-                                @livewire('status-changer', [
-                                    'model' => $shipmentItem,
-                                    'showReason' => true,
-                                    'size' => 'normal'
-                                ], key('item-status-'.$shipmentItem->id))
-                            </div>
-
-
                             {{-- Información del item en el BL --}}
                             <div class="text-sm text-gray-500">
                                 <span class="font-medium">Item {{ $shipmentItem->line_number }}</span> 
