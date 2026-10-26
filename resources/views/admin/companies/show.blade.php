@@ -27,7 +27,7 @@
                     Certificados
                 </a>
                 @if($company->active)
-                    <form method="POST" action="{{-- route('admin.companies.toggle-status', $company) --}} #" class="inline">
+                    <form method="POST" action="{{ route('admin.companies.toggle-status', $company) }}" class="inline">
                         @csrf
                         @method('PATCH')
                         <button type="submit"
@@ -37,10 +37,11 @@
                         </button>
                     </form>
                 @else
-                    <form method="POST" action="{{-- route('admin.companies.toggle-status', $company) --}} #" class="inline">
+                    <form method="POST" action="{{ route('admin.companies.toggle-status', $company) }}" class="inline">
                         @csrf
                         @method('PATCH')
                         <button type="submit"
+                                onclick="return confirm('¿Estás seguro de que quieres activar esta empresa?')"
                                 class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
                             Activar
                         </button>

@@ -67,7 +67,7 @@ Route::prefix('companies')->name('admin.companies.')->group(function () {
     Route::get('/{company}', [CompanyController::class, 'show'])->name('show');
     Route::get('/{company}/edit', [CompanyController::class, 'edit'])->name('edit');
     Route::put('/{company}', [CompanyController::class, 'update'])->name('update');
-    Route::delete('/{company}', [CompanyController::class, 'destroy'])->name('destroy');
+    Route::patch('/{company}/toggle-status', [CompanyController::class, 'toggleStatus'])->name('toggle-status');
 
     // Gestión de certificados
     Route::get('/{company}/certificates', [CompanyController::class, 'certificates'])->name('certificates');

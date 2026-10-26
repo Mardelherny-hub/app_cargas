@@ -521,6 +521,11 @@ class CompanyController extends Controller
             return back()->with('success', "Empresa {$status} correctamente.");
 
         } catch (\Exception $e) {
+            \Log::error('Error al cambiar el estado de la empresa', [
+                'company_id' => $company->id,
+                'error' => $e->getMessage(),
+            ]);
+
             return back()->with('error', 'Error al cambiar el estado de la empresa.');
         }
     }
