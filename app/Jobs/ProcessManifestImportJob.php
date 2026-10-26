@@ -136,14 +136,11 @@ class ProcessManifestImportJob implements ShouldQueue
             throw $e;
         } finally {
             /*
-             * Durante la etapa actual de auditoría/smoke se conserva SIEMPRE
-             * el archivo fuente, incluso cuando la importación termina bien.
-             * Esto permite reproducir observaciones detectadas después de una
-             * importación exitosa y también volver a analizar importaciones
-             * posteriormente revertidas.
-             *
-             * La retención sigue siendo acotada: la limpieza por antigüedad
-             * elimina archivos de más de 30 días.
+             * Se conserva el archivo recién procesado para trazabilidad.
+             * Los fallidos se conservan siempre. La limpieza elimina únicamente
+             * exitosos con 7 días desde finished_at y revertidos con 7 días
+             * desde reverted_at, con tracking y manifest consistentes.
+             * Los archivos sin seguimiento o fecha confiable se conservan.
              */
             Log::info(
                 'ProcessManifestImportJob: archivo conservado para trazabilidad',
@@ -391,32 +388,74 @@ class ProcessManifestImportJob implements ShouldQueue
             ->value('id');
     }
 
-    protected function limpiarImportacionesViejas(int $dias = 30): void
+    protected function limpiarImportacionesViejas(): void
     {
-        try {
-            $limite = now()->subDays($dias)->getTimestamp();
-            $borrados = 0;
+        $borrados = 0;
 
-            foreach (Storage::files('imports/manifests') as $archivo) {
-                if (Storage::lastModified($archivo) < $limite) {
-                    Storage::delete($archivo);
+        try {
+            $limite = now()->subDays(7);
+            $disk = Storage::disk('local');
+            $estadosExitosos = [
+                ImportTracking::STATUS_COMPLETED,
+                ImportTracking::STATUS_WARNINGS,
+            ];
+
+            foreach ($disk->files('imports/manifests') as $archivo) {
+                $trackings = ImportTracking::where('stored_path', $archivo)->get();
+
+                // Una ruta sin tracking o compartida no tiene un resultado inequívoco.
+                if ($trackings->count() !== 1) {
+                    continue;
+                }
+
+                $tracking = $trackings->first();
+                if (!in_array($tracking->status, $estadosExitosos, true)
+                    || !$tracking->finished_at
+                    || !$tracking->manifest_import_id) {
+                    continue;
+                }
+
+                $import = \App\Models\ManifestImport::find($tracking->manifest_import_id);
+                if (!$import
+                    || (int) $import->company_id !== (int) $tracking->company_id
+                    || $import->file_name !== basename($archivo)) {
+                    continue;
+                }
+
+                // No usar la antigüedad física ni updated_at como fecha alternativa.
+                if ($tracking->finished_at->isFuture()
+                    || ($tracking->started_at
+                        && $tracking->finished_at->lt($tracking->started_at))) {
+                    continue;
+                }
+
+                if ($import->status === 'reverted') {
+                    // Revertir cambia el manifest, pero deja el tracking exitoso.
+                    $fecha = $import->reverted_at;
+                    if (!$fecha || $fecha->lt($tracking->finished_at)) {
+                        continue;
+                    }
+                } elseif ($import->status === $tracking->status
+                    && !$import->reverted_at) {
+                    $fecha = $tracking->finished_at;
+                } else {
+                    // Incluye fallidos, en proceso y estados discrepantes.
+                    continue;
+                }
+
+                if ($fecha->lte($limite) && $disk->delete($archivo)) {
                     $borrados++;
                 }
             }
 
-            if ($borrados > 0) {
-                Log::info(
-                    'ProcessManifestImportJob: limpieza de importaciones viejas',
-                    [
-                        'borrados' => $borrados,
-                        'dias' => $dias,
-                    ]
-                );
-            }
+            Log::info(
+                'ProcessManifestImportJob: limpieza de importaciones viejas',
+                ['borrados' => $borrados, 'dias' => 7]
+            );
         } catch (Throwable $e) {
             Log::warning(
                 'ProcessManifestImportJob: fallo la limpieza de archivos viejos',
-                ['error' => $e->getMessage()]
+                ['error' => $e->getMessage(), 'borrados' => $borrados]
             );
         }
     }
