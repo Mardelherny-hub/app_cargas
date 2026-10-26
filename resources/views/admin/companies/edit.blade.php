@@ -16,6 +16,18 @@
 
     <div class="py-12">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
+            @if(session('success'))
+                <div class="bg-green-50 border border-green-200 text-green-800 p-4 rounded-md mb-6">
+                    {{ session('success') }}
+                </div>
+            @endif
+
+            @if(session('error'))
+                <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-md mb-6">
+                    {{ session('error') }}
+                </div>
+            @endif
+
             <form method="POST" action="{{ route('admin.companies.update', $company) }}" enctype="multipart/form-data" class="space-y-6">
                 @csrf
                 @method('PUT')
@@ -491,9 +503,9 @@
 
                             <div class="text-right">
                                 <button type="button"
-                                        onclick="return confirm('¿Estás seguro de que quieres eliminar esta empresa? Esta acción eliminará también todos sus operadores y no se puede deshacer.') && document.getElementById('delete-form').submit()"
-                                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium">
-                                    Eliminar Empresa
+                                        onclick="return confirm(@js(($company->active ? '¿Desactivar' : '¿Activar') . ' la empresa ' . $company->legal_name . '?')) && document.getElementById('toggle-status-form').submit()"
+                                        class="{{ $company->active ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700' }} text-white px-4 py-2 rounded-md text-sm font-medium">
+                                    {{ $company->active ? 'Desactivar Empresa' : 'Activar Empresa' }}
                                 </button>
                             </div>
                         </div>
@@ -501,13 +513,13 @@
                 </div>
             </form>
 
-            <!-- Formulario de eliminación separado -->
-            <form id="delete-form"
+            <!-- Formulario de cambio de estado separado -->
+            <form id="toggle-status-form"
                   method="POST"
-                  action="{{ route('admin.companies.destroy', $company) }}"
+                  action="{{ route('admin.companies.toggle-status', $company) }}"
                   class="hidden">
                 @csrf
-                @method('DELETE')
+                @method('PATCH')
             </form>
         </div>
     </div>
