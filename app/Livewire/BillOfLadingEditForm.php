@@ -202,8 +202,8 @@ class BillOfLadingEditForm extends Component
         'discharge_port_id' => 'required|exists:ports,id,active,1',
         'transshipment_port_id' => 'nullable|exists:ports,id,active,1',
         'final_destination_port_id' => 'nullable|exists:ports,id,active,1',
-        'loading_customs_id' => 'nullable|exists:custom_offices,id,active,1',
-        'discharge_customs_id' => 'nullable|exists:custom_offices,id,active,1',
+        'loading_customs_id' => 'nullable|exists:customs_offices,id,active,1',
+        'discharge_customs_id' => 'nullable|exists:customs_offices,id,active,1',
         'primary_cargo_type_id' => 'required|exists:cargo_types,id,active,1',
         'primary_packaging_type_id' => 'required|exists:packaging_types,id,active,1',
         'cargo_description' => 'required|string|max:3000',
@@ -269,8 +269,8 @@ class BillOfLadingEditForm extends Component
         'discharge_port_id' => ['required', Rule::exists('ports','id')->where(fn($q)=>$q->where('active',1))],
         'transshipment_port_id' => ['nullable', Rule::exists('ports','id')->where(fn($q)=>$q->where('active',1))],
         'final_destination_port_id' => ['nullable', Rule::exists('ports','id')->where(fn($q)=>$q->where('active',1))],
-        'loading_customs_id' => ['nullable', Rule::exists('custom_offices','id')->where(fn($q)=>$q->where('active',1))],
-        'discharge_customs_id' => ['nullable', Rule::exists('custom_offices','id')->where(fn($q)=>$q->where('active',1))],
+        'loading_customs_id' => ['nullable', Rule::exists('customs_offices','id')->where(fn($q)=>$q->where('active',1))],
+        'discharge_customs_id' => ['nullable', Rule::exists('customs_offices','id')->where(fn($q)=>$q->where('active',1))],
 
         // tipos activos
         'primary_cargo_type_id' => ['required', Rule::exists('cargo_types','id')->where(fn($q)=>$q->where('active',1))],
@@ -860,6 +860,24 @@ class BillOfLadingEditForm extends Component
                     ],
                 ]);
             }
+
+            // Integridad mínima: los datos importados pueden tener campos
+            // incompletos, por eso no se aplica la validación general.
+            $this->validate([
+                'shipment_id' => ['required', Rule::exists('shipments', 'id')],
+                'shipper_id' => ['nullable', Rule::exists('clients', 'id')],
+                'consignee_id' => ['nullable', Rule::exists('clients', 'id')],
+                'notify_party_id' => ['nullable', Rule::exists('clients', 'id')],
+                'cargo_owner_id' => ['nullable', Rule::exists('clients', 'id')],
+                'loading_port_id' => ['nullable', Rule::exists('ports', 'id')],
+                'discharge_port_id' => ['nullable', Rule::exists('ports', 'id')],
+                'transshipment_port_id' => ['nullable', Rule::exists('ports', 'id')],
+                'final_destination_port_id' => ['nullable', Rule::exists('ports', 'id')],
+                'loading_customs_id' => ['nullable', Rule::exists('customs_offices', 'id')],
+                'discharge_customs_id' => ['nullable', Rule::exists('customs_offices', 'id')],
+                'primary_cargo_type_id' => ['nullable', Rule::exists('cargo_types', 'id')],
+                'primary_packaging_type_id' => ['nullable', Rule::exists('packaging_types', 'id')],
+            ]);
 
             $this->authorizeShipmentId($this->shipment_id);
 
