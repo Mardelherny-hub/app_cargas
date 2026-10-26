@@ -158,7 +158,7 @@
                             </a>
                         </div>
 
-                        @if($company->certificate_path)
+                        @if($company->has_certificate)
                             <div class="space-y-3">
                                 <div class="flex items-center">
                                     <svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -174,16 +174,16 @@
                                     </div>
                                 @endif
 
-                                @if($company->certificate_expires_at)
+                                @if($company->certificate_effective_expires_at)
                                     <div>
                                         <dt class="text-sm font-medium text-gray-500">Fecha de Vencimiento</dt>
                                         <dd class="text-sm text-gray-900">
-                                            {{ $company->certificate_expires_at->format('d/m/Y') }}
-                                            @if($company->certificate_expires_at->isPast())
+                                            {{ $company->certificate_effective_expires_at->format('d/m/Y') }}
+                                            @if($company->is_certificate_expired)
                                                 <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800 ml-2">
                                                     Vencido
                                                 </span>
-                                            @elseif($company->certificate_expires_at->diffInDays() <= 30)
+                                            @elseif($company->is_certificate_expiring_soon)
                                                 <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800 ml-2">
                                                     Vence pronto
                                                 </span>

@@ -377,19 +377,40 @@ class Company extends Model
 
     public function getHasCertificateAttribute()
     {
-        return !empty($this->certificate_path);
+        return !empty($this->certificate_path) || !empty($this->certificates);
+    }
+
+    /**
+     * Vencimiento más próximo entre el certificado legacy y los certificados por país.
+     */
+    public function getCertificateEffectiveExpiresAtAttribute(): ?Carbon
+    {
+        $dates = collect($this->certificates ?? [])
+            ->pluck('expires_at')
+            ->filter()
+            ->map(fn ($date) => Carbon::parse($date));
+
+        if ($this->certificate_expires_at) {
+            $dates->push($this->certificate_expires_at);
+        }
+
+        return $dates->min();
     }
 
     public function getIsCertificateExpiredAttribute()
     {
-        return $this->certificate_expires_at && $this->certificate_expires_at->isPast();
+        $expiresAt = $this->certificate_effective_expires_at;
+
+        return $expiresAt && $expiresAt->isPast();
     }
 
     public function getIsCertificateExpiringSoonAttribute()
     {
-        return $this->certificate_expires_at &&
-            $this->certificate_expires_at->isFuture() &&
-            $this->certificate_expires_at->diffInDays(now()) <= 30;
+        $expiresAt = $this->certificate_effective_expires_at;
+
+        return $expiresAt &&
+            $expiresAt->isFuture() &&
+            now()->diffInDays($expiresAt) <= 30;
     }
 
     public function getCertificateStatusAttribute()
@@ -411,11 +432,13 @@ class Company extends Model
 
     public function getCertificateDaysToExpiryAttribute()
     {
-        if (!$this->certificate_expires_at) {
+        $expiresAt = $this->certificate_effective_expires_at;
+
+        if (!$expiresAt) {
             return null;
         }
 
-        return now()->diffInDays($this->certificate_expires_at, false);
+        return now()->diffInDays($expiresAt, false);
     }
 
     // NUEVO: Accessor para mostrar roles como string
