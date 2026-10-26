@@ -137,7 +137,6 @@ Route::prefix('voyages')->name('company.voyages.')->group(function () {
     Route::get('/{voyage}/pdf', [VoyageController::class, 'generatePdf'])->name('pdf');
 
     // Manifiestos
-    Route::get('/{voyage}/manifest', [VoyageController::class, 'manifest'])->name('manifest');
     Route::get('/{voyage}/manifest/pdf', [VoyageController::class, 'manifestPdf'])->name('manifest-pdf');
 
 });

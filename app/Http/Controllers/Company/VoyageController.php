@@ -798,33 +798,6 @@ class VoyageController extends Controller
         ];
     }
 
-    public function manifest(Voyage $voyage)
-    {
-        if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
-            abort(403, 'No tiene permisos para ver manifiestos.');
-        }
-
-        if (!$this->canAccessCompany($voyage->company_id)) {
-            abort(403, 'No tiene permisos para ver este manifiesto.');
-        }
-
-        if ($this->isUser() && $this->isOperator() && $voyage->created_by_user_id !== Auth::id()) {
-            abort(403, 'No tiene permisos para ver este manifiesto.');
-        }
-
-        $voyage->load([
-            'shipments.billsOfLading.shipper',
-            'shipments.billsOfLading.consignee',
-            'shipments.vessel',
-            'shipments.captain',
-            'originPort.country',
-            'destinationPort.country',
-            'company'
-        ]);
-
-        return view('company.voyages.manifest', compact('voyage'));
-    }
-
     public function manifestPdf(Voyage $voyage)
     {
         if (!$this->canPerform('view_reports') && !$this->hasCompanyRole('Cargas')) {
