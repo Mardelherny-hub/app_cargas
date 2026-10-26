@@ -137,7 +137,7 @@
                         <h3 class="text-lg font-semibold text-gray-900 mb-4">⚡ Acciones Rápidas</h3>
                         
                         <div class="space-y-3">
-                            @if($voyageStatus['can_send_to_customs'])
+                            @if($stats['total_bills_of_lading'] > 0)
                                 <a href="{{ route('company.simple.dashboard') }}" 
                                    class="w-full bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded text-center block">
                                     🏛️ Enviar a Aduanas

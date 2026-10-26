@@ -430,17 +430,10 @@
 
                             <div class="flex flex-wrap gap-3">
                                 {{-- IR AL SISTEMA DE ADUANAS --}}
-                                @if($allVerified)
-                                    <a href="{{ route('company.manifests.customs.index') }}" 
-                                    class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 text-sm font-medium">
-                                        🏛️ Enviar a Aduanas
-                                    </a>
-                                @else
-                                    <span class="bg-gray-400 text-white px-6 py-2 rounded-lg cursor-not-allowed text-sm font-medium" 
-                                        title="Debe verificar todos los BLs primero">
-                                        🏛️ Enviar a Aduanas
-                                    </span>
-                                @endif
+                                <a href="{{ route('company.simple.dashboard') }}"
+                                class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 text-sm font-medium">
+                                    🏛️ Enviar a Aduanas
+                                </a>
 
                                 {{-- Otras acciones --}}
                                 <a href="{{ route('company.bills-of-lading.index', ['shipment_id' => $shipment->id]) }}" 
