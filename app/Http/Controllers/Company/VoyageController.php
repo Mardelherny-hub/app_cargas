@@ -500,7 +500,7 @@ class VoyageController extends Controller
             'nuevo_giro_descripcion'   => 'required_if:giro_id,__nuevo__|nullable|string|max:100',
         ];
 
-        if (in_array($request->status, ['loading', 'in_progress', 'arrived', 'completed'])) {
+        if (in_array($request->status, ['in_transit', 'at_destination', 'completed'])) {
             $rules['departure_date']         = 'required|date';
             $rules['estimated_arrival_date'] = 'required|date|after:departure_date';
         } else {
