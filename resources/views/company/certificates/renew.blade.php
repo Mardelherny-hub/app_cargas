@@ -265,7 +265,7 @@
                         </svg>
                         <div>
                             <p class="text-sm font-medium text-gray-900">Soporte Técnico</p>
-                            <p class="text-xs text-gray-500">soporte@empresa.com</p>
+                            <p class="text-xs text-gray-500">info@sbscompany.com.ar</p>
                         </div>
                     </div>
                     
@@ -275,7 +275,7 @@
                         </svg>
                         <div>
                             <p class="text-sm font-medium text-gray-900">Emergencias</p>
-                            <p class="text-xs text-gray-500">+54 11 1234-5678</p>
+                            <p class="text-xs text-gray-500">+54 9 11 5481-1999</p>
                         </div>
                     </div>
                 </div>

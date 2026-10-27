@@ -192,7 +192,7 @@ onclick="document.getElementById('forgot-password-link').style.display='inline';
 
 <div class="mt-4 text-xs text-gray-500 space-y-1">
 <p>🌐 Argentina • Paraguay</p>
-<p>📧 Soporte: info@sistemacargas.com</p>
+<p>📧 Soporte: info@sbscompany.com.ar</p>
 <p>🔒 Conexión SSL verificada</p>
 </div>
 </div>
