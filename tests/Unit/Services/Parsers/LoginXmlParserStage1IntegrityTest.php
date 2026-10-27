@@ -3,13 +3,15 @@
 namespace Tests\Unit\Services\Parsers;
 
 use App\Services\Parsers\LoginXmlParser;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
 
 class LoginXmlParserStage1IntegrityTest extends TestCase
 {
+    use \Tests\Support\ParserCatalogFixtures;
+
     private function invoke(
         LoginXmlParser $parser,
         string $method,
@@ -109,28 +111,34 @@ class LoginXmlParserStage1IntegrityTest extends TestCase
 
     public function test_duplicate_warning_identifies_client_name_and_record_id(): void
     {
-        $file = (
-            new ReflectionClass(
-                LoginXmlParser::class
-            )
-        )->getFileName();
+        $this->setUpParserCatalogFixtures();
+        \Illuminate\Support\Facades\Schema::create('client_contact_data', function ($table) {
+            $table->id();
+            $table->unsignedBigInteger('client_id');
+            $table->boolean('is_primary')->default(false);
+        });
+        $id = \Illuminate\Support\Facades\DB::table('clients')->insertGetId([
+            'legal_name' => 'CLIENTE DE PRUEBA',
+            'commercial_name' => 'CLIENTE DE PRUEBA',
+            'country_id' => 1,
+        ]);
+        $parser = new LoginXmlParser();
+        $result = $this->invoke($parser, 'resolveExistingClient', [
+            '20123456789', 'CLIENTE DE PRUEBA', 1, 1,
+        ]);
 
-        $source = file_get_contents($file);
+        $this->assertSame($id, $result['client']->id);
+        $this->assertCount(1, $result['warnings']);
+        $this->assertStringContainsString("#{$id}", $result['warnings'][0]);
+        $this->assertStringContainsString('CLIENTE DE PRUEBA', $result['warnings'][0]);
+        $this->assertSame('20123456789', $result['client']->fresh()->tax_id);
 
-        $this->assertStringContainsString(
-            '"({$cleanName})',
-            $source
-        );
-
-        $this->assertStringContainsString(
-            '"#{$client->id} compatible con "',
-            $source
-        );
-
-        $this->assertStringContainsString(
-            '$this->addWarningOnce(',
-            $source
-        );
+        $method = new ReflectionMethod(LoginXmlParser::class, 'findOrCreateClient');
+        $source = implode('', array_slice(file($method->getFileName()),
+            $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1));
+        $this->assertStringContainsString('$this->resolveExistingClient(', $source);
+        $this->assertStringContainsString("\$resolution['warnings']", $source);
+        $this->assertStringContainsString('$this->addWarningOnce($warning)', $source);
     }
 
     public function test_optional_weight_preserves_explicit_zero_and_absence(): void

@@ -127,7 +127,7 @@ class LoginSourceUiContractTest extends TestCase
         );
 
         $this->assertStringContainsString(
-            'Login corrige maestro fiscal legacy inequívoco',
+            '$this->resolveExistingClient(',
             $parser
         );
 
