@@ -170,8 +170,8 @@ con integración directa a organismos gubernamentales.
 <div id="contacto">
 <h4 class="text-lg font-semibold mb-4">Contacto</h4>
 <div class="text-gray-300 text-sm space-y-2">
-<p>📧 info@sistemacargas.com</p>
-<p>📞 +54 11 1234-5678</p>
+<p>📧 info@sbscompany.com.ar</p>
+<p>📞 +54 9 11 5481-1999</p>
 <p>🌐 Argentina • Paraguay</p>
 <p class="mt-4 text-xs text-gray-400">
 Sistema privado - Solo usuarios autorizados
