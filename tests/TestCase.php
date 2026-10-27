@@ -30,6 +30,24 @@ abstract class TestCase extends BaseTestCase
         });
 
         $app->afterBootstrapping(RegisterProviders::class, function ($app) {
+            $app['events']->listen(\Illuminate\Database\Events\MigrationStarted::class, function ($event) {
+                $file = (new \ReflectionClass($event->migration))->getFileName();
+                if ($event->method !== 'up'
+                    || basename($file) !== '2026_08_16_232000_fix_client_tax_document_types.php') {
+                    return;
+                }
+
+                foreach ([
+                    ['alpha2_code' => 'CO', 'iso_code' => 'COL', 'name' => 'Colombia'],
+                    ['alpha2_code' => 'BR', 'iso_code' => 'BRA', 'name' => 'Brasil'],
+                ] as $country) {
+                    \Illuminate\Support\Facades\DB::table('countries')->updateOrInsert(
+                        ['alpha2_code' => $country['alpha2_code']],
+                        $country
+                    );
+                }
+            });
+
             $app['events']->listen(ConnectionEstablished::class, function ($event) {
                 $check = static function (Connection $connection): void {
                     self::assertSafeDatabase(array_replace(
