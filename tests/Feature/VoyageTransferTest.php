@@ -161,9 +161,9 @@ class VoyageTransferTest extends TestCase
         });
         $this->actingAs($this->admin(2))->get(route('company.voyages.show', 1))->assertOk()->assertViewHas('voyage', fn ($v) => $v->company_id === 2);
         DB::table('companies')->where('id', 2)->update(['company_roles' => '[]']);
-        $this->actingAs($this->admin(2))->get(route('company.voyages.show', 1))->assertOk();
-        $this->get(route('company.voyages.index'))->assertOk()
-            ->assertViewHas('voyages', fn ($voyages) => $voyages->pluck('id')->all() === [1]);
+        // Recibir un viaje no habilita el módulo Cargas para la empresa destinataria.
+        $this->actingAs($this->admin(2))->get(route('company.voyages.show', 1))->assertForbidden();
+        $this->get(route('company.voyages.index'))->assertForbidden();
         $this->actingAs($this->admin(1))->get(route('company.voyages.index'))->assertOk()
             ->assertViewHas('voyages', fn ($voyages) => $voyages->isEmpty());
     }
