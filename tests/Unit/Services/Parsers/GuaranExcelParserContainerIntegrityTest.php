@@ -10,11 +10,14 @@ use Tests\TestCase;
 
 class GuaranExcelParserContainerIntegrityTest extends TestCase
 {
+    use \Tests\Support\ParserCatalogFixtures;
+
     private GuaranExcelParser $parser;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->setUpParserCatalogFixtures();
 
         $this->parser = app(GuaranExcelParser::class);
     }

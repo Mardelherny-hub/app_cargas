@@ -8,11 +8,14 @@ use Tests\TestCase;
 
 class ParanaExcelParserCoreIntegrityTest extends TestCase
 {
+    use \Tests\Support\ParserCatalogFixtures;
+
     private ParanaExcelParser $parser;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->setUpParserCatalogFixtures();
         $this->parser = app(ParanaExcelParser::class);
     }
 
