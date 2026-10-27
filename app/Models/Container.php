@@ -145,6 +145,16 @@ class Container extends Model
     }
 
     /**
+     * Indica si el contenedor está vinculado a ítems de otra empresa.
+     */
+    public function isUsedByOtherCompany(int $companyId): bool
+    {
+        return $this->shipmentItems()
+            ->whereHas('billOfLading.shipment.voyage', fn ($q) => $q->where('company_id', '!=', $companyId))
+            ->exists();
+    }
+
+    /**
      * Tipo de contenedor
      */
     public function containerType(): BelongsTo
