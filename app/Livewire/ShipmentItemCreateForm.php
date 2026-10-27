@@ -988,8 +988,11 @@ class ShipmentItemCreateForm extends Component
             $shipmentItem = ShipmentItem::create($itemData);
 
             // NUEVO: Crear múltiples contenedores si es carga contenedorizada
+            $sharedContainers = [];
+
             if ($this->showContainerFields && !empty($this->containers)) {
                 $containersCreated = [];
+                $companyId = (int) $this->billOfLading->shipment->voyage->company_id;
                 
                 foreach ($this->containers as $containerData) {
                     // Buscar contenedor existente o crear uno nuevo
@@ -1016,8 +1019,11 @@ class ShipmentItemCreateForm extends Component
                         ]
                     );
                     
-                    // Si el contenedor ya existía, actualizar sus datos
-                    if (!$container->wasRecentlyCreated) {
+                    // Si el contenedor ya existía, actualizar sus datos salvo que
+                    // también lo use otra empresa
+                    if (!$container->wasRecentlyCreated && $container->isUsedByOtherCompany($companyId)) {
+                        $sharedContainers[] = $container->container_number;
+                    } elseif (!$container->wasRecentlyCreated) {
                         $container->update([
                             'container_type_id' => $containerData['container_type_id'],
                             'container_condition' => $containerData['container_condition'] ?? $container->container_condition,
@@ -1070,13 +1076,27 @@ class ShipmentItemCreateForm extends Component
 
             session()->flash('message', $message);
 
+            $sharedWarning = $sharedContainers !== []
+                ? 'Los contenedores ' . implode(', ', $sharedContainers)
+                    . ' también los usa otra empresa: se vincularon sin modificar sus datos.'
+                : null;
+
             // ✅ NUEVO: Dispatch para scroll al tope
             $this->dispatch('item-created');
 
             if ($this->continueAdding) {
+                if ($sharedWarning) {
+                    $this->dispatch('banner-message', style: 'warning', message: $sharedWarning);
+                }
+
                 $this->resetItemForm();
                 $this->nextLineNumber++;
             } else {
+                if ($sharedWarning) {
+                    session()->flash('flash.banner', $sharedWarning);
+                    session()->flash('flash.bannerStyle', 'warning');
+                }
+
                 return redirect()->route('company.shipments.show', $this->shipment);
             }
 

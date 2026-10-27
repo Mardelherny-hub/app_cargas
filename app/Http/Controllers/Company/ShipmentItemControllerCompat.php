@@ -529,8 +529,10 @@ class ShipmentItemControllerCompat extends ShipmentItemController
 
             $shipmentItem->update($itemData);
 
+            $sharedContainers = [];
+
             if ($isContainerCargo) {
-                $this->updateItemContainersCompat(
+                $sharedContainers = $this->updateItemContainersCompat(
                     $shipmentItem,
                     $validated['containers'] ?? []
                 );
@@ -540,10 +542,18 @@ class ShipmentItemControllerCompat extends ShipmentItemController
 
             DB::commit();
 
-            return redirect()->route(
+            $response = redirect()->route(
                 'company.bills-of-lading.show',
                 $shipmentItem->billOfLading
             )->with('success', 'Item actualizado exitosamente.');
+
+            if ($sharedContainers !== []) {
+                $response->with('flash.banner', 'Los contenedores ' . implode(', ', $sharedContainers)
+                    . ' también los usa otra empresa: se vincularon sin modificar sus datos.')
+                    ->with('flash.bannerStyle', 'warning');
+            }
+
+            return $response;
         } catch (\Exception $e) {
             DB::rollBack();
 
@@ -620,10 +630,15 @@ class ShipmentItemControllerCompat extends ShipmentItemController
         return null;
     }
 
+    /**
+     * @return array<int, string> Números de contenedores compartidos con otra empresa.
+     */
     private function updateItemContainersCompat(
         ShipmentItem $shipmentItem,
         array $containersData
-    ): void {
+    ): array {
+        $companyId = (int) $shipmentItem->billOfLading->shipment->voyage->company_id;
+        $sharedContainers = [];
         $existingPivot = [];
 
         foreach ($shipmentItem->containers()->get() as $existing) {
@@ -651,7 +666,9 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                     : null)
                 : null;
 
-            if ($container) {
+            if ($container && $container->isUsedByOtherCompany($companyId)) {
+                $sharedContainers[] = $container->container_number;
+            } elseif ($container) {
                 $updates = [
                     'container_type_id' => $containerData['container_type_id'],
                     'tare_weight_kg' => array_key_exists('tare_weight', $containerData)
@@ -730,5 +747,7 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                 'created_by_user_id' => Auth::id(),
             ]);
         }
+
+        return $sharedContainers;
     }
 }
