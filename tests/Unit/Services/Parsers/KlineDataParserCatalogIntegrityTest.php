@@ -9,6 +9,14 @@ use Tests\TestCase;
 
 class KlineDataParserCatalogIntegrityTest extends TestCase
 {
+    use \Tests\Support\ParserCatalogFixtures;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->setUpParserCatalogFixtures();
+    }
+
     public function test_vehicle_source_resolves_semantic_cargo_code(): void
     {
         $code = $this->invokeParser(

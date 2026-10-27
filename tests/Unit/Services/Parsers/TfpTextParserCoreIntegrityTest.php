@@ -9,11 +9,14 @@ use Tests\TestCase;
 
 class TfpTextParserCoreIntegrityTest extends TestCase
 {
+    use \Tests\Support\ParserCatalogFixtures;
+
     private TfpTextParser $parser;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->setUpParserCatalogFixtures();
         $this->parser = app(TfpTextParser::class);
     }
 

@@ -13,6 +13,14 @@ use Tests\TestCase;
 
 class KlineDataParserClientDocumentIntegrityTest extends TestCase
 {
+    use \Tests\Support\ParserCatalogFixtures;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->setUpParserCatalogFixtures();
+    }
+
     public function test_missing_explicit_tax_type_remains_unknown(): void
     {
         $country = Country::where(
