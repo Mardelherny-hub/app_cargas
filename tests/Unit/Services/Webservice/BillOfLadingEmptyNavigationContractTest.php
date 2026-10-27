@@ -27,6 +27,32 @@ class BillOfLadingEmptyNavigationContractTest extends TestCase
             'logging.default' => 'null',
         ]);
         DB::purge('sqlite');
+        \Illuminate\Support\Facades\Schema::create('companies', function ($table) {
+            $table->id();
+            $table->string('legal_name');
+        });
+        \Illuminate\Support\Facades\Schema::create('voyages', function ($table) {
+            $table->id();
+            $table->unsignedBigInteger('company_id');
+        });
+        \Illuminate\Support\Facades\Schema::create('shipments', function ($table) {
+            $table->id();
+            $table->unsignedBigInteger('voyage_id');
+        });
+        DB::table('companies')->insert(['id' => 1, 'legal_name' => 'Navigation fixture']);
+        DB::table('voyages')->insert(['id' => 1, 'company_id' => 1]);
+        DB::table('shipments')->insert(['id' => 393, 'voyage_id' => 1]);
+
+        $company = \App\Models\Company::findOrFail(1);
+        $user = (new \App\Models\User())->forceFill([
+            'id' => 1, 'userable_type' => \App\Models\Company::class, 'userable_id' => 1,
+        ]);
+        $role = (new \Spatie\Permission\Models\Role())->forceFill([
+            'id' => 1, 'name' => 'company-admin', 'guard_name' => 'web',
+        ]);
+        $user->setRelation('roles', new Collection([$role]));
+        $user->setRelation('userable', $company);
+        $this->actingAs($user);
     }
 
     private function editForm(string $containerCondition): BillOfLadingEditForm
