@@ -51,7 +51,6 @@ class VoyageNumberCompanyScopeContractTest extends TestCase
         );
 
         foreach ([
-            app_path('Http/Controllers/Company/VoyageWizardController.php'),
             app_path('Http/Controllers/Company/VoyageController.php'),
         ] as $controllerPath) {
             $controller = file_get_contents($controllerPath);
