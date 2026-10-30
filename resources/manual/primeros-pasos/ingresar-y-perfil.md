@@ -13,7 +13,7 @@ verificado:
 
 ## Para qué sirve
 
-Ingrese al sistema con su cuenta y consulte o actualice el nombre que aparece en su perfil.
+Permite ingresar al sistema con su cuenta y actualizar el nombre que aparece en su perfil.
 
 ## Antes de empezar
 
@@ -27,13 +27,15 @@ Ingrese al sistema con su cuenta y consulte o actualice el nombre que aparece en
 3. Una vez dentro del sistema, haga clic en su nombre, en la barra superior.
 4. Seleccione **Profile**.
 5. En **Profile Information**, revise **Name** y **Email**.
-6. Para actualizar su nombre, modifique **Name**. Conserve **Email** si no necesita cambiar su correo de acceso.
+6. Para actualizar su nombre, modifique **Name**. Conserve **Email** si no necesita cambiar su correo de acceso. Si cambia **Email**, desde ese momento ingresa con el correo nuevo.
 7. Haga clic en **SAVE**, dentro de **Profile Information**. Use el botón de esa sección, no el de **Update Password**.
-8. Vuelva a abrir **Profile** y compruebe que **Name** conserva el nombre que guardó.
+8. Compruebe que aparece **Saved.** junto al botón **SAVE**.
 
 ## Cómo saber que salió bien
 
-Después de ingresar, aparece el panel de su cuenta y su nombre en la barra superior. Al volver a abrir **Profile**, puede comprobar sus datos en **Profile Information**.
+Al guardar el perfil, aparece **Saved.** junto al botón **SAVE**. Opcionalmente, vuelva a abrir **Profile** y compruebe que **Name** conserva el nombre que guardó.
+
+Después de ingresar al sistema, aparece el panel de su cuenta y su nombre en la barra superior.
 
 ## Si algo falla
 
