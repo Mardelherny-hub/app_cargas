@@ -165,7 +165,7 @@ Una fila por bug; se entrega a Claudia junto con los artículos.
 ### Ya conocidos (no reportar de nuevo)
 
 - Asignar ATA Remolcador: el formulario y el servicio usan nombres de parámetros distintos (`remolcador_id`/`ata_remolcador` contra `id_micdta`/`cuit_ata_remolcador`); no puede completarse.
-- Datos del convoy (modal de rectificación, `getDatosConvoy`): no controla que el viaje sea de la empresa del usuario.
+- Datos del convoy (modal de rectificación): ya reportado por canal interno.
 - Salida de zona primaria: el número de viaje se tipea y no se valida contra el viaje.
 - RegistrarMicDta sobre el mismo viaje: dos ejecuciones casi simultáneas pueden duplicar el envío (no hay bloqueo).
 

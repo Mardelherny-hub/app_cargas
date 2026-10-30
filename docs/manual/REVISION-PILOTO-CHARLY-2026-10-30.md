@@ -3,7 +3,7 @@
 **Revisa:** Claudia. **Para:** Charly y su equipo.
 **Artículo revisado:** rama `manual/equipo-charly`, commit `cdb1592`.
 
-**Veredicto:** la plantilla se aplicó bien y el control de términos internos pasa. El artículo queda aprobado con los ajustes de abajo. Antes de seguir con el resto de los temas, hay que resolver los tres puntos de "Frenar antes de seguir".
+**Veredicto:** la plantilla se aplicó bien y el control de términos internos pasa. El artículo queda aprobado con los ajustes de abajo. Antes de seguir con el resto de los temas, hay que resolver los puntos de "Frenar antes de seguir".
 
 ---
 
@@ -11,7 +11,7 @@
 
 1. **Cuentas de prueba.** La revisión automática frenó una prueba por tratarse de una cuenta real. Los recorridos se hacen solo con usuarios de prueba de la empresa de prueba, uno por rol (super-admin, company-admin y user). Si no existen, se crean desde la interfaz de stage. Nunca se usan cuentas de personas reales, aunque sea solo para leer. Por favor, informen qué cuenta usaron en este piloto.
 2. **Versión de stage.** Informaron que stage corre `c7e9cf9`, pero ese commit no existe en GitHub: `main` está en `c62042a` y ninguna rama remota lo contiene. Si stage corre código que no está en el repo, lo que validamos ahí puede no coincidir con lo que se publica desde `main`. Hay que averiguar qué es `c7e9cf9` y avisar a Víctor antes de seguir validando.
-3. **Hipótesis de seguridad (para triage, no tocar).** El registro público de Fortify está activo (`Features::registration()` en `config/fortify.php`, vista `auth/register.blade.php`), y `CreateNewUser` crea usuarios sin rol. Si `/register` responde en stage, cualquiera podría crearse una cuenta. Solo verificar si la página carga: **no** crear cuentas. Reportarlo con severidad "Bloquea" si se confirma.
+3. **Punto de seguridad.** Se informa por canal interno, no en el repo.
 
 ## 2. Ajustes al artículo
 
@@ -33,7 +33,6 @@
 | ID | Pantalla | Clasificación | Detalle | Decisión |
 | --- | --- | --- | --- | --- |
 | PRIMEROS-01 | Ingreso y perfil | Mejora (cosmético) | Interfaz mezclada en español e inglés: `Profile`, `Name`, `SAVE`, mensaje de credenciales. La app corre con `APP_LOCALE=en` y no hay archivos de idioma. | Se documenta como está; la traducción queda para triage |
-| PRIMEROS-02 | Registro (`/register`) | Hipótesis de seguridad | Ver punto 1.3 | Verificar en stage sin crear cuentas |
 
 ## 5. Índice: dos artículos más para `primeros-pasos`
 
