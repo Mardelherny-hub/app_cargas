@@ -12,7 +12,7 @@ Recorrer en stage, paso por paso, el artículo piloto del manual y confirmar que
 
 - Artículo: `resources/manual/afip-argentina/registrar-micdta-convoy.md`, en la rama `origin/manual/equipo-claudia`.
   `git fetch origin manual/equipo-claudia && git show FETCH_HEAD:resources/manual/afip-argentina/registrar-micdta-convoy.md`
-- Contexto, reglas y formato de reporte: `docs/manual/HANDOFF-MANUAL-USUARIO-2026-10-30.md` (rama `origin/docs/manual-usuario-handoff`), secciones 3 a 5.
+- Contexto, reglas y formato de reporte: `docs/manual/HANDOFF-MANUAL-USUARIO-2026-10-30.md` (en `main`), secciones 3 a 5.
 
 ## Entorno (definido para esta tarea)
 
