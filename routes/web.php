@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\WelcomeController;
+use App\Http\Controllers\ManualController;
 use App\Http\Middleware\CompanyAccess;
 
 /*
@@ -28,6 +29,12 @@ Route::get('/dashboard', function () {
 
 // Incluir rutas por área de usuario
 Route::middleware(['auth', 'verified'])->group(function () {
+
+    // Manual de usuario: disponible para todo usuario autenticado
+    Route::get('/manual', [ManualController::class, 'index'])->name('manual.index');
+    Route::get('/manual/{tema}/{slug}', [ManualController::class, 'show'])
+        ->where(['tema' => '[a-z0-9-]+', 'slug' => '[a-z0-9-]+'])
+        ->name('manual.show');
 
     // Rutas del Super Administrador
     Route::prefix('admin')
