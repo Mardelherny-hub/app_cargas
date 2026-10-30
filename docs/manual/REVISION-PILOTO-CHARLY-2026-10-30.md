@@ -10,7 +10,7 @@
 ## 1. Frenar antes de seguir
 
 1. **Cuentas de prueba.** La revisión automática frenó una prueba por tratarse de una cuenta real. Los recorridos se hacen solo con usuarios de prueba de la empresa de prueba, uno por rol (super-admin, company-admin y user). Si no existen, se crean desde la interfaz de stage. Nunca se usan cuentas de personas reales, aunque sea solo para leer. Por favor, informen qué cuenta usaron en este piloto.
-2. **Versión de stage.** Informaron que stage corre `c7e9cf9`, pero ese commit no existe en GitHub: `main` está en `c62042a` y ninguna rama remota lo contiene. Si stage corre código que no está en el repo, lo que validamos ahí puede no coincidir con lo que se publica desde `main`. Hay que averiguar qué es `c7e9cf9` y avisar a Víctor antes de seguir validando.
+2. **Versión de stage.** ~~El commit `c7e9cf9` no existe en GitHub.~~ **Corrección:** `c7e9cf9` sí está en `main` (23/10); stage está desactualizado, no corre código ajeno. Se actualiza antes de validar (ver issues del manual en GitHub).
 3. **Punto de seguridad.** Se informa por canal interno, no en el repo.
 
 ## 2. Ajustes al artículo
