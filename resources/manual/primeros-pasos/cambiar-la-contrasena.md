@@ -20,6 +20,7 @@ Permite cambiar la contraseña de acceso desde el perfil de su cuenta.
 
 - Ingrese al sistema con su cuenta.
 - Tenga a mano su contraseña actual.
+- La contraseña nueva debe tener al menos 8 caracteres.
 
 ## Pasos
 
