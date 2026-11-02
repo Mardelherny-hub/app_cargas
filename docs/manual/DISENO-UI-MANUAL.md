@@ -121,7 +121,7 @@ prose-code:before:content-none prose-code:after:content-none
 - Los nombres de botones y menús ya vienen en negrita desde el Markdown; no se les agrega otro estilo.
 
 **Columna lateral** (`lg:sticky lg:top-6 self-start`, en celular pasa debajo del artículo):
-1. **En esta página:** los cinco títulos (Para qué sirve, Antes de empezar, Pasos, Cómo saber que salió bien, Si algo falla) como enlaces de ancla. Requiere `id` en los `h2`: agregar `HeadingPermalinkExtension` de `league/commonmark` (viene incluida en el paquete instalado) con `symbol` vacío, en `ManualRepository::convertidor()`. Un commit aparte.
+1. **En esta página:** un enlace por cada sección del artículo. Se arma con `secciones` (`{id, titulo}`), que entrega `ManualRepository::articulo()`; la vista no escribe ningún `id` a mano. Los `id` van directo en los `h2` (`HeadingPermalinkExtension` con `apply_id_to_heading`, `id_prefix` vacío e `insert: none`) y conservan las tildes.
 2. **Relacionados:** tarjeta con los artículos relacionados visibles, cada uno con su tema en `text-xs text-gray-500`.
 
 ### Pie del artículo
