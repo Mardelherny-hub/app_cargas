@@ -1,0 +1,41 @@
+---
+titulo: Cómo cambiar su contraseña
+tema: primeros-pasos
+orden: 20
+roles: [super-admin, company-admin, user]
+palabras_clave: [contraseña, clave, seguridad, cambiar, perfil]
+relacionados: [primeros-pasos/ingresar-y-perfil]
+estado: borrador
+verificado:
+  version: c62042a
+  fecha: 2026-11-02
+  entorno: codigo
+---
+
+## Para qué sirve
+
+Permite cambiar la contraseña de acceso desde el perfil de su cuenta.
+
+## Antes de empezar
+
+- Ingrese al sistema con su cuenta.
+- Tenga a mano su contraseña actual.
+
+## Pasos
+
+1. Haga clic en su nombre, en la barra superior.
+2. Seleccione **Profile**.
+3. Busque la sección **Update Password**.
+4. En **Current Password**, escriba su contraseña actual.
+5. En **New Password**, escriba la contraseña nueva.
+6. Repita la nueva contraseña en **Confirm Password**.
+7. Haga clic en **SAVE**, dentro de **Update Password**.
+
+## Cómo saber que salió bien
+
+Al guardar, aparece **Saved.** junto al botón de la sección **Update Password**. En el próximo ingreso, utilice la contraseña nueva.
+
+## Si algo falla
+
+- Si la pantalla marca un campo, revise que haya ingresado la contraseña actual y que la confirmación coincida con la nueva contraseña.
+- Si no recuerda su contraseña actual, utilice la recuperación de contraseña de la pantalla de ingreso.
