@@ -184,7 +184,7 @@ class ManualRepository
                 'titulo' => $cabecera['titulo'],
                 'roles' => $cabecera['roles'],
                 'roles_empresa' => $cabecera['roles_empresa'] ?? [],
-                'palabras_clave' => array_map('strval', $cabecera['palabras_clave']),
+                'palabras_clave' => $cabecera['palabras_clave'],
                 'relacionados' => $cabecera['relacionados'] ?? [],
                 // Lo verificado solo contra el código no se publica, aunque diga "publicado".
                 'borrador' => $cabecera['estado'] !== 'publicado' || $cabecera['verificado']['entorno'] !== 'stage',
@@ -219,20 +219,22 @@ class ManualRepository
         }
 
         if (! is_array($cabecera['roles'] ?? null) || $cabecera['roles'] === []
+            || ! $this->esListaDeTextos($cabecera['roles'])
             || array_diff($cabecera['roles'], self::ROLES) !== []) {
             return 'roles inválidos';
         }
 
         $rolesEmpresa = $cabecera['roles_empresa'] ?? [];
-        if (! is_array($rolesEmpresa) || array_diff($rolesEmpresa, self::ROLES_EMPRESA) !== []) {
+        if (! is_array($rolesEmpresa) || ! $this->esListaDeTextos($rolesEmpresa)
+            || array_diff($rolesEmpresa, self::ROLES_EMPRESA) !== []) {
             return 'roles_empresa inválidos';
         }
 
-        if (! is_array($cabecera['palabras_clave'] ?? null)) {
+        if (! is_array($cabecera['palabras_clave'] ?? null) || ! $this->esListaDeTextos($cabecera['palabras_clave'])) {
             return 'palabras_clave inválidas';
         }
 
-        if (! is_array($cabecera['relacionados'] ?? [])) {
+        if (! is_array($cabecera['relacionados'] ?? []) || ! $this->esListaDeTextos($cabecera['relacionados'] ?? [])) {
             return 'relacionados inválidos';
         }
 
@@ -247,6 +249,17 @@ class ManualRepository
         }
 
         return null;
+    }
+
+    private function esListaDeTextos(array $lista): bool
+    {
+        foreach ($lista as $elemento) {
+            if (! is_string($elemento) || trim($elemento) === '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function descartar(string $ruta, string $motivo): void
