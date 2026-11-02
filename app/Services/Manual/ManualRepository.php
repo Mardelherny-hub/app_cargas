@@ -13,6 +13,7 @@ use League\CommonMark\Exception\CommonMarkException;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
 use League\CommonMark\Extension\CommonMark\Node\Inline\Link;
 use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
+use League\CommonMark\Extension\HeadingPermalink\HeadingPermalinkExtension;
 use League\CommonMark\MarkdownConverter;
 use League\CommonMark\Node\Block\Document;
 use Symfony\Component\Yaml\Exception\ParseException;
@@ -272,8 +273,16 @@ class ManualRepository
         $entorno = new Environment([
             'html_input' => 'strip',
             'allow_unsafe_links' => false,
+            // Solo el id en el título: un enlace vacío sería una parada de teclado sin contenido.
+            'heading_permalink' => [
+                'symbol' => '',
+                'apply_id_to_heading' => true,
+                'id_prefix' => '',
+                'insert' => 'none',
+            ],
         ]);
         $entorno->addExtension(new CommonMarkCoreExtension());
+        $entorno->addExtension(new HeadingPermalinkExtension());
         $entorno->addEventListener(
             DocumentParsedEvent::class,
             fn (DocumentParsedEvent $evento) => $this->resolverEnlaces($evento->getDocument(), $claves)
