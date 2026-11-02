@@ -7,7 +7,6 @@ roles_empresa: [Cargas]
 palabras_clave: [arribo, llegada, zona primaria, aduana, lugar operativo, amarre, AFIP]
 relacionados:
   - afip-argentina/registrar-salida-zona-primaria
-  - afip-argentina/anular-y-rectificar
 estado: borrador
 verificado:
   version: c62042a
@@ -42,4 +41,4 @@ Informa a AFIP que el viaje llegó a una zona primaria aduanera, indicando la ad
 
 - **Lugar operativo incorrecto:** el lugar operativo no corresponde a la aduana informada. Revise ambos códigos.
 - **El mensaje de resultado dice "Error" y lista "Errores encontrados:":** es la respuesta de AFIP. Corrija lo que indica y vuelva a intentar.
-- **El arribo quedó registrado con un dato mal:** anúlelo y regístrelo de nuevo. Vea [Cómo anular o rectificar](manual:afip-argentina/anular-y-rectificar).
+- **El arribo quedó registrado con un dato mal:** anúlelo con **12. AnularArribo** y regístrelo de nuevo.
