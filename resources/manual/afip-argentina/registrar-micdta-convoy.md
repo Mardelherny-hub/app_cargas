@@ -9,7 +9,7 @@ relacionados:
   - viajes-y-cargas/armar-un-convoy
   - afip-argentina/registrar-micdta-una-embarcacion
   - afip-argentina/registrar-salida-zona-primaria
-  - afip-argentina/anular-y-rectificar
+  - afip-argentina/rectificar-un-convoy
   - preguntas-frecuentes/dos-convoyes-al-mismo-tiempo
 estado: borrador
 verificado:
@@ -60,5 +60,5 @@ Mientras un botón muestra el indicador de carga, no vuelva a hacer clic: espere
 - **"RegistrarConvoy no es aplicable para viajes de una sola embarcación":** el viaje tiene una sola carga. Use [Cómo registrar el MIC/DTA de una embarcación](manual:afip-argentina/registrar-micdta-una-embarcacion).
 - **Debe declarar capitán para la embarcación cabecera del convoy:** cargue el capitán, con tipo y número de documento, en la carga del remolcador.
 - **Todos los MIC/DTA del convoy deben tener la misma ruta:** todas las cargas tienen que salir del mismo puerto y llegar al mismo destino.
-- **El MIC/DTA fue registrado sin indicar que integra convoy:** hay que anular ese MIC/DTA y registrarlo de nuevo. Vea [Cómo anular o rectificar](manual:afip-argentina/anular-y-rectificar).
+- **El MIC/DTA fue registrado sin indicar que integra convoy:** hay que anular ese MIC/DTA y registrarlo de nuevo. Vea [Cómo solicitar la anulación de un MIC/DTA](manual:afip-argentina/solicitar-anulacion-micdta).
 - **Ya existe un convoy registrado para este MIC/DTA:** el convoy ya está en AFIP. No lo registre de nuevo: rectifíquelo o consulte con ARCA.

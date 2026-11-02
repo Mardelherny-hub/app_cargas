@@ -8,7 +8,7 @@ palabras_clave: [MIC/DTA, AFIP, autopropulsado, embarcación, RegistrarMicDta, R
 relacionados:
   - afip-argentina/registrar-micdta-convoy
   - afip-argentina/registrar-salida-zona-primaria
-  - afip-argentina/anular-y-rectificar
+  - afip-argentina/solicitar-anulacion-micdta
 estado: borrador
 verificado:
   version: c62042a
@@ -60,4 +60,4 @@ Mientras un botón muestra el indicador de carga, no vuelva a hacer clic: espere
     - **Puertos:** falta el puerto de origen o el de destino.
 - **El mensaje de resultado dice "Error" y lista "Errores encontrados:":** es la respuesta de AFIP. Corrija el dato que indica y vuelva a ejecutar el mismo paso. Si no queda claro, abra **📥 Response** en **Últimas 10 transacciones MIC/DTA**.
 - **Lugar operativo incorrecto:** la aduana o el lugar operativo informados para el puerto no corresponden entre sí. Revise esa configuración del puerto antes de reintentar.
-- **El MIC/DTA quedó registrado con un dato mal:** no lo registre de nuevo. Vea [Cómo anular o rectificar](manual:afip-argentina/anular-y-rectificar).
+- **El MIC/DTA quedó registrado con un dato mal:** no lo registre de nuevo. Vea [Cómo solicitar la anulación de un MIC/DTA](manual:afip-argentina/solicitar-anulacion-micdta).
