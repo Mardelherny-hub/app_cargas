@@ -116,7 +116,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            $manifestsQuery->where('created_by', $this->getCurrentUser()->id);
+            $manifestsQuery->where('created_by_user_id', $this->getCurrentUser()->id);
         }
 
         // Aplicar filtros de búsqueda
@@ -144,7 +144,7 @@ class ReportController extends Controller
             ->orderByDesc('id');
 
         if ($this->isUser()) {
-            $reportVoyagesQuery->where('created_by', $this->getCurrentUser()->id);
+            $reportVoyagesQuery->where('created_by_user_id', $this->getCurrentUser()->id);
         }
 
         $reportVoyages = $reportVoyagesQuery->get();
@@ -163,7 +163,7 @@ class ReportController extends Controller
                 ->whereHas('billsOfLading');
 
             if ($this->isUser()) {
-                $clientVoyageQuery->where('created_by', $this->getCurrentUser()->id);
+                $clientVoyageQuery->where('created_by_user_id', $this->getCurrentUser()->id);
             }
 
             $clientManifestVoyage = $clientVoyageQuery->first();
@@ -659,7 +659,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            $customsQuery->where('created_by', $this->getCurrentUser()->id);
+            $customsQuery->where('user_id', $this->getCurrentUser()->id);
         }
 
         // TODO: Implementar cuando estén los módulos correspondientes
@@ -707,7 +707,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            $shipmentsQuery->where('created_by', $this->getCurrentUser()->id);
+            $shipmentsQuery->where('created_by_user_id', $this->getCurrentUser()->id);
         }
 
         // TODO: Implementar cuando esté el módulo de cargas
@@ -753,7 +753,7 @@ class ReportController extends Controller
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            $tripsQuery->where('created_by', $this->getCurrentUser()->id);
+            $tripsQuery->where('created_by_user_id', $this->getCurrentUser()->id);
         }
 
         // TODO: Implementar cuando esté el módulo de viajes
@@ -1929,7 +1929,7 @@ private function buildBillsOfLadingQuery($company)
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            $deconsolidationQuery->where('created_by', $this->getCurrentUser()->id);
+            $deconsolidationQuery->where('user_id', $this->getCurrentUser()->id);
         }
 
         // Aplicar filtros de búsqueda
@@ -1981,7 +1981,7 @@ private function buildBillsOfLadingQuery($company)
         // Si es usuario regular, filtrar solo sus propios registros
         if ($this->isUser()) {
             // TODO: Aplicar filtros de ownership cuando estén los módulos
-            $transshipmentQuery->where('created_by', $this->getCurrentUser()->id);
+            $transshipmentQuery->where('user_id', $this->getCurrentUser()->id);
         }
 
         // Aplicar filtros de búsqueda
