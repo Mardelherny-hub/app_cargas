@@ -24,7 +24,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     @foreach ($columns as $col)
                         @php
-                            $label = \Illuminate\Support\Str::of($col)->replace('_',' ')->title();
+                            $label = \App\Support\CatalogFieldLabels::for($col);
                             $isReq = in_array($col, $requiredColumns ?? [], true);
                             $isBool = $isBoolean[$col] ?? false;
                             $isDateF = $isDate[$col] ?? false;
@@ -57,7 +57,7 @@
                                         class="w-full rounded-md border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
                                     <option value="">{{ __('Seleccione…') }}</option>
                                     @foreach (($enumOptions[$col] ?? []) as $opt)
-                                        <option value="{{ $opt }}">{{ \Illuminate\Support\Str::of($opt)->replace('_',' ')->title() }}</option>
+                                        <option value="{{ $opt }}">{{ \App\Support\CatalogFieldLabels::option($opt) }}</option>
                                     @endforeach
                                 </select>
 
