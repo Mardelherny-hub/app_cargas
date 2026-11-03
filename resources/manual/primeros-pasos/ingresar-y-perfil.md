@@ -4,10 +4,10 @@ tema: primeros-pasos
 orden: 10
 roles: [super-admin, company-admin, user]
 palabras_clave: [ingresar, acceso, sesión, perfil, nombre, correo, email]
-estado: borrador
+estado: publicado
 verificado:
-  version: c7e9cf9
-  fecha: 2026-10-30
+  version: 9d7ce2e
+  fecha: 2026-11-03
   entorno: stage
 ---
 

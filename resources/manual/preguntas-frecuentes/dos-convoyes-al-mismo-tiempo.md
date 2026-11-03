@@ -8,11 +8,11 @@ palabras_clave: [convoy, dos usuarios, simultáneo, mezclar, MIC/DTA, número de
 relacionados:
   - viajes-y-cargas/armar-un-convoy
   - afip-argentina/registrar-micdta-convoy
-estado: borrador
+estado: publicado
 verificado:
-  version: 9187972
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

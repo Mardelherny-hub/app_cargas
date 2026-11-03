@@ -5,11 +5,11 @@ orden: 20
 roles: [super-admin, company-admin, user]
 palabras_clave: [contraseña, clave, seguridad, cambiar, perfil]
 relacionados: [primeros-pasos/ingresar-y-perfil]
-estado: borrador
+estado: publicado
 verificado:
-  version: c62042a
-  fecha: 2026-11-02
-  entorno: codigo
+  version: 9d7ce2e
+  fecha: 2026-11-03
+  entorno: stage
 ---
 
 ## Para qué sirve

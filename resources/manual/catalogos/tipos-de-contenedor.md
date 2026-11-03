@@ -5,11 +5,11 @@ orden: 10
 roles: [super-admin]
 palabras_clave: [contenedor, tipo de contenedor, ISO, 20DV, 40HC, catálogo, medidas, tara]
 relacionados: [catalogos/tipos-de-embalaje, catalogos/tipos-de-carga]
-estado: borrador
+estado: publicado
 verificado:
-  version: 62bacd8
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

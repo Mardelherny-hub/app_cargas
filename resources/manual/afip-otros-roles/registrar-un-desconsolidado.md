@@ -9,11 +9,11 @@ relacionados:
   - datos-maestros/registrar-un-cliente
   - catalogos/gestionar-puertos
   - mi-empresa/cargar-certificado-digital
-estado: borrador
+estado: publicado
 verificado:
-  version: a30a001
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

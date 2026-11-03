@@ -7,11 +7,11 @@ palabras_clave: [país, países, código ISO, Alpha2, código numérico, código
 relacionados:
   - catalogos/gestionar-puertos
   - catalogos/codigos-de-puertos-aduanas-y-lugares
-estado: borrador
+estado: publicado
 verificado:
-  version: a30a001
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve
