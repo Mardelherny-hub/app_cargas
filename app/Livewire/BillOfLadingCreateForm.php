@@ -841,7 +841,7 @@ public function selectForeignLocationDischarge($locationCode)
                 'requires_refrigeration' => $this->requires_refrigeration,
                 'requires_inspection' => $this->requires_inspection,
                 'is_consolidated' => $this->is_consolidated,
-                'is_transit_transshipment' => $this->is_transit_transshipment,
+                'is_transit_transshipment' => $this->is_transit_transshipment ? 'S' : 'N',
                 'is_fractional' => $this->is_fractional,
                 'partial_packages' => $this->is_fractional ? ($this->partial_packages ?: null) : null,
                 'partial_weight_kg' => $this->is_fractional ? ($this->partial_weight_kg ?: null) : null,
