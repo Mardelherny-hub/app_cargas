@@ -6,11 +6,11 @@ roles: [company-admin, user]
 roles_empresa: [Cargas]
 palabras_clave: [historial, importaciones, resultado, errores, advertencias, detalle de importación]
 relacionados: [importar-manifiestos/importar-un-manifiesto, importar-manifiestos/revertir-una-importacion]
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

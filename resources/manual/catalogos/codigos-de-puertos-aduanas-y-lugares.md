@@ -7,11 +7,11 @@ palabras_clave: [UN/LOCODE, código de puerto, aduana, código de aduana, codAdu
 relacionados:
   - catalogos/gestionar-puertos
   - catalogos/aduanas-y-lugares-operativos
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

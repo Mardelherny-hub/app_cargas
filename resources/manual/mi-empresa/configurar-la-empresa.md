@@ -5,11 +5,11 @@ orden: 30
 roles: [company-admin]
 palabras_clave: [empresa, configuración, domicilio, ambiente, homologación, producción, webservices]
 relacionados: [mi-empresa/cargar-certificado-digital]
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

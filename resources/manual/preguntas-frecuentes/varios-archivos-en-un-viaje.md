@@ -8,11 +8,11 @@ palabras_clave: [importar, archivo, varios archivos, mismo viaje, convoy, remolc
 relacionados:
   - viajes-y-cargas/armar-un-convoy
   - preguntas-frecuentes/el-viaje-ya-existe
-estado: borrador
+estado: publicado
 verificado:
-  version: 9187972
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

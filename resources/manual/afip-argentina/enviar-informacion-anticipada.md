@@ -7,11 +7,11 @@ roles_empresa: [Cargas]
 palabras_clave: [información anticipada, anticipada, importación, RegistrarViaje, RectificarViaje, RegistrarTitulosCbc, CerrarViaje, ATA CBC, AFIP]
 relacionados:
   - afip-argentina/registrar-micdta-una-embarcacion
-estado: borrador
+estado: publicado
 verificado:
-  version: 9187972
-  fecha: 2026-11-02
-  entorno: codigo
+  version: 9d7ce2e
+  fecha: 2026-11-03
+  entorno: stage
 ---
 
 ## Para qué sirve

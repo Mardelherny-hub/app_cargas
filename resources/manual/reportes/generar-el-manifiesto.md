@@ -6,11 +6,11 @@ roles: [company-admin, user]
 roles_empresa: [Cargas]
 palabras_clave: [manifiesto, manifiesto de carga, Cargo Manifest, manifiesto aduanero, PDF, Excel, viaje, imprimir]
 relacionados: [reportes/listado-de-conocimientos, reportes/imprimir-el-micdta]
-estado: borrador
+estado: publicado
 verificado:
-  version: a30a001
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

@@ -8,11 +8,11 @@ palabras_clave: [recorrido, flujo, empezar, DNA, Paraguay, manifiesto, XFFM, cie
 relacionados:
   - primeros-pasos/recorrido-argentina
   - preguntas-frecuentes/glosario
-estado: borrador
+estado: publicado
 verificado:
-  version: a30a001
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

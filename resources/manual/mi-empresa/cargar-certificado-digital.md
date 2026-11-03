@@ -5,11 +5,11 @@ orden: 20
 roles: [company-admin]
 palabras_clave: [certificado, digital, p12, contraseña, argentina, paraguay, renovar]
 relacionados: [mi-empresa/configurar-la-empresa]
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

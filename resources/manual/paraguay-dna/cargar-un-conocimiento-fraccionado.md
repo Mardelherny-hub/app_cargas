@@ -6,11 +6,11 @@ roles: [company-admin, user]
 roles_empresa: [Cargas]
 palabras_clave: [Paraguay, DNA, conocimiento, título, fraccionado, fracción, bultos, peso, XFBL]
 relacionados: [viajes-y-cargas/cargar-conocimientos-e-items, paraguay-dna/enviar-un-manifiesto-a-dna, paraguay-dna/revisar-un-viaje-cerrado]
-estado: borrador
+estado: publicado
 verificado:
-  version: 9187972
-  fecha: 2026-11-02
-  entorno: codigo
+  version: 9d7ce2e
+  fecha: 2026-11-03
+  entorno: stage
 ---
 
 ## Para qué sirve
