@@ -17,7 +17,8 @@
         "maatwebsite/excel": "^3.1",
         "owen-it/laravel-auditing": "^14.0",
         "robrichards/wse-php": "^2.0",
-        "spatie/laravel-permission": "^6.20"
+        "spatie/laravel-permission": "^6.20",
+        "symfony/yaml": "^7.4.18"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
