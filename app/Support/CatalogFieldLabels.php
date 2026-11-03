@@ -20,7 +20,7 @@ final class CatalogFieldLabels
         'description' => 'Descripción',
         'category' => 'Categoría',
         'cargo_nature' => 'Naturaleza de la carga',
-        'packaging_type' => 'Tipo de embalaje',
+        'packaging_type' => 'Forma de transporte',
         'material_type' => 'Material',
         'parent_id' => 'Tipo padre',
         'level' => 'Nivel',
