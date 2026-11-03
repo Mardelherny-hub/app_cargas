@@ -6,11 +6,11 @@ roles: [company-admin, user]
 roles_empresa: [Cargas]
 palabras_clave: [revertir, deshacer, anular importación, borrar viaje importado, reimportar, ya fue importado]
 relacionados: [importar-manifiestos/historial-de-importaciones, importar-manifiestos/importar-un-manifiesto]
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

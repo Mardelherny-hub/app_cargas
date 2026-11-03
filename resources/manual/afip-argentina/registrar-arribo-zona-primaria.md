@@ -7,11 +7,11 @@ roles_empresa: [Cargas]
 palabras_clave: [arribo, llegada, zona primaria, aduana, lugar operativo, amarre, AFIP]
 relacionados:
   - afip-argentina/registrar-salida-zona-primaria
-estado: borrador
+estado: publicado
 verificado:
-  version: c62042a
-  fecha: 2026-10-30
-  entorno: codigo
+  version: 9d7ce2e
+  fecha: 2026-11-03
+  entorno: stage
 ---
 
 ## Para qué sirve

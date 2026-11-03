@@ -7,11 +7,11 @@ palabras_clave: [aduana, aduanas AFIP, lugar operativo, codAdu, codLugOper, term
 relacionados:
   - catalogos/codigos-de-puertos-aduanas-y-lugares
   - catalogos/gestionar-puertos
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

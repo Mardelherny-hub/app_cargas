@@ -7,11 +7,11 @@ palabras_clave: [puerto, puertos, UN/LOCODE, código de puerto, crear puerto, ed
 relacionados:
   - catalogos/codigos-de-puertos-aduanas-y-lugares
   - catalogos/aduanas-y-lugares-operativos
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

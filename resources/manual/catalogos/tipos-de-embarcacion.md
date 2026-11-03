@@ -5,11 +5,11 @@ orden: 40
 roles: [super-admin]
 palabras_clave: [embarcación, tipo de embarcación, barcaza, remolcador, empujador, buque, catálogo, tipEmb]
 relacionados: [catalogos/tipos-de-contenedor, afip-argentina/registrar-micdta-una-embarcacion]
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

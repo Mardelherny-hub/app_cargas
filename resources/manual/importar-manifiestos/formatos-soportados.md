@@ -6,11 +6,11 @@ roles: [company-admin, user]
 roles_empresa: [Cargas]
 palabras_clave: [formato, archivo, Excel, XML, EDI, CUSCAR, KLine, PARANA, Guaran, Login, TFP, Navsur, G2Ocean, CMSP]
 relacionados: [importar-manifiestos/importar-un-manifiesto]
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

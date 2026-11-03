@@ -5,11 +5,11 @@ orden: 30
 roles: [super-admin]
 palabras_clave: [embalaje, packaging, empaquetamiento, bulto, código de embalaje, codTipEmbalaje, AFIP, catálogo]
 relacionados: [catalogos/tipos-de-carga, catalogos/tipos-de-contenedor]
-estado: borrador
+estado: publicado
 verificado:
-  version: 62bacd8
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

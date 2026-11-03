@@ -5,11 +5,11 @@ orden: 20
 roles: [super-admin]
 palabras_clave: [tipo de carga, carga, catálogo, TipoCarga, desconsolidado, granel, contenedorizada]
 relacionados: [catalogos/tipos-de-contenedor, catalogos/tipos-de-embalaje]
-estado: borrador
+estado: publicado
 verificado:
-  version: 62bacd8
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve
