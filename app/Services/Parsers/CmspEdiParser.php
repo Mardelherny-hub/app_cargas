@@ -1127,6 +1127,9 @@ class CmspEdiParser implements ManifestParserInterface
             );
 
             $partyName = $this->cleanEdifactText($partyParts[0] ?? '');
+            // Algunos emisores escapan un ':' antes de la razón social
+            // ("?:BRITAM S.A."): sin esto el nombre quedaba ":BRITAM S.A.".
+            $partyName = ltrim($partyName, " :;,");
 
             // Marca de "a la atencion de" pegada al final del nombre
             // ("MAERSK AS - ATA: WEBER..."). Solo al final y como palabra
