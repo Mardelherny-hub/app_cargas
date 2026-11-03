@@ -6,7 +6,8 @@ Fuente única de reglas para los agentes que trabajan en este repo (Codex, Claud
 
 - Sistema Laravel/PHP de cargas marítimas para la Hidrovía Paraguay-Paraná: manifiestos, conocimientos (BL) y presentación aduanera ante AFIP/ARCA (Argentina) y DNA (Paraguay).
 - Entorno local: `/var/www/html/app_cargas`.
-- Producción: `/var/www/cargas` en `cargas.red-byte.com`.
+- Stage (pruebas previas a producción): `/var/www/cargas` en `cargas.red-byte.com`.
+- Producción: servidor del cliente (`sedna.sbscompany.com.ar`). Solo con tarea que defina expresamente ese entorno.
 - Repositorio: `Mardelherny-hub/app_cargas`, rama `main`.
 - Commits: Conventional Commits en inglés, con scope. Ejemplos: `fix(auth): ...`, `fix(security): ...`, `fix(ui): ...`.
 
@@ -22,13 +23,13 @@ Fuente única de reglas para los agentes que trabajan en este repo (Codex, Claud
 - Hacer un diagnóstico de solo lectura antes de proponer cualquier cambio.
 
 ### Un cambio por vez
-- Proponer el cambio indicando archivo, ubicación exacta y motivo, y esperar confirmación antes de aplicarlo.
-- Trabajar de a un archivo por vez y esperar confirmación antes de pasar al siguiente.
-- Un commit corresponde a una sola funcionalidad o fix (commits atómicos).
+- Trabajar de a un archivo por vez, con un commit por funcionalidad o fix (commits atómicos).
+- **En ramas de trabajo** (`feature/*`, `fix/*`, `manual/*`): al terminar cada archivo se hace commit y push sin esperar confirmación, y se sigue con el siguiente. La revisión es QA cruzado posterior, a cargo del otro equipo; lo que observe se corrige en un commit nuevo.
+- **Con confirmación previa de Víctor:** merge a `main`, deploy a stage o producción, cambios fuera de la rama asignada y cualquier operación sobre datos.
 - Antes de cada commit:
   1. Correr `php -l` sobre cada archivo PHP modificado.
   2. Hacer `git add` solo de los archivos del cambio.
-  3. Correr `git diff --cached` y mostrar el diff para revisión.
+  3. Revisar `git diff --cached` e incluirlo en la devolución.
 - Las soluciones deben ser simples. Nada de refactors no pedidos.
 
 ### Repo compartido
@@ -47,7 +48,7 @@ Fuente única de reglas para los agentes que trabajan en este repo (Codex, Claud
 ## 3. Prohibiciones
 
 - ❌ No operar sobre el servidor ni la base de datos de producción, salvo que la tarea defina expresamente el entorno PRODUCCIÓN y el alcance. Fuera de esa definición explícita, ningún acceso a producción está permitido.
-- ❌ No hacer `git push`, merge ni deploy sin autorización expresa en la tarea. Nunca se deducen de una orden de investigar o corregir.
+- ❌ No hacer merge a `main` ni deploy sin autorización expresa de Víctor. El push se hace solo a la rama de trabajo asignada en la tarea, nunca a `main`. Nunca se deducen de una orden de investigar o corregir.
 - ❌ No correr migraciones destructivas, `migrate:fresh`, `db:wipe` ni seeders sobre datos existentes sin OK explícito.
 - ❌ No borrar archivos sin confirmar antes que son código muerto: sin referencias vivas, fuera del factory y sin tests.
 - ❌ Los parsers **nunca** crean puertos.
