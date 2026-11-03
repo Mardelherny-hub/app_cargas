@@ -1127,6 +1127,9 @@ class CmspEdiParser implements ManifestParserInterface
             );
 
             $partyName = $this->cleanEdifactText($partyParts[0] ?? '');
+            // Algunos emisores escapan un ':' antes de la razón social
+            // ("?:BRITAM S.A."): sin esto el nombre quedaba ":BRITAM S.A.".
+            $partyName = ltrim($partyName, " :;,");
 
             // Marca de "a la atencion de" pegada al final del nombre
             // ("MAERSK AS - ATA: WEBER..."). Solo al final y como palabra
@@ -2056,6 +2059,87 @@ class CmspEdiParser implements ManifestParserInterface
         $this->stats['warnings'][] = $warning;
     }
 
+    /**
+     * Completa la razón social de una parte que el archivo trae sólo con su
+     * identificación fiscal (por ejemplo, "RUC:80008970-7" como primera línea
+     * del NAD, que al limpiar la etiqueta deja el nombre vacío).
+     *
+     * Primero toma el nombre de otra parte del mismo archivo con esa
+     * identificación (consignatario o cargador antes que notificatario); si no
+     * hay, usa el cliente ya registrado con ella. Nunca inventa un nombre: si
+     * no lo encuentra, la parte queda como venía.
+     */
+    protected function completePartyNameFromTaxId(?array $partyData, array $data): ?array
+    {
+        if ($partyData === null || trim((string) ($partyData['name'] ?? '')) !== '') {
+            return $partyData;
+        }
+
+        $taxId = $this->normalizeClientTaxId($partyData['tax_id'] ?? null);
+        if ($taxId === '') {
+            return $partyData;
+        }
+
+        $name = $this->findPartyNameInFile($taxId, $data);
+        $source = 'otra parte del archivo';
+
+        if ($name === null) {
+            $registered = Client::query()
+                ->where('tax_id', $taxId)
+                ->limit(2)
+                ->pluck('legal_name');
+
+            if ($registered->count() === 1 && trim((string) $registered->first()) !== '') {
+                $name = trim((string) $registered->first());
+                $source = 'el cliente ya registrado';
+            }
+        }
+
+        if ($name === null) {
+            return $partyData;
+        }
+
+        $partyData['name'] = $name;
+
+        $billNumber = (string) ($partyData['_context_bl_number'] ?? '');
+        $warning = "Conocimiento {$billNumber}: la parte sin razón social con "
+            . "identificación {$taxId} tomó el nombre \"{$name}\" de {$source}.";
+        if (!in_array($warning, $this->stats['warnings'], true)) {
+            $this->stats['warnings'][] = $warning;
+        }
+
+        return $partyData;
+    }
+
+    /**
+     * Busca en las partes del archivo una razón social para la identificación
+     * fiscal indicada.
+     */
+    protected function findPartyNameInFile(string $taxId, array $data): ?string
+    {
+        $partySets = [$data['parties'] ?? []];
+        foreach ($data['containers'] ?? [] as $group) {
+            $partySets[] = $group['parties'] ?? [];
+        }
+
+        foreach (['consignee', 'shipper', 'notify'] as $role) {
+            foreach ($partySets as $parties) {
+                $party = $parties[$role] ?? null;
+                if (!is_array($party)) {
+                    continue;
+                }
+
+                $name = trim((string) ($party['name'] ?? ''));
+                if ($name !== ''
+                    && $this->normalizeClientTaxId($party['tax_id'] ?? null) === $taxId) {
+                    return $name;
+                }
+            }
+        }
+
+        return null;
+    }
+
     protected function withPartyImportContext(
         ?array $partyData,
         string $billNumber,
@@ -2158,8 +2242,25 @@ class CmspEdiParser implements ManifestParserInterface
             'notify'
         );
 
+        $shipperData = $this->completePartyNameFromTaxId($shipperData, $data);
+        $consigneeData = $this->completePartyNameFromTaxId($consigneeData, $data);
+        $notifyData = $this->completePartyNameFromTaxId($notifyData, $data);
+
         $shipper = $this->findOrCreateClient($shipperData);
         $consignee = $this->findOrCreateClient($consigneeData);
+
+        // El conocimiento exige cargador y consignatario. Si no se pudieron
+        // identificar, se informa en lugar de dejar que falle el guardado.
+        foreach (['cargador' => $shipper, 'consignatario' => $consignee] as $label => $party) {
+            if ($party === null) {
+                throw new Exception(
+                    "Conocimiento {$billNumber}: no se pudo identificar al {$label}. "
+                    . 'El archivo no trae su razón social ni una identificación fiscal '
+                    . 'que permita encontrarlo. Corrija el archivo o registre el cliente '
+                    . 'antes de importar.'
+                );
+            }
+        }
 
         /*
          * Hapag-Lloyd usa literalmente "SAME AS CONSIGNEE" cuando el
