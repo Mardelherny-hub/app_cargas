@@ -30,7 +30,7 @@ use Symfony\Component\Yaml\Yaml;
  */
 class ManualRepository
 {
-    private const CLAVE_CACHE = 'manual.contenido.v2';
+    private const CLAVE_CACHE = 'manual.contenido.v3';
 
     private const ROLES = ['super-admin', 'company-admin', 'user'];
 
@@ -409,6 +409,7 @@ class ManualRepository
 
     private function textoPlano(string $html): string
     {
+        $html = (string) preg_replace('#<h2\b[^>]*>.*?</h2>#su', ' ', $html);
         $texto = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
         return trim((string) preg_replace('/\s+/u', ' ', $texto));
