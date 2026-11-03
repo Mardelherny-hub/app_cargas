@@ -241,7 +241,7 @@ class ShipmentController extends Controller
                 // Información básica
                 'shipment_number'      => 'required|string|max:100',
                 'vessel_role'          => 'required|in:single,lead,towed,pushed,escort',
-                'convoy_position'      => 'nullable|integer|min:1|max:10',
+                'convoy_position'      => 'nullable|integer|min:1|max:20',
                 'is_lead_vessel'       => 'boolean',
 
                 // Estado y operación
