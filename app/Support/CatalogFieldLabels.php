@@ -19,6 +19,9 @@ final class CatalogFieldLabels
         'short_name' => 'Nombre corto',
         'description' => 'Descripción',
         'category' => 'Categoría',
+        'cargo_nature' => 'Naturaleza de la carga',
+        'packaging_type' => 'Tipo de embalaje',
+        'material_type' => 'Material',
         'parent_id' => 'Tipo padre',
         'level' => 'Nivel',
         'full_path' => 'Ruta completa',
@@ -237,9 +240,57 @@ final class CatalogFieldLabels
         'updated_at' => 'Actualizado',
     ];
 
+    private const OPTIONS = [
+        // Naturaleza de la carga
+        'solid' => 'Sólida',
+        'liquid' => 'Líquida',
+        'gas' => 'Gaseosa',
+        'mixed' => 'Mixta',
+        'other' => 'Otro',
+
+        // Forma de transporte
+        'containerized' => 'En contenedor',
+        'bulk' => 'Granel',
+        'break_bulk' => 'Carga general',
+        'ro_ro' => 'Ro-Ro',
+        'neo_bulk' => 'Neo granel',
+
+        // Categoría de embalaje
+        'pallet' => 'Pallet',
+        'box' => 'Caja',
+        'bag' => 'Bolsa',
+        'drum' => 'Tambor',
+        'container' => 'Contenedor',
+        'bundle' => 'Atado',
+        'roll' => 'Rollo',
+        'bale' => 'Fardo',
+        'crate' => 'Jaula',
+        'barrel' => 'Barril',
+        'tank' => 'Tanque',
+        'tray' => 'Bandeja',
+        'specialized' => 'Especializado',
+
+        // Material
+        'wood' => 'Madera',
+        'cardboard' => 'Cartón',
+        'plastic' => 'Plástico',
+        'metal' => 'Metal',
+        'fabric' => 'Tela',
+        'paper' => 'Papel',
+        'composite' => 'Compuesto',
+        'glass' => 'Vidrio',
+        'rubber' => 'Caucho',
+    ];
+
     public static function for(string $field): string
     {
         return self::LABELS[$field]
             ?? (string) Str::of($field)->replace('_', ' ')->title();
+    }
+
+    public static function option(string $value): string
+    {
+        return self::OPTIONS[$value]
+            ?? (string) Str::of($value)->replace('_', ' ')->title();
     }
 }
