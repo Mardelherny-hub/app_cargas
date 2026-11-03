@@ -30,7 +30,7 @@
                 @foreach($columns as $column)
                     <div class="flex flex-col">
                         <label for="{{ $column }}" class="text-sm font-medium text-gray-700 mb-1">
-                            {{ ucwords(str_replace('_', ' ', $column)) }}
+                            {{ \App\Support\CatalogFieldLabels::for($column) }}
                             @if(in_array($column, ['code', 'name']))
                                 <span class="text-red-500">*</span>
                             @endif
@@ -43,7 +43,7 @@
                                 id="{{ $column }}" 
                                 wire:model="{{ $column }}"
                                 class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                                placeholder="Ingrese {{ strtolower(str_replace('_', ' ', $column)) }}"
+                                placeholder="Ingrese {{ \Illuminate\Support\Str::lcfirst(\App\Support\CatalogFieldLabels::for($column)) }}"
                             >
 
                         {{-- Campo textarea --}}
@@ -53,7 +53,7 @@
                                 wire:model="{{ $column }}"
                                 rows="3"
                                 class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                                placeholder="Ingrese {{ strtolower(str_replace('_', ' ', $column)) }}"
+                                placeholder="Ingrese {{ \Illuminate\Support\Str::lcfirst(\App\Support\CatalogFieldLabels::for($column)) }}"
                             ></textarea>
 
                         {{-- Campos numéricos --}}
@@ -114,7 +114,7 @@
                                 id="{{ $column }}" 
                                 wire:model="{{ $column }}"
                                 class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
-                                placeholder="Ingrese {{ strtolower(str_replace('_', ' ', $column)) }}"
+                                placeholder="Ingrese {{ \Illuminate\Support\Str::lcfirst(\App\Support\CatalogFieldLabels::for($column)) }}"
                             >
                         @endif
 
