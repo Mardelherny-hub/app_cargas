@@ -138,6 +138,15 @@ class EditPackagingType extends Component
         }
     }
 
+    public function validationAttributes(): array
+    {
+        $labels = [];
+        foreach (['code', 'name', 'unece_code', 'category'] as $col) {
+            $labels[$col] = \App\Support\CatalogFieldLabels::for($col);
+        }
+        return $labels;
+    }
+
     public function save()
     {
         // Validación básica

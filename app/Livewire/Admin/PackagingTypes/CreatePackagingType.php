@@ -183,7 +183,7 @@ class CreatePackagingType extends Component
     {
         $labels = [];
         foreach ($this->columns as $col) {
-            $labels["form.$col"] = \Illuminate\Support\Str::of($col)->replace('_',' ')->title();
+            $labels["form.$col"] = \App\Support\CatalogFieldLabels::for($col);
         }
         if (array_key_exists('created_by_user_id', $this->form)) {
             $labels['form.created_by_user_id'] = 'Usuario creador';
