@@ -39,4 +39,4 @@ Después de ingresar al sistema, aparece el panel de su cuenta y su nombre en la
 
 ## Si algo falla
 
-- **These credentials do not match our records.**: el correo y la contraseña ingresados no coinciden con una cuenta. Revise ambos datos y vuelva a intentarlo. Si el problema continúa, consulte al administrador que le proporcionó el acceso.
+- **Estas credenciales no coinciden con nuestros registros.**: el correo y la contraseña ingresados no coinciden con una cuenta. Revise ambos datos y vuelva a intentarlo. Si el problema continúa, consulte al administrador que le proporcionó el acceso.
