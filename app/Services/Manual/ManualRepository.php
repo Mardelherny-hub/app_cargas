@@ -11,11 +11,14 @@ use League\CommonMark\Environment\Environment;
 use League\CommonMark\Event\DocumentParsedEvent;
 use League\CommonMark\Exception\CommonMarkException;
 use League\CommonMark\Extension\CommonMark\CommonMarkCoreExtension;
+use League\CommonMark\Extension\CommonMark\Node\Block\Heading;
 use League\CommonMark\Extension\CommonMark\Node\Inline\Link;
 use League\CommonMark\Extension\FrontMatter\FrontMatterExtension;
 use League\CommonMark\Extension\HeadingPermalink\HeadingPermalinkExtension;
 use League\CommonMark\MarkdownConverter;
 use League\CommonMark\Node\Block\Document;
+use League\CommonMark\Node\RawMarkupContainerInterface;
+use League\CommonMark\Node\StringContainerHelper;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -27,7 +30,7 @@ use Symfony\Component\Yaml\Yaml;
  */
 class ManualRepository
 {
-    private const CLAVE_CACHE = 'manual.contenido';
+    private const CLAVE_CACHE = 'manual.contenido.v2';
 
     private const ROLES = ['super-admin', 'company-admin', 'user'];
 
@@ -46,6 +49,7 @@ class ManualRepository
                     'titulo' => $articulo['titulo'],
                     'tema' => $articulo['tema'],
                     'tema_nombre' => $articulo['tema_nombre'],
+                    'borrador' => $articulo['borrador'],
                     'palabras_clave' => $articulo['palabras_clave'],
                     'texto' => $articulo['texto'],
                     'url' => $this->urlArticulo($articulo['tema'], $articulo['slug']),
@@ -75,17 +79,43 @@ class ManualRepository
             if ($relacionado !== null && $this->puedeVer($user, $relacionado)) {
                 $relacionados[] = [
                     'titulo' => $relacionado['titulo'],
+                    'tema_nombre' => $relacionado['tema_nombre'],
                     'url' => $this->urlArticulo($relacionado['tema'], $relacionado['slug']),
                 ];
             }
         }
 
+        // Solo artículos que el usuario puede ver: los ocultos no cuentan como vecinos.
+        $vecinos = [];
+        foreach ($articulos as $vecino) {
+            if ($vecino['tema'] === $tema && $this->puedeVer($user, $vecino)) {
+                $vecinos[] = $vecino;
+            }
+        }
+        $posicion = array_search($slug, array_column($vecinos, 'slug'), true);
+
         return [
             'titulo' => $articulo['titulo'],
             'tema' => $articulo['tema'],
             'tema_nombre' => $articulo['tema_nombre'],
+            'borrador' => $articulo['borrador'],
             'html' => $articulo['html'],
+            'secciones' => $articulo['secciones'],
             'relacionados' => $relacionados,
+            'anterior' => $this->enlaceVecino($vecinos[$posicion - 1] ?? null),
+            'siguiente' => $this->enlaceVecino($vecinos[$posicion + 1] ?? null),
+        ];
+    }
+
+    private function enlaceVecino(?array $articulo): ?array
+    {
+        if ($articulo === null) {
+            return null;
+        }
+
+        return [
+            'titulo' => $articulo['titulo'],
+            'url' => $this->urlArticulo($articulo['tema'], $articulo['slug']),
         ];
     }
 
@@ -176,7 +206,8 @@ class ManualRepository
 
         foreach ($leidos as $clave => $leido) {
             $cabecera = $leido['cabecera'];
-            $html = $convertidor->convert($leido['markdown'])->getContent();
+            $convertido = $convertidor->convert($leido['markdown']);
+            $html = $convertido->getContent();
 
             $articulos[$clave] = [
                 'tema' => $leido['tema'],
@@ -190,6 +221,7 @@ class ManualRepository
                 // Lo verificado solo contra el código no se publica, aunque diga "publicado".
                 'borrador' => $cabecera['estado'] !== 'publicado' || $cabecera['verificado']['entorno'] !== 'stage',
                 'html' => $html,
+                'secciones' => $this->secciones($convertido->getDocument()),
                 'texto' => $this->textoPlano($html),
             ];
         }
@@ -352,6 +384,27 @@ class ManualRepository
         } catch (UrlGenerationException) {
             return null;
         }
+    }
+
+    /**
+     * Títulos de nivel 2 del documento ya convertido, con el id que recibieron.
+     */
+    private function secciones(Document $documento): array
+    {
+        $secciones = [];
+
+        foreach ($documento->iterator() as $nodo) {
+            if ($nodo instanceof Heading && $nodo->getLevel() === 2) {
+                $id = (string) $nodo->data->get('attributes/id', null);
+                $titulo = StringContainerHelper::getChildText($nodo, [RawMarkupContainerInterface::class]);
+
+                if ($id !== '' && trim($titulo) !== '') {
+                    $secciones[] = ['id' => $id, 'titulo' => $titulo];
+                }
+            }
+        }
+
+        return $secciones;
     }
 
     private function textoPlano(string $html): string
