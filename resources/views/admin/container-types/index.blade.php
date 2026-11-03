@@ -67,7 +67,7 @@
                                 <th class="px-3 sm:px-4 py-2.5 font-semibold">ID</th>
                                 @foreach ($columns as $col)
                                     <th class="px-3 sm:px-4 py-2.5 font-semibold">
-                                        {{ Str::of($col)->replace('_', ' ')->title() }}
+                                        {{ \App\Support\CatalogFieldLabels::for($col) }}
                                     </th>
                                 @endforeach
                                 <th class="px-3 sm:px-4 py-2.5 text-right font-semibold">{{ __('Acciones') }}</th>
