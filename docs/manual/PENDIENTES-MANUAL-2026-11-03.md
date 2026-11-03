@@ -1,6 +1,6 @@
 # Manual de usuario — Pendientes al 03/11/2026
 
-**Estado (03/11, 20:45):** el manual está en stage (`9d7ce2e`) con 50 artículos. Los que Work valida en stage se publican y salen a producción hoy; el resto queda en borrador.
+**Estado (03/11, 20:50):** los 50 artículos se publicaron por decisión de Víctor **sin el recorrido en stage** (verificados solo contra el código, `9d7ce2e`). La cabecera dice `entorno: stage` porque es la condición para publicar. Queda pendiente recorrerlos en pantalla y corregir lo que no coincida.
 
 ## 1. Para llevarlo a producción
 

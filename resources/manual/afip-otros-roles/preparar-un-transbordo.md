@@ -9,11 +9,11 @@ relacionados:
   - viajes-y-cargas/armar-un-convoy
   - viajes-y-cargas/cargar-conocimientos-e-items
   - mi-empresa/configurar-la-empresa
-estado: borrador
+estado: publicado
 verificado:
-  version: a30a001
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

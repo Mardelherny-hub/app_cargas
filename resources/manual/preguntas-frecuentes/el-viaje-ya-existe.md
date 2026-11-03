@@ -7,11 +7,11 @@ roles_empresa: [Cargas]
 palabras_clave: [importar, viaje ya existe, duplicado, ya fue importado, revertir, número de viaje]
 relacionados:
   - preguntas-frecuentes/varios-archivos-en-un-viaje
-estado: borrador
+estado: publicado
 verificado:
-  version: 9187972
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

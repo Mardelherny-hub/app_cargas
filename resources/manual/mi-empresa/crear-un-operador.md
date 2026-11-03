@@ -4,11 +4,11 @@ tema: mi-empresa
 orden: 10
 roles: [company-admin]
 palabras_clave: [operador, usuario, permisos, importar, exportar, transferir]
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

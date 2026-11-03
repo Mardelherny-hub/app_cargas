@@ -5,11 +5,11 @@ orden: 5
 roles: [super-admin, company-admin, user]
 palabras_clave: [rol, permisos, menú, administrador, operador, super administrador, Cargas, Desconsolidador, Transbordos]
 relacionados: [primeros-pasos/ingresar-y-perfil]
-estado: borrador
+estado: publicado
 verificado:
-  version: a30a001
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

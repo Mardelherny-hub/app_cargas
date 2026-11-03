@@ -5,11 +5,11 @@ orden: 30
 roles: [company-admin, user]
 palabras_clave: [propietario, embarcación, transportista, razón social, identificador tributario]
 relacionados: [datos-maestros/registrar-una-embarcacion]
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

@@ -5,11 +5,11 @@ orden: 20
 roles: [company-admin, user]
 palabras_clave: [embarcación, buque, barco, barcaza, matrícula, bandera, propietario]
 relacionados: [datos-maestros/registrar-un-propietario]
-estado: borrador
+estado: publicado
 verificado:
-  version: d462c7f
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

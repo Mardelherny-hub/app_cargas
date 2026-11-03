@@ -9,11 +9,11 @@ relacionados:
   - afip-argentina/registrar-micdta-convoy
   - afip-argentina/registrar-salida-zona-primaria
   - afip-argentina/solicitar-anulacion-micdta
-estado: borrador
+estado: publicado
 verificado:
-  version: c62042a
-  fecha: 2026-10-30
-  entorno: codigo
+  version: 9d7ce2e
+  fecha: 2026-11-03
+  entorno: stage
 ---
 
 ## Para qué sirve

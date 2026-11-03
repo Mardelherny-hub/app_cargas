@@ -8,11 +8,11 @@ palabras_clave: [anular, título, conocimiento, AnularTitulo, baja, AFIP]
 relacionados:
   - afip-argentina/registrar-micdta-una-embarcacion
   - afip-argentina/solicitar-anulacion-micdta
-estado: borrador
+estado: publicado
 verificado:
-  version: 9187972
-  fecha: 2026-11-02
-  entorno: codigo
+  version: 9d7ce2e
+  fecha: 2026-11-03
+  entorno: stage
 ---
 
 ## Para qué sirve

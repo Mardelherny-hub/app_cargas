@@ -7,11 +7,11 @@ palabras_clave: [glosario, términos, qué significa, definición, conocimiento,
 relacionados:
   - primeros-pasos/recorrido-argentina
   - primeros-pasos/recorrido-paraguay
-estado: borrador
+estado: publicado
 verificado:
-  version: a30a001
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

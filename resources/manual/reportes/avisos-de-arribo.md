@@ -6,11 +6,11 @@ roles: [company-admin, user]
 roles_empresa: [Cargas]
 palabras_clave: [cartas de aviso, aviso de arribo, aviso de llegada, consignatario, PDF, ZIP, viaje]
 relacionados: [reportes/listado-de-conocimientos, datos-maestros/registrar-un-cliente]
-estado: borrador
+estado: publicado
 verificado:
-  version: a30a001
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

@@ -6,11 +6,11 @@ roles: [company-admin, user]
 roles_empresa: [Cargas]
 palabras_clave: [MANE, Malvina, ID María, archivo, Aduana, exportar, viaje]
 relacionados: [viajes-y-cargas/crear-un-viaje-a-mano, viajes-y-cargas/cargar-conocimientos-e-items]
-estado: borrador
+estado: publicado
 verificado:
-  version: a30a001
+  version: 9d7ce2e
   fecha: 2026-11-03
-  entorno: codigo
+  entorno: stage
 ---
 
 ## Para qué sirve

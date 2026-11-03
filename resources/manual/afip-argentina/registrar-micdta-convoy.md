@@ -11,11 +11,11 @@ relacionados:
   - afip-argentina/registrar-salida-zona-primaria
   - afip-argentina/rectificar-un-convoy
   - preguntas-frecuentes/dos-convoyes-al-mismo-tiempo
-estado: borrador
+estado: publicado
 verificado:
-  version: c62042a
-  fecha: 2026-10-30
-  entorno: codigo
+  version: 9d7ce2e
+  fecha: 2026-11-03
+  entorno: stage
 ---
 
 ## Para qué sirve
