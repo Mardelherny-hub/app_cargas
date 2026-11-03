@@ -95,8 +95,8 @@
                             @endif
 
                             <div class="@if(in_array($column, ['description', 'notes', 'observations'])) md:col-span-2 @endif">
-                                <label for="{{ $column }}" class="block text-sm font-medium text-gray-700 capitalize">
-                                    {{ str_replace('_', ' ', $column) }}
+                                <label for="{{ $column }}" class="block text-sm font-medium text-gray-700">
+                                    {{ \App\Support\CatalogFieldLabels::for($column) }}
                                     @if(in_array($column, ['name', 'code', 'iso_code']))
                                         <span class="text-red-500">*</span>
                                     @endif
@@ -122,7 +122,7 @@
                                               id="{{ $column }}"
                                               rows="3"
                                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error($column) border-red-300 @enderror"
-                                              placeholder="Ingrese {{ str_replace('_', ' ', $column) }}">{{ old($column, $item->$column) }}</textarea>
+                                              placeholder="Ingrese {{ \Illuminate\Support\Str::lcfirst(\App\Support\CatalogFieldLabels::for($column)) }}">{{ old($column, $item->$column) }}</textarea>
 
                                 @elseif(str_contains($column, 'weight') || str_contains($column, 'capacity') || str_contains($column, 'volume'))
                                     <!-- Campo Numérico para pesos/capacidades -->
@@ -154,7 +154,7 @@
                                                required
                                            @endif
                                            class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error($column) border-red-300 @enderror"
-                                           placeholder="Ingrese {{ str_replace('_', ' ', $column) }}">
+                                           placeholder="Ingrese {{ \Illuminate\Support\Str::lcfirst(\App\Support\CatalogFieldLabels::for($column)) }}">
                                 @endif
 
                                 @error($column)
