@@ -280,6 +280,12 @@ final class CatalogFieldLabels
         'composite' => 'Compuesto',
         'glass' => 'Vidrio',
         'rubber' => 'Caucho',
+
+        // Equipo de manejo
+        'manual' => 'Manual',
+        'forklift' => 'Autoelevador',
+        'crane' => 'Grúa',
+        'conveyor' => 'Cinta transportadora',
     ];
 
     public static function for(string $field): string
