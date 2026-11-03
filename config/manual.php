@@ -26,6 +26,7 @@ return [
     'temas' => [
         'primeros-pasos' => 'Primeros pasos',
         'administracion' => 'Administración',
+        'catalogos' => 'Catálogos',
         'mi-empresa' => 'Mi empresa',
         'datos-maestros' => 'Datos maestros',
         'viajes-y-cargas' => 'Viajes y cargas',
