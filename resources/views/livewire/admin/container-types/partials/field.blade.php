@@ -7,7 +7,7 @@
     $fieldExists = in_array($field, $columns ?? []);
     if (!$fieldExists) return;
     
-    $label = \Illuminate\Support\Str::of($field)->replace('_',' ')->title();
+    $label = \App\Support\CatalogFieldLabels::for($field);
     $type = $type ?? 'auto'; // auto, text, number, checkbox, textarea, select
     $size = $size ?? 'normal'; // sm, normal
     $colSpan = $colSpan ?? '';

@@ -200,7 +200,7 @@ class EditCargoType extends Component
     {
         $labels = [];
         foreach ($this->columns as $col) {
-            $labels["form.$col"] = \Illuminate\Support\Str::of($col)->replace('_',' ')->title();
+            $labels["form.$col"] = \App\Support\CatalogFieldLabels::for($col);
         }
         return $labels;
     }
