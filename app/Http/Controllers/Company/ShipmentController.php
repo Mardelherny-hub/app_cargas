@@ -319,6 +319,9 @@ class ShipmentController extends Controller
             return redirect()->route('company.shipments.show', $shipment)
                 ->with('success', 'Shipment creado exitosamente.');
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Error creando shipment: ' . $e->getMessage());
