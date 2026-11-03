@@ -160,7 +160,7 @@ class EditContainerType extends Component
     {
         $labels = [];
         foreach ($this->columns as $col) {
-            $labels["form.$col"] = \Illuminate\Support\Str::of($col)->replace('_', ' ')->title();
+            $labels["form.$col"] = \App\Support\CatalogFieldLabels::for($col);
         }
         if (isset($this->form['updated_by_user_id'])) {
             $labels['form.updated_by_user_id'] = 'Usuario que modifica';
