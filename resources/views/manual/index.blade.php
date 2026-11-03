@@ -2,6 +2,7 @@
     $emojis = [
         'primeros-pasos' => '🚀',
         'administracion' => '🛠️',
+        'catalogos' => '📚',
         'mi-empresa' => '🏢',
         'datos-maestros' => '🗂️',
         'viajes-y-cargas' => '🚢',
