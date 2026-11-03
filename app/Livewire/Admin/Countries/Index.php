@@ -103,6 +103,16 @@ class Index extends Component
         try {
             $model = Country::find($this->deletingId);
             if ($model) {
+                $hasRelations = $model->ports()->exists()
+                    || $model->CustomOffices()->exists()
+                    || $model->companies()->exists()
+                    || $model->clients()->exists();
+
+                if ($hasRelations) {
+                    $this->dispatch('toast', type: 'error', message: 'No se puede eliminar el país porque tiene puertos, aduanas, empresas o clientes asociados.');
+                    return;
+                }
+
                 $model->delete();
                 $this->dispatch('toast', type: 'success', message: 'País eliminado correctamente.');
             }
