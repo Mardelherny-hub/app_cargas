@@ -24,14 +24,14 @@ Permite elegir una contraseña nueva cuando no recuerda la actual y no puede ing
 
 ## Pasos
 
-1. En la pantalla **Iniciar Sesión**, haga clic en **¿Olvidaste tu contraseña?**, junto a **Remember me**.
-2. Haga clic en el enlace **Forgot your password?**, que aparece en el mismo lugar.
-3. En la pantalla que se abre, complete **Email** con el correo de su cuenta.
-4. Haga clic en **Email Password Reset Link**.
+1. En la pantalla **Iniciar Sesión**, haga clic en **¿Olvidaste tu contraseña?**, junto a **Recordarme**.
+2. Haga clic en el enlace **¿Olvidó su contraseña?**, que aparece en el mismo lugar.
+3. En la pantalla que se abre, complete **Correo electrónico** con el correo de su cuenta.
+4. Haga clic en **ENVIAR ENLACE DE RECUPERACIÓN**.
 5. Abra el correo que recibió en la dirección de su cuenta y haga clic en el enlace para restablecer la contraseña. El enlace vence a los 60 minutos.
-6. En la pantalla que se abre, revise que **Email** muestre el correo de su cuenta.
-7. Escriba la contraseña nueva en **Password** y repítala en **Confirm Password**.
-8. Haga clic en **Reset Password**.
+6. En la pantalla que se abre, revise que **Correo electrónico** muestre el correo de su cuenta.
+7. Escriba la contraseña nueva en **Contraseña** y repítala en **Confirmar contraseña**.
+8. Haga clic en **RESTABLECER CONTRASEÑA**.
 9. En **Iniciar Sesión**, ingrese con su correo y la contraseña nueva.
 
 ## Cómo saber que salió bien
@@ -42,7 +42,7 @@ Después del paso 8, el sistema lo lleva a la pantalla **Iniciar Sesión**. Si p
 
 ## Si algo falla
 
-- **No veo Forgot your password?:** haga clic primero en **¿Olvidaste tu contraseña?**; el enlace aparece en su lugar.
+- **No veo ¿Olvidó su contraseña?:** haga clic primero en **¿Olvidaste tu contraseña?**; el enlace aparece en su lugar.
 - **Whoops! Something went wrong.**: debajo se indica el motivo; por ejemplo, que el correo no corresponde a una cuenta, que la contraseña nueva es demasiado corta o que la confirmación no coincide. Corrija el dato y vuelva a intentarlo. Si acaba de pedir un enlace, espere un minuto antes de pedir otro.
 - **El correo no llega:** revise la carpeta de correo no deseado. Recuerde que el enlace se envía solo al correo registrado en su cuenta. Si aun así no llega, consulte a su administrador:
   - El administrador de su empresa puede asignarle una contraseña nueva al editar su operador en **Gestión › Operadores**, con **Nueva Contraseña** y **Confirmar Nueva Contraseña**, y luego **Guardar Cambios**.
