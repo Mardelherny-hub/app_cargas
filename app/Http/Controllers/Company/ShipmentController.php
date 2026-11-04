@@ -265,10 +265,6 @@ class ShipmentController extends Controller
                 throw new \Exception('El viaje no pertenece a su empresa.');
             }
 
-            // Heredar capacidades directamente del vessel del viaje — no se piden en el form
-            $validated['cargo_capacity_tons'] = $voyage->leadVessel->cargo_capacity_tons ?? 0;
-            $validated['container_capacity']  = $voyage->leadVessel->container_capacity ?? 0;
-
             // Capitán siempre del voyage — no se repite por shipment
             $validated['captain_id'] = $voyage->captain_id;
 
@@ -276,6 +272,13 @@ class ShipmentController extends Controller
             if (!$voyage->is_convoy) {
                 $validated['vessel_id'] = $voyage->lead_vessel_id;
             }
+
+            // Heredar capacidades de la embarcación de esta carga — no se piden en el form
+            $shipmentVessel = !empty($validated['vessel_id'])
+                ? \App\Models\Vessel::find($validated['vessel_id'])
+                : $voyage->leadVessel;
+            $validated['cargo_capacity_tons'] = $shipmentVessel->cargo_capacity_tons ?? 0;
+            $validated['container_capacity']  = $shipmentVessel->container_capacity ?? 0;
 
             // Calcular secuencia automáticamente
             $maxSequence = \App\Models\Shipment::where('voyage_id', $validated['voyage_id'])
