@@ -25,16 +25,16 @@ Permite cambiar la contraseña de acceso desde el perfil de su cuenta.
 ## Pasos
 
 1. Haga clic en su nombre, en la barra superior.
-2. Seleccione **Profile**.
-3. Busque la sección **Update Password**.
-4. En **Current Password**, escriba su contraseña actual.
-5. En **New Password**, escriba la contraseña nueva.
-6. Repita la nueva contraseña en **Confirm Password**.
-7. Haga clic en **SAVE**, dentro de **Update Password**.
+2. Seleccione **Mi perfil**.
+3. Busque la sección **Cambiar contraseña**.
+4. En **Contraseña actual**, escriba su contraseña actual.
+5. En **Contraseña nueva**, escriba la contraseña nueva.
+6. Repita la nueva contraseña en **Confirmar contraseña**.
+7. Haga clic en **GUARDAR**, dentro de **Cambiar contraseña**.
 
 ## Cómo saber que salió bien
 
-Al guardar, aparece **Saved.** junto al botón de la sección **Update Password**. En el próximo ingreso, utilice la contraseña nueva.
+Al guardar, aparece **Guardado.** junto al botón de la sección **Cambiar contraseña**. En el próximo ingreso, utilice la contraseña nueva.
 
 ## Si algo falla
 
