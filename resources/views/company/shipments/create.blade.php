@@ -68,7 +68,7 @@
                     </div>
                 </div>
                 <p class="mt-3 text-xs text-blue-700 bg-blue-100 rounded px-3 py-2">
-                    ✅ Las capacidades se heredan automáticamente de la embarcación del viaje.
+                    ✅ Las capacidades de cada carga se toman de la embarcación que se selecciona.
                 </p>
             </div>
 
