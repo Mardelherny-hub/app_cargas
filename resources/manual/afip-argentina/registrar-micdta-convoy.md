@@ -4,7 +4,7 @@ tema: afip-argentina
 orden: 20
 roles: [company-admin, user]
 roles_empresa: [Cargas]
-palabras_clave: [MIC/DTA, convoy, remolcador, barcaza, AFIP, RegistrarMicDta, RegistrarConvoy, RegistrarTitEnvios]
+palabras_clave: [MIC/DTA, convoy, remolcador, autopropulsado, barcaza, AFIP, RegistrarMicDta, RegistrarConvoy, RegistrarTitEnvios]
 relacionados:
   - viajes-y-cargas/armar-un-convoy
   - afip-argentina/registrar-micdta-una-embarcacion
@@ -13,8 +13,8 @@ relacionados:
   - preguntas-frecuentes/dos-convoyes-al-mismo-tiempo
 estado: publicado
 verificado:
-  version: 9d7ce2e
-  fecha: 2026-11-03
+  version: dbd4721
+  fecha: 2026-11-04
   entorno: stage
 ---
 
@@ -24,9 +24,9 @@ Registra ante AFIP un MIC/DTA por cada embarcación del convoy y después los ag
 
 ## Antes de empezar
 
-- El viaje tiene que estar armado como convoy: una carga para el remolcador o empujador y una carga por cada barcaza. Vea [Cómo armar un convoy](manual:viajes-y-cargas/armar-un-convoy).
-- El remolcador va sin conocimientos (en lastre). Cada barcaza lleva sus conocimientos, con cargador y consignatario completos.
-- El remolcador tiene matrícula y capitán con número de documento. Las barcazas no llevan capitán.
+- El viaje tiene que estar armado como convoy: una carga para la embarcación líder (remolcador, empujador o buque autopropulsado) y una por cada barcaza. Vea [Cómo armar un convoy](manual:viajes-y-cargas/armar-un-convoy).
+- Cada barcaza lleva sus conocimientos, con cargador y consignatario completos. La embarcación líder va sin conocimientos (en lastre) o, si es un buque autopropulsado que también transporta mercadería, con los suyos.
+- La embarcación líder tiene matrícula y capitán con número de documento. Las barcazas no llevan capitán.
 - El viaje tiene cargados el puerto de origen y el de destino.
 - La empresa tiene su certificado AFIP cargado y el ambiente correcto (homologación o producción).
 
@@ -34,12 +34,12 @@ Registra ante AFIP un MIC/DTA por cada embarcación del convoy y después los ag
 
 1. En el menú lateral, abra **Crear Viaje Completo › Enviar a AFIP/DNA**.
 2. En **Webservices Aduaneros**, busque la tarjeta del viaje y, en el recuadro **MIC/DTA**, haga clic en **Enviar Ahora** (o **Ver Detalles**, si el viaje ya tiene envíos).
-3. Arriba, en **Embarcaciones del Viaje**, verifique que aparezcan todas las embarcaciones: el remolcador como **AUT** y cada barcaza como **BAR**.
-4. En **Métodos Principales (Flujo Básico)**, haga clic en **1. RegistrarTitEnvios** y confirme con **Aceptar**. El remolcador en lastre se omite solo.
+3. Arriba, en **Embarcaciones del Viaje**, verifique que aparezcan todas las embarcaciones: la embarcación líder como **AUT** y cada barcaza como **BAR**.
+4. En **Métodos Principales (Flujo Básico)**, haga clic en **1. RegistrarTitEnvios** y confirme con **Aceptar**. Si la embarcación líder va en lastre, se omite sola; si lleva conocimientos, se envía con su carga.
 5. Cuando aparezca **RegistrarTitEnvios - Exitoso**, haga clic en **Cerrar** y actualice la página.
 6. Haga clic en **3. RegistrarMicDta** y confirme con **Aceptar**. El sistema registra un MIC/DTA por cada embarcación del viaje y saltea las que ya lo tienen.
 7. Cuando aparezca **RegistrarMicDta - Exitoso**, haga clic en **Cerrar** y actualice la página. Cada embarcación tiene que mostrar ✅ en **Embarcaciones del Viaje**.
-8. En **Gestión de Convoy**, haga clic en **4. RegistrarConvoy** y confirme con **Aceptar**. El sistema arma el convoy solo con los MIC/DTA de este viaje: el remolcador como cabecera y las barcazas como remolcadas.
+8. En **Gestión de Convoy**, haga clic en **4. RegistrarConvoy** y confirme con **Aceptar**. El sistema arma el convoy solo con los MIC/DTA de este viaje: la embarcación líder como cabecera y las barcazas como remolcadas.
 9. Cuando aparezca **RegistrarConvoy - Exitoso**, haga clic en **Cerrar** y actualice la página.
 
 Mientras un botón muestra el indicador de carga, no vuelva a hacer clic: espere el mensaje de resultado.
@@ -56,9 +56,9 @@ Mientras un botón muestra el indicador de carga, no vuelva a hacer clic: espere
 - **Una embarcación muestra ❌:** apoye el mouse sobre ❌ para ver el motivo. Corrija el dato y vuelva a hacer clic en **3. RegistrarMicDta**; las embarcaciones ya registradas no se reenvían.
 - **Debajo de RegistrarMicDta aparece "Faltan:"** seguido de TRACKs, Embarcación, Capitán o Puertos: complete ese dato. TRACKs significa que todavía no se ejecutó **1. RegistrarTitEnvios** con éxito.
 - **"Se necesitan al menos 2 MIC/DTA distintos para formar convoy":** falta el MIC/DTA de alguna embarcación. Repita el paso 6.
-- **"No se encontró MIC/DTA del remolcador/autopropulsado"** o **"No se encontraron MIC/DTA de barcazas":** revise en la ficha de cada embarcación que el tipo sea el correcto (remolcador o empujador, y barcaza).
+- **"No se encontró MIC/DTA del remolcador/autopropulsado"** o **"No se encontraron MIC/DTA de barcazas":** revise en la ficha de cada embarcación que el tipo sea el correcto: remolcador, empujador o autopropulsado para la líder, y barcaza para las demás.
 - **"RegistrarConvoy no es aplicable para viajes de una sola embarcación":** el viaje tiene una sola carga. Use [Cómo registrar el MIC/DTA de una embarcación](manual:afip-argentina/registrar-micdta-una-embarcacion).
-- **Debe declarar capitán para la embarcación cabecera del convoy:** cargue el capitán, con tipo y número de documento, en la carga del remolcador.
+- **Debe declarar capitán para la embarcación cabecera del convoy:** cargue el capitán, con tipo y número de documento, en la carga de la embarcación líder.
 - **Todos los MIC/DTA del convoy deben tener la misma ruta:** todas las cargas tienen que salir del mismo puerto y llegar al mismo destino.
 - **El MIC/DTA fue registrado sin indicar que integra convoy:** hay que anular ese MIC/DTA y registrarlo de nuevo. Vea [Cómo solicitar la anulación de un MIC/DTA](manual:afip-argentina/solicitar-anulacion-micdta).
 - **Ya existe un convoy registrado para este MIC/DTA:** el convoy ya está en AFIP. No lo registre de nuevo: rectifíquelo o consulte con ARCA.
