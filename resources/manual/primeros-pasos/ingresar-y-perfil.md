@@ -22,18 +22,18 @@ Permite ingresar al sistema con su cuenta y actualizar el nombre que aparece en 
 
 ## Pasos
 
-1. En **Iniciar Sesión**, complete **Email** con el correo de su cuenta.
-2. Complete **Password** con su contraseña y haga clic en **LOG IN**.
+1. En **Iniciar Sesión**, complete **Correo electrónico** con el correo de su cuenta.
+2. Complete **Contraseña** y haga clic en **INGRESAR**.
 3. Una vez dentro del sistema, haga clic en su nombre, en la barra superior.
-4. Seleccione **Profile**.
-5. En **Profile Information**, revise **Name** y **Email**.
-6. Para actualizar su nombre, modifique **Name**. Conserve **Email** si no necesita cambiar su correo de acceso. Si cambia **Email**, desde ese momento ingresa con el correo nuevo.
-7. Haga clic en **SAVE**, dentro de **Profile Information**. Use el botón de esa sección, no el de **Update Password**.
-8. Compruebe que aparece **Saved.** junto al botón **SAVE**.
+4. Seleccione **Mi perfil**.
+5. En **Información del perfil**, revise **Nombre** y **Correo electrónico**.
+6. Para actualizar su nombre, modifique **Nombre**. Conserve **Correo electrónico** si no necesita cambiar su correo de acceso. Si lo cambia, desde ese momento ingresa con el correo nuevo.
+7. Haga clic en **GUARDAR**, dentro de **Información del perfil**. Use el botón de esa sección, no el de **Cambiar contraseña**.
+8. Compruebe que aparece **Guardado.** junto al botón **GUARDAR**.
 
 ## Cómo saber que salió bien
 
-Al guardar el perfil, aparece **Saved.** junto al botón **SAVE**. Opcionalmente, vuelva a abrir **Profile** y compruebe que **Name** conserva el nombre que guardó.
+Al guardar el perfil, aparece **Guardado.** junto al botón **GUARDAR**. Opcionalmente, vuelva a abrir **Mi perfil** y compruebe que **Nombre** conserva el nombre que guardó.
 
 Después de ingresar al sistema, aparece el panel de su cuenta y su nombre en la barra superior.
 
