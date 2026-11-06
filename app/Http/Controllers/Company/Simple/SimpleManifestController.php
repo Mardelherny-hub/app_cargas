@@ -1404,10 +1404,15 @@ public function micDtaSend(Request $request, Voyage $voyage)
                 return response()->json(['error' => 'No autorizado'], 403);
             }
 
-            // Para Transbordos, la vista previa utiliza sólo el reparto
-            // persistido. Nunca solicita WSAA ni genera el SOAP convencional.
+            // Para Transbordos con reparto guardado, la vista previa utiliza sólo
+            // el reparto persistido. Nunca solicita WSAA ni genera el SOAP
+            // convencional. El indicador de tránsito sin reparto sigue el flujo
+            // convencional.
             $transshipmentBills = $voyage->billsOfLading()
                 ->where('is_transit_transshipment', 'S')
+                ->whereExists(fn ($query) => $query->selectRaw('1')
+                    ->from('hidrovia_transshipment_allocations')
+                    ->whereColumn('hidrovia_transshipment_allocations.bill_of_lading_id', 'bills_of_lading.id'))
                 ->with(['shipmentItems.packagingType', 'shipmentItems.containers'])
                 ->get();
             if ($transshipmentBills->isNotEmpty()) {

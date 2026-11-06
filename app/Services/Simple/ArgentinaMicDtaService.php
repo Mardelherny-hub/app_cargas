@@ -83,7 +83,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     }
 
     /**
-     * Impide transmitir por el flujo convencional títulos de Transbordos.
+     * Impide transmitir por el flujo convencional títulos de Transbordos que
+     * ya tienen un reparto entre barcazas guardado. El indicador de tránsito
+     * por sí solo viaja en el MIC/DTA convencional y no bloquea el envío.
      * Los viajes persistidos se verifican siempre contra la BD, no contra
      * relaciones cargadas parcialmente en una vista.
      */
@@ -92,6 +94,9 @@ class ArgentinaMicDtaService extends BaseWebserviceService
         if ($voyage->exists) {
             return $voyage->billsOfLading()
                 ->where('is_transit_transshipment', 'S')
+                ->whereExists(fn ($query) => $query->selectRaw('1')
+                    ->from('hidrovia_transshipment_allocations')
+                    ->whereColumn('hidrovia_transshipment_allocations.bill_of_lading_id', 'bills_of_lading.id'))
                 ->exists();
         }
 
@@ -532,7 +537,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 return [
                     'success' => false,
                     'error_code' => 'VALIDATION_FAILED',
-                    'error_message' => 'El viaje contiene conocimientos de Transbordos: no se puede enviar por el MIC/DTA convencional.',
+                    'error_message' => 'El viaje tiene conocimientos con distribución entre barcazas guardada: no se puede enviar por el MIC/DTA convencional.',
                     'validation_errors' => ['Prepará la distribución entre barcazas desde el MIC/DTA del viaje. La transmisión multibarcaza todavía no está habilitada.'],
                     'warnings' => [],
                 ];
@@ -605,7 +610,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                     return [
                         'success' => false,
                         'error_code' => 'PREREQUISITES_NOT_MET',
-                        'error_message' => 'El viaje contiene conocimientos de Transbordos: este método convencional no admite la distribución entre barcazas.',
+                        'error_message' => 'El viaje tiene conocimientos con distribución entre barcazas guardada: este método convencional no admite esa distribución.',
                         'validation_errors' => ['Prepará la distribución desde el MIC/DTA del viaje. La transmisión multibarcaza todavía no está habilitada.'],
                         'warnings' => [],
                     ];
