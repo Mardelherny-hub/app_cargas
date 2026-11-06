@@ -380,12 +380,19 @@
                     fn ($shipment) => $shipment->vessel?->vesselType?->category === 'barge'
                 )->count();
                 $transshipmentAuthorized = $company->hasCompanyRole('Transbordos');
+                // Solo los conocimientos con reparto guardado salen del MIC/DTA convencional.
+                $transshipmentDistributed = $transshipmentBills->isNotEmpty()
+                    && \App\Models\HidroviaTransshipmentAllocation::whereIn('bill_of_lading_id', $transshipmentBills->pluck('id'))->exists();
+                $showTransshipmentSection = $transshipmentBills->isNotEmpty()
+                    && (($transshipmentAuthorized && $transshipmentBarges >= 2) || $transshipmentDistributed);
             @endphp
-            @if($transshipmentBills->isNotEmpty())
-                <section class="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-5" aria-label="Distribución de Transbordos">
-                    <h3 class="font-semibold text-blue-900">Distribución de Transbordos — viaje {{ $voyage->voyage_number }}</h3>
-                    <p class="mt-1 text-sm text-blue-800">
-                        Prepará los conocimientos de este viaje entre las barcazas existentes.
+            @if($showTransshipmentSection)
+                <details class="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-5" aria-label="Distribución de Transbordos" @if($transshipmentDistributed) open @endif>
+                    <summary class="cursor-pointer font-semibold text-blue-900">
+                        Distribución de Transbordos — {{ $transshipmentBills->count() }} {{ $transshipmentBills->count() === 1 ? 'conocimiento' : 'conocimientos' }} de tránsito/transbordo
+                    </summary>
+                    <p class="mt-2 text-sm text-blue-800">
+                        Si un conocimiento debe repartirse entre varias barcazas, prepare aquí su distribución.
                         La distribución se guarda en borrador y se valida aquí; todavía no se transmite a ARCA.
                     </p>
                     <div class="mt-4 divide-y divide-blue-100 rounded-md border border-blue-100 bg-white">
@@ -424,12 +431,14 @@
                             </div>
                         @endforeach
                     </div>
-                    <p class="mt-3 text-sm font-medium text-amber-900">
-                        Los métodos convencionales RegistrarTitEnvios, RegistrarEnvios y RegistrarMicDta
-                        no admiten todavía la distribución multibarcaza. Su transmisión permanece bloqueada
-                        para este viaje; podés seguir preparando y validando las asignaciones.
-                    </p>
-                </section>
+                    @if($transshipmentDistributed)
+                        <p class="mt-3 text-sm font-medium text-amber-900">
+                            Este viaje tiene conocimientos con distribución entre barcazas guardada.
+                            RegistrarTitEnvios, RegistrarEnvios y RegistrarMicDta no admiten todavía esa distribución,
+                            por lo que quedan bloqueados para este viaje.
+                        </p>
+                    @endif
+                </details>
             @endif
 
             {{-- Panel de Métodos AFIP --}}
@@ -499,11 +508,11 @@
 
                             <div class="flex flex-col bg-white border-2 {{ $requisitosCompletos ? 'border-blue-300' : 'border-yellow-300' }} rounded-lg overflow-hidden">
                                 {{-- Botón principal --}}
-                                @if($transshipmentBills->isNotEmpty())
+                                @if($transshipmentDistributed)
                                     <div class="flex flex-col items-center justify-center p-4 bg-gray-100 text-gray-600" role="status">
                                         <span class="text-2xl mb-2">📋</span>
                                         <span class="text-sm font-medium text-center">1. RegistrarTitEnvios</span>
-                                        <span class="text-xs text-center mt-1">Envío convencional no habilitado para este viaje con Transbordos</span>
+                                        <span class="text-xs text-center mt-1">Envío convencional bloqueado: el viaje tiene distribución entre barcazas</span>
                                     </div>
                                 @else
                                     <button onclick="executeAfipMethod('RegistrarTitEnvios')"
@@ -679,11 +688,11 @@
 
                             <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarEnvios ? 'border-blue-300' : 'border-gray-300' }} rounded-lg overflow-hidden">
                                 {{-- Botón principal --}}
-                                @if($transshipmentBills->isNotEmpty())
+                                @if($transshipmentDistributed)
                                     <div class="flex flex-col items-center justify-center bg-gray-100 p-4 text-gray-600" role="status">
                                         <span class="text-2xl mb-2">📦</span>
                                         <span class="text-sm font-medium text-center">2. RegistrarEnvios</span>
-                                        <span class="text-xs text-center mt-1">Envío convencional no habilitado para este viaje con Transbordos</span>
+                                        <span class="text-xs text-center mt-1">Envío convencional bloqueado: el viaje tiene distribución entre barcazas</span>
                                     </div>
                                 @else
                                     <button onclick="{{ $puedeEjecutarEnvios ? "executeAfipMethod('RegistrarEnvios')" : "showRequisitosPrevios('RegistrarEnvios')" }}"
@@ -838,11 +847,11 @@
 
                             <div class="flex flex-col bg-white border-2 {{ $puedeEjecutarMicDta ? 'border-blue-300' : 'border-yellow-300' }} rounded-lg overflow-hidden">
                                 {{-- Botón principal --}}
-                                @if($transshipmentBills->isNotEmpty())
+                                @if($transshipmentDistributed)
                                     <div class="flex flex-col items-center justify-center bg-gray-100 p-4 text-gray-600" role="status">
                                         <span class="text-2xl mb-2">📄</span>
                                         <span class="text-sm font-medium text-center">3. RegistrarMicDta</span>
-                                        <span class="text-xs text-center mt-1">Envío convencional no habilitado para este viaje con Transbordos</span>
+                                        <span class="text-xs text-center mt-1">Envío convencional bloqueado: el viaje tiene distribución entre barcazas</span>
                                     </div>
                                 @else
                                     <button onclick="{{ $puedeEjecutarMicDta ? "executeAfipMethod('RegistrarMicDta')" : "showRequisitosPrevios('RegistrarMicDta')" }}"
