@@ -3318,6 +3318,95 @@ class ArgentinaMicDtaService extends BaseWebserviceService
     /**
      * Verificar que el MIC/DTA existe en transacciones previas
      */
+    /**
+     * Indica si el MIC/DTA integra el convoy registrado del viaje.
+     * Si la última operación de convoy es una rectificación, la composición
+     * pudo cambiar y no se bloquea: AFIP responde en ese caso.
+     */
+    private function isMicDtaInRegisteredConvoy(Voyage $voyage, string $micDtaId): bool
+    {
+        $lastConvoyOperation = $voyage->webserviceTransactions()
+            ->where('status', 'success')
+            ->where(function ($q) {
+                $q->where('soap_action', 'like', '%RegistrarConvoy%')
+                  ->orWhere('soap_action', 'like', '%RectifConvoyMicDta%');
+            })
+            ->latest('id')
+            ->first();
+
+        if (!$lastConvoyOperation || !str_contains((string) $lastConvoyOperation->soap_action, 'RegistrarConvoy')) {
+            return false;
+        }
+
+        $metadata = $lastConvoyOperation->additional_metadata ?? [];
+        $convoyMicDtaIds = array_map('strval', array_merge(
+            [$metadata['remolcador_micdta_id'] ?? ''],
+            (array) ($metadata['barcazas_micdta_ids'] ?? [])
+        ));
+
+        return in_array($micDtaId, $convoyMicDtaIds, true);
+    }
+
+    /**
+     * Registra que la Aduana aprobó la anulación solicitada y libera el
+     * MIC/DTA original para poder registrarlo nuevamente.
+     */
+    public function confirmarAnulacionMicDtaAprobada(Voyage $voyage, int $solicitudId): array
+    {
+        $solicitud = $voyage->webserviceTransactions()
+            ->where('company_id', $this->company->id)
+            ->where('id', $solicitudId)
+            ->where('soap_action', 'like', '%SolicitarAnularMicDta%')
+            ->where('status', 'success')
+            ->first();
+
+        if (!$solicitud) {
+            return [
+                'success' => false,
+                'error_message' => 'No se encontró una solicitud de anulación enviada con éxito para este viaje.',
+            ];
+        }
+
+        $successData = $solicitud->success_data ?? [];
+        if (!empty($successData['aprobacion_confirmada_at'])) {
+            return [
+                'success' => false,
+                'error_message' => 'La aprobación de esta anulación ya fue confirmada.',
+            ];
+        }
+
+        $originalTxId = $solicitud->additional_metadata['original_micdta_transaction_id'] ?? null;
+
+        DB::transaction(function () use ($solicitud, $successData, $originalTxId) {
+            if ($originalTxId) {
+                \App\Models\WebserviceTransaction::where('id', $originalTxId)
+                    ->where('company_id', $this->company->id)
+                    ->update([
+                        'status' => 'cancelled',
+                        'error_message' => 'MIC/DTA anulado por la Aduana - requiere nuevo registro',
+                    ]);
+            }
+
+            $solicitud->update([
+                'success_data' => array_merge($successData, [
+                    'aprobacion_confirmada_at' => now()->toDateTimeString(),
+                    'aprobacion_confirmada_por' => $this->user->id,
+                ]),
+            ]);
+        });
+
+        $this->logOperation('info', 'Anulación MIC/DTA confirmada como aprobada por la Aduana', [
+            'voyage_id' => $voyage->id,
+            'solicitud_id' => $solicitud->id,
+            'original_micdta_transaction_id' => $originalTxId,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'Anulación confirmada. El MIC/DTA quedó liberado para volver a registrarlo.',
+        ];
+    }
+
     private function verifyMicDtaExists(Voyage $voyage, string $micDtaId): bool
     {
         return $voyage->webserviceTransactions()
@@ -5358,6 +5447,15 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ];
             }
 
+            // AFIP no admite anular un MIC/DTA vinculado a un convoy (error 27102)
+            if ($this->isMicDtaInRegisteredConvoy($voyage, $data['id_micdta'])) {
+                return [
+                    'success' => false,
+                    'error_message' => 'Este MIC/DTA forma parte del convoy registrado. AFIP no permite solicitar la anulación de un MIC/DTA vinculado a un convoy.',
+                    'error_code' => 'MICDTA_IN_CONVOY',
+                ];
+            }
+
             // 3. Preparar datos
             $requestData = [
                 'id_micdta' => $data['id_micdta'],
@@ -5372,6 +5470,7 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 return [
                     'success' => true,
                     'method' => 'SolicitarAnularMicDta',
+                    'message' => 'Solicitud enviada. Queda pendiente de aprobación de la Aduana: cuando la apruebe, confírmelo en el recuadro 16. SolicitarAnular para poder registrar el MIC/DTA de nuevo.',
                     'id_micdta' => $data['id_micdta'],
                     'desc_motivo' => $data['desc_motivo'],
                     'solicitud_enviada' => true,
@@ -7929,14 +8028,9 @@ private function getTracksFromPreviousTransactions(Voyage $voyage): array
             $result['success'] = true;
             $result['solicitud_procesada'] = true;
 
-            // Invalidar transacción original de RegistrarMicDta para permitir re-registro
-            $originalTxId = $transaction->additional_metadata['original_micdta_transaction_id'] ?? null;
-            if ($originalTxId) {
-                \App\Models\WebserviceTransaction::where('id', $originalTxId)->update([
-                    'status' => 'cancelled',
-                    'error_message' => 'MIC/DTA anulado via SolicitarAnularMicDta - requiere re-registro',
-                ]);
-            }
+            // La transacción original de RegistrarMicDta sigue vigente hasta que el
+            // usuario confirme que la Aduana aprobó la anulación
+            // (confirmarAnulacionMicDtaAprobada).
 
             $this->logOperation('info', 'Solicitud anulación MIC/DTA enviada exitosamente', [
                 'transaction_id' => $transaction->id,
