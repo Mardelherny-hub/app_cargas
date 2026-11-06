@@ -11,8 +11,8 @@ relacionados:
   - afip-argentina/anular-un-titulo
 estado: publicado
 verificado:
-  version: 9d7ce2e
-  fecha: 2026-11-03
+  version: 6b9609a
+  fecha: 2026-11-05
   entorno: stage
 ---
 
@@ -23,6 +23,7 @@ Pide a AFIP que anule un MIC/DTA ya registrado para el viaje. El servicio aduane
 ## Antes de empezar
 
 - El MIC/DTA está registrado: vea [Cómo registrar el MIC/DTA de una embarcación](manual:afip-argentina/registrar-micdta-una-embarcacion) o [Cómo registrar el MIC/DTA de un convoy](manual:afip-argentina/registrar-micdta-convoy).
+- El MIC/DTA no forma parte de un convoy registrado. AFIP no permite anular un MIC/DTA vinculado a un convoy, así que las correcciones se hacen antes de registrar el convoy.
 - Tiene definido el motivo, en no más de 50 caracteres.
 
 ## Pasos
@@ -32,17 +33,19 @@ Pide a AFIP que anule un MIC/DTA ya registrado para el viaje. El servicio aduane
 3. En **Solicitar Anulación MIC/DTA**, elija el MIC/DTA en **ID MIC/DTA**. La lista muestra los MIC/DTA registrados para este viaje. Si no aparece, escríbalo en el campo de abajo (hasta 16 caracteres); tiene que ser un MIC/DTA de este mismo viaje.
 4. Complete **Motivo de anulación**.
 5. Haga clic en **Solicitar Anulación** y confirme con **Aceptar**. La solicitud se envía a AFIP en ese momento.
+6. Cuando la Aduana apruebe la anulación, vuelva a este panel y, en el recuadro **16. SolicitarAnular**, haga clic en **Confirmar aprobación de la Aduana** y confirme con **Aceptar**. Recién entonces puede volver a registrar ese MIC/DTA.
 
 ## Cómo saber que salió bien
 
 - Aparece **SolicitarAnularMicDta - Exitoso** y la página se actualiza sola.
-- En el recuadro **16. SolicitarAnular** aparecen **Última solicitud**, **MIC/DTA** y **Estado**.
-
-Esto confirma que AFIP recibió la solicitud, no que la anulación esté aprobada. Antes de volver a registrar el MIC/DTA, confirme con la Aduana que la aprobó.
+- En el recuadro **16. SolicitarAnular** aparecen **Última solicitud**, **MIC/DTA** y el estado **Pendiente de aprobación**. Eso confirma que AFIP recibió la solicitud, no que la Aduana la haya aprobado.
+- Después de confirmar la aprobación (paso 6), el estado cambia a **Aprobada por la Aduana**.
 
 ## Si algo falla
 
 - **"Debe seleccionar o ingresar un ID MIC/DTA":** elija un MIC/DTA de la lista o escríbalo.
 - **"Debe ingresar un motivo de anulación":** complete el motivo.
+- **"Este MIC/DTA forma parte del convoy registrado…":** AFIP no permite anular un MIC/DTA vinculado a un convoy. Consulte con la Aduana cómo proceder.
+- **No puede volver a registrar el MIC/DTA:** falta confirmar la aprobación de la Aduana (paso 6).
 - **"MIC/DTA no encontrado en transacciones previas del viaje":** el número escrito no corresponde a un MIC/DTA registrado en este viaje. Elíjalo de la lista.
 - **Aparece SolicitarAnularMicDta - Error con otro mensaje:** es la respuesta de AFIP. Corrija lo que indica y vuelva a intentar. Para ver el detalle, abra **📥 Response** en **Últimas 10 transacciones MIC/DTA**.
