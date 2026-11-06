@@ -347,11 +347,18 @@
                 
                 // Última solicitud de anulación MIC/DTA (SolicitarAnularMicDta)
                 $lastSolicitudAnularMicDta = $voyage->webserviceTransactions()
-                    ->where('webservice_type', 'micdta')
                     ->where('soap_action', 'like', '%SolicitarAnularMicDta%')
                     ->whereIn('status', ['success', 'sent', 'pending'])
                     ->latest()
                     ->first();
+
+                // Aprobada: confirmada por el usuario o MIC/DTA original ya liberado
+                $solicitudAnularAprobada = false;
+                if ($lastSolicitudAnularMicDta && $lastSolicitudAnularMicDta->status === 'success') {
+                    $originalMicDtaTxId = $lastSolicitudAnularMicDta->additional_metadata['original_micdta_transaction_id'] ?? null;
+                    $solicitudAnularAprobada = !empty($lastSolicitudAnularMicDta->success_data['aprobacion_confirmada_at'])
+                        || ($originalMicDtaTxId && \App\Models\WebserviceTransaction::where('id', $originalMicDtaTxId)->where('status', 'cancelled')->exists());
+                }
                 
                 // Último test de conectividad (Dummy)
                 $lastDummy = $voyage->webserviceTransactions()
@@ -1643,10 +1650,21 @@
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-gray-600">Estado:</span>
-                                            <span class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">
-                                                {{ ucfirst($lastSolicitudAnularMicDta->status) }}
-                                            </span>
+                                            @if($lastSolicitudAnularMicDta->status !== 'success')
+                                                <span class="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-800">En envío</span>
+                                            @elseif($solicitudAnularAprobada)
+                                                <span class="px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">Aprobada por la Aduana</span>
+                                            @else
+                                                <span class="px-2 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-800">Pendiente de aprobación</span>
+                                            @endif
                                         </div>
+                                        @if($lastSolicitudAnularMicDta->status === 'success' && !$solicitudAnularAprobada)
+                                            <button type="button"
+                                                    onclick="confirmarAnulacionMicDta({{ $lastSolicitudAnularMicDta->id }})"
+                                                    class="mt-2 w-full px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-xs font-medium">
+                                                Confirmar aprobación de la Aduana
+                                            </button>
+                                        @endif
                                     @else
                                         <p class="text-gray-500 text-center">No solicitado</p>
                                     @endif
@@ -2351,6 +2369,11 @@
                         <p class="text-sm text-gray-600 mb-4">
                             Seleccione el título que desea anular:
                         </p>
+
+                        <label class="flex items-center mb-3 text-sm text-gray-800 cursor-pointer">
+                            <input type="checkbox" id="anular-todos-titulos" onchange="toggleAnularTodosTitulos(this.checked)" class="h-4 w-4 text-red-600 rounded">
+                            <span class="ml-2 font-medium">Anular todos los títulos de la lista</span>
+                        </label>
 
                         <div class="max-h-96 overflow-y-auto border border-gray-200 rounded-md p-4 mb-4">
                             <div id="titulos-anular-list" class="space-y-2">
@@ -3533,6 +3556,33 @@
         });
     }
 
+    async function confirmarAnulacionMicDta(solicitudId) {
+        if (!confirm('¿La Aduana ya aprobó la anulación de este MIC/DTA?\n\nAl confirmarlo, el MIC/DTA queda liberado para registrarlo de nuevo. Confirme solo si la Aduana aprobó la solicitud.')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/confirmar-anulacion-micdta`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ solicitud_id: solicitudId })
+            });
+
+            const result = await response.json();
+            showResultModal('SolicitarAnularMicDta', result, response.ok);
+
+            if (result.success) {
+                setTimeout(() => location.reload(), 2000);
+            }
+        } catch (error) {
+            showResultModal('SolicitarAnularMicDta', { error: 'Error de comunicación: ' + error.message }, false);
+        }
+    }
+
     function closeAnularMicDtaModal() {
         document.getElementById('anular-micdta-modal').classList.add('hidden');
         document.getElementById('anular-micdta-select').value = '';
@@ -3795,7 +3845,8 @@
     function renderTitulosAnularList(titulos) {
         const container = document.getElementById('titulos-anular-list');
         container.innerHTML = '';
-        
+        titulosAnularLista = titulos.map(t => t.id_tit_trans ?? t);
+
         titulos.forEach((titulo, index) => {
             const idTitTrans = titulo.id_tit_trans ?? titulo;
             const billNumber = titulo.bill_number ?? '';
@@ -3815,6 +3866,59 @@
             `;
             container.appendChild(div);
         });
+    }
+
+    let titulosAnularLista = [];
+
+    function toggleAnularTodosTitulos(checked) {
+        document.querySelectorAll('#titulos-anular-list > div').forEach(div => {
+            div.classList.remove('bg-red-50', 'border-red-300');
+            div.classList.add('border-gray-200');
+            div.classList.toggle('opacity-50', checked);
+            div.classList.toggle('pointer-events-none', checked);
+            div.querySelector('input[type="radio"]').checked = false;
+        });
+        tituloSeleccionado = checked ? '__TODOS__' : null;
+        document.getElementById('btn-confirmar-anular-titulo').textContent = checked ? 'Anular Todos' : 'Anular Título';
+        updateAnularTituloButton();
+    }
+
+    async function anularTodosLosTitulos(motivo) {
+        const total = titulosAnularLista.length;
+        const fallidos = [];
+        const button = document.getElementById('btn-confirmar-anular-titulo');
+
+        for (let i = 0; i < total; i++) {
+            const titulo = titulosAnularLista[i];
+            button.textContent = `Anulando ${i + 1} de ${total}...`;
+            try {
+                const response = await fetch(`/company/simple/webservices/micdta/${voyageId}/anular-titulo`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ titulo_id: titulo, motivo_anulacion: motivo })
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    fallidos.push(`${titulo}: ${result.details || result.error || 'Error desconocido'}`);
+                }
+            } catch (error) {
+                fallidos.push(`${titulo}: Error de comunicación (${error.message})`);
+            }
+        }
+
+        const anulados = total - fallidos.length;
+        if (fallidos.length === 0) {
+            return { success: true, message: `Se anularon los ${total} títulos en AFIP.` };
+        }
+        return {
+            success: false,
+            error: `Se anularon ${anulados} de ${total} títulos. Los siguientes no se pudieron anular:`,
+            validation_errors: fallidos,
+        };
     }
 
     function selectTituloAnular(titulo, element) {
@@ -3861,12 +3965,27 @@
             return;
         }
         
-        if (!confirm(`¿Confirma anular el título "${tituloSeleccionado}"?`)) {
+        const anularTodos = tituloSeleccionado === '__TODOS__';
+        const mensajeConfirmacion = anularTodos
+            ? `¿Confirma anular en AFIP los ${titulosAnularLista.length} títulos de la lista?`
+            : `¿Confirma anular el título "${tituloSeleccionado}"?`;
+
+        if (!confirm(mensajeConfirmacion)) {
             return;
         }
-        
+
         const button = document.getElementById('btn-confirmar-anular-titulo');
         const originalText = button.textContent;
+
+        if (anularTodos) {
+            button.disabled = true;
+            const resumen = await anularTodosLosTitulos(motivo);
+            closeAnularTituloModal();
+            showResultModal('AnularTitulo', resumen, resumen.success);
+            button.textContent = 'Anular Título';
+            setTimeout(() => location.reload(), resumen.success ? 2000 : 6000);
+            return;
+        }
         button.disabled = true;
         button.innerHTML = `<svg class="animate-spin h-5 w-5 mx-auto" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -3907,6 +4026,8 @@
     function closeAnularTituloModal() {
         document.getElementById('anular-titulo-modal').classList.add('hidden');
         document.getElementById('motivo-anular-titulo').value = '';
+        document.getElementById('anular-todos-titulos').checked = false;
+        toggleAnularTodosTitulos(false);
         tituloSeleccionado = null;
     }
 
