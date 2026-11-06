@@ -3188,6 +3188,37 @@ public function micDtaSend(Request $request, Voyage $voyage)
     }
 
     /**
+     * 16. Confirmar que la Aduana aprobó la anulación del MIC/DTA (solo local, sin envío)
+     *
+     * Ruta: POST /webservices/micdta/{voyage}/confirmar-anulacion-micdta
+     */
+    public function confirmarAnulacionMicDta(Request $request, Voyage $voyage)
+    {
+        $request->validate([
+            'solicitud_id' => 'required|integer',
+        ]);
+
+        $company = $this->getUserCompany();
+        if ($voyage->company_id !== $company->id) {
+            return response()->json(['success' => false, 'error' => 'Viaje no pertenece a su empresa'], 403);
+        }
+
+        try {
+            $micDtaService = new ArgentinaMicDtaService($company, Auth::user());
+            $result = $micDtaService->confirmarAnulacionMicDtaAprobada($voyage, (int) $request->input('solicitud_id'));
+
+            if (!$result['success']) {
+                return response()->json(['success' => false, 'error' => $result['error_message']], 400);
+            }
+
+            return response()->json($result);
+        } catch (Exception $e) {
+            \Log::error('Error en confirmarAnulacionMicDta', ['voyage_id' => $voyage->id, 'error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => 'Error interno confirmando la anulación'], 500);
+        }
+    }
+
+    /**
      * 17. AnularEnvios - Anular envíos
      * 
      * Ruta: POST /webservices/micdta/{voyage}/anular-envios
