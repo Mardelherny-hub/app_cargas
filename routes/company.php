@@ -611,6 +611,10 @@ Route::prefix('simple/webservices')->name('company.simple.')->group(function () 
             ->name('solicitar-anular-micdta')
             ->whereNumber('voyage');
 
+        Route::post('/{voyage}/confirmar-anulacion-micdta', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'confirmarAnulacionMicDta'])
+            ->name('confirmar-anulacion-micdta')
+            ->whereNumber('voyage');
+
         Route::post('/{voyage}/anular-envios', [App\Http\Controllers\Company\Simple\SimpleManifestController::class, 'anularEnvios'])
             ->name('anular-envios')
             ->whereNumber('voyage');
