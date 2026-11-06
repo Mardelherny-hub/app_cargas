@@ -25,7 +25,7 @@
 | RESET-TOTAL | "17. AnularEnvios – RESET TOTAL" dice que anula en AFIP pero solo reinicia el viaje en la app. Fuera del manual. | Decisión de Víctor. |
 | ANTICIPADA-CIERRE | "Cerrar viaje" está marcado obligatorio, pero falla si todos los conocimientos descargan en Argentina. | Confirmar regla de AFIP. |
 | IMPORTACION | Mensaje "ya fue importado" también para otro archivo con el mismo viaje; número de viaje del formulario solo aplica a CUSCAR y TFP; revertir sin mensaje ni control de envíos previos; filtros del historial; tarjetas de formatos con números. | Listado completo en la devolución de Code del 03/11. |
-| SOLICITAR-ANULACION | La app da el MIC/DTA por anulado al enviar la solicitud, antes de que la Aduana la apruebe. | Revisar. |
+| SOLICITAR-ANULACION | La app daba el MIC/DTA por anulado al enviar la solicitud, antes de que la Aduana la aprobara. | **Resuelto** en `fix/micdta-annulment-cycle`: queda pendiente hasta que el usuario confirma la aprobación; además bloquea anular un MIC/DTA dentro del convoy registrado y permite anular todos los títulos de una vez. |
 | CONVOY-DATOS | Los datos de convoy de un viaje se pueden leer sin controlar la empresa (`getDatosConvoy`). | Rama `fix/convoy-data-ownership` en curso. |
 | CUSCAR-CONSIGNATARIO | Parte con solo RUC (sin razón social) dejaba el nombre vacío y la importación fallaba con error SQL; nombres con ":" inicial. | **Resuelto** en `main` (`fix/cuscar-party-without-name`), validado en stage con `CAREI-2506AHL.1`. |
 | CLIENTE-A-LA-ORDEN | Fichas de cliente con nombre "TO THE ORDER OF …" (cláusula, no razón social). La importación reutiliza la ficha por RUC sin cambiarle el nombre. | Consultar a Roberto cómo guardarlas. |
