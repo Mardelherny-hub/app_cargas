@@ -113,6 +113,12 @@ Las fechas internas dejan margen sobre los plazos comprometidos con el cliente.
 - **Muestras del cliente:** el repo es público, así que los archivos de muestra **no se commitean**. Víctor los deja en una carpeta local fuera del repo, `/var/www/html/muestras_importacion/`, y los tests usan fragmentos anonimizados.
 - Nada de referencias internas en código, comentarios ni mensajes visibles.
 - Ninguna prueba envía datos a la Aduana.
+- **Cómo se resuelven las dudas (Víctor, 16/11/2026):**
+  1. Manuales de AFIP (o de DNA).
+  2. Si los manuales no lo resuelven, sentido común.
+  3. Al cliente solo se le pregunta si no queda otra.
+
+  Las dudas no se derivan a Víctor. Todo lo que sea factible corregir se corrige.
 
 ## 6 bis. Regla de bloqueo AFIP — decisión del 16/11/2026 (resultado de T0, parte A)
 
@@ -179,6 +185,26 @@ Cada tarea arranca **solo con la orden explícita** de quien dirige su equipo.
   - con destino, se agrega al viaje y saltea los repetidos;
   - `detectVesselName` devuelve la embarcación de la muestra;
   - revertir quita solo lo agregado.
+
+**T7 · Code · Rectificación de convoy: detectar errores de AFIP** (garantía)
+- Bug confirmado en el código. `RectifConvoyMicDta` en `ArgentinaMicDtaService` guarda `success` con solo verificar que no haya `soap:Fault`. No revisa los errores que AFIP devuelve dentro de la respuesta, como sí hace `AnularTitulo` con `extractAfipMessages()`.
+- Objetivo: aplicar el mismo control de `AnularTitulo`. Si AFIP devuelve errores, la transacción queda en `error` con el mensaje, y la operación devuelve fracaso.
+- Alcance: rama `fix/convoy-rectification-afip-errors`, solo ese método.
+- Restricciones: no se envía nada a AFIP. La prueba se hace con respuestas XML de ejemplo: una con error y otra exitosa.
+- Aceptación: un test con las dos respuestas de ejemplo.
+- Prioridad: es corta y va antes de T1.
+
+**T8 · Work diagnostica, Code corrige · Anular un título no debe cancelar los demás** (garantía)
+- Hipótesis. Después de un `AnularTitulo` exitoso, se marcan `cancelled` todas las transacciones `RegistrarTitEnvios` cuya carga contiene ese conocimiento. Si una transacción registró varios títulos, los demás quedan como anulados en la app aunque sigan vigentes en AFIP.
+- Diagnóstico (Work, en el servidor de pruebas, después de la línea de base):
+  - confirmar que el `idTitTrans` enviado coincide con `bill_number`;
+  - listar quién lee ese `cancelled`: estado del viaje, pantallas, reenvíos y reset;
+  - según el manual de AFIP, dejar escrito qué queda vigente después de anular un título.
+- Corrección (Code, rama `fix/annul-title-scope`): la transacción de registro solo pasa a `cancelled` cuando **todos** los títulos de su XML tienen un `AnularTitulo` exitoso. Mientras tanto, la anulación individual queda registrada en la propia transacción de `AnularTitulo`.
+- Aceptación: un test con un envío de dos títulos. Al anular uno, la transacción de registro sigue vigente; al anular los dos, queda `cancelled`.
+- Esta corrección no cambia la regla de bloqueo de la sección 6 bis, que ya no se apoya en ese `cancelled`.
+
+QA cruzado de T7 y T8: Work.
 
 **T6 · Codex · Eliminar conocimientos en un paso**
 - Objetivo: punto 7 de la sección 1, con la regla de bloqueo de T0.
