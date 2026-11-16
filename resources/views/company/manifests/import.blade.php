@@ -124,6 +124,76 @@
                         <p class="mt-1 text-xs text-gray-500">
                             Este dato es obligatorio en el flujo de importación. La embarcación seleccionada aquí tiene prioridad sobre la informada en el archivo.
                         </p>
+                        <p id="vessel-proposal" class="mt-1 text-sm text-blue-700" style="display:none;"></p>
+                    </div>
+
+                    <!-- Destino de la importación -->
+                    <div>
+                        <span class="block text-sm font-medium text-gray-700 mb-2">🧭 Destino</span>
+                        <div class="flex flex-wrap gap-6">
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="import_mode" value="create" class="text-blue-600 focus:ring-blue-500"
+                                       {{ old('target_voyage_id') ? '' : 'checked' }}>
+                                <span class="ml-2 text-sm text-gray-700">Crear viaje nuevo</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="import_mode" value="add" class="text-blue-600 focus:ring-blue-500"
+                                       {{ old('target_voyage_id') ? 'checked' : '' }}
+                                       {{ $planningVoyages->isEmpty() ? 'disabled' : '' }}>
+                                <span class="ml-2 text-sm text-gray-700">Agregar a un viaje existente</span>
+                            </label>
+                        </div>
+                        @if($planningVoyages->isEmpty())
+                            <p class="mt-1 text-xs text-gray-500">No hay viajes en planificación para agregar archivos.</p>
+                        @endif
+
+                        <div id="target-voyage-block" class="mt-4" style="display:none;">
+                            <label for="target_voyage_id" class="block text-sm font-medium text-gray-700 mb-2">
+                                Viaje en planificación *
+                            </label>
+                            <select name="target_voyage_id" id="target_voyage_id"
+                                    class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Seleccione un viaje...</option>
+                                @foreach($planningVoyages as $planningVoyage)
+                                    <option value="{{ $planningVoyage->id }}" {{ old('target_voyage_id') == $planningVoyage->id ? 'selected' : '' }}>
+                                        {{ $planningVoyage->voyage_number }}
+                                        — {{ $planningVoyage->leadVessel->name ?? 'sin embarcación líder' }}
+                                        {{ $planningVoyage->is_convoy ? '(convoy, ' . $planningVoyage->shipments->count() . ' embarcaciones)' : '' }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('target_voyage_id')
+                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                            <p class="mt-1 text-xs text-gray-500">
+                                Se agregan los conocimientos del archivo a la carga de la embarcación elegida. Los datos
+                                generales del viaje no cambian y los conocimientos que ya existen en el viaje se saltean.
+                            </p>
+
+                            <div id="convoy-block" class="mt-4 bg-yellow-50 border border-yellow-200 rounded-md p-4" style="display:none;">
+                                <p class="text-sm text-yellow-800">
+                                    La embarcación no está en este viaje y el viaje no es un convoy. Para agregarla, el viaje
+                                    se convierte en convoy. Elija la embarcación líder; puede ser una embarcación sin carga.
+                                </p>
+                                <label for="convoy_leader_vessel_id" class="block text-sm font-medium text-gray-700 mt-3 mb-2">
+                                    Embarcación líder del convoy *
+                                </label>
+                                <select name="convoy_leader_vessel_id" id="convoy_leader_vessel_id"
+                                        class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">Seleccione el líder...</option>
+                                    @foreach($vessels as $vessel)
+                                        <option value="{{ $vessel->id }}" {{ old('convoy_leader_vessel_id') == $vessel->id ? 'selected' : '' }}>
+                                            {{ $vessel->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <p class="mt-1 text-xs text-yellow-800">
+                                    Si revierte esta importación, el viaje vuelve a ser como estaba antes de convertirlo.
+                                </p>
+                            </div>
+
+                            <div id="target-error" class="mt-3 bg-red-50 border border-red-200 text-red-800 rounded-md p-3 text-sm" style="display:none;"></div>
+                        </div>
                     </div>
 
                     <!-- Tipo de operación CUSCAR -->
@@ -162,7 +232,7 @@
                     </div>
 
                     <!-- Número de viaje -->
-                    <div>
+                    <div data-create-only>
                         <label for="voyage_number"
                                class="block text-sm font-medium text-gray-700 mb-2">
                             🧭 Número de viaje <span class="text-gray-500 font-normal">(opcional)</span>
@@ -189,7 +259,7 @@
                     </div>
 
                     <!-- Fecha/hora de salida -->
-                    <div>
+                    <div data-create-only>
                         <label for="departure_date"
                                class="block text-sm font-medium text-gray-700 mb-2">
                             📅 Fecha y hora de salida <span class="text-gray-500 font-normal">(opcional)</span>
@@ -272,7 +342,9 @@
                     <!-- Botón de importación -->
                     <div class="flex items-center justify-between">
                         <div class="text-sm text-gray-600">
-                            <strong>Importante:</strong> El archivo será procesado y se creará un nuevo viaje con los datos importados.
+                            <strong>Importante:</strong>
+                            <span data-create-only>El archivo será procesado y se creará un nuevo viaje con los datos importados.</span>
+                            <span data-add-only style="display:none;">El archivo será procesado y sus conocimientos se agregarán al viaje elegido.</span>
                         </div>
                         
                         <button type="submit" 
@@ -375,6 +447,130 @@
                 }
             });
 
+            // Destino: crear viaje nuevo o agregar a uno existente
+            const modeInputs = form.querySelectorAll('input[name="import_mode"]');
+            const targetBlock = document.getElementById('target-voyage-block');
+            const targetSelect = document.getElementById('target_voyage_id');
+            const vesselSelect = document.getElementById('vessel_id');
+            const convoyBlock = document.getElementById('convoy-block');
+            const leaderSelect = document.getElementById('convoy_leader_vessel_id');
+            const targetError = document.getElementById('target-error');
+            const proposal = document.getElementById('vessel-proposal');
+            const checkUrl = @json(route('company.manifests.import.check-target'));
+            const detectUrl = @json(route('company.manifests.import.detect-vessel'));
+            const csrf = form.querySelector('input[name="_token"]').value;
+            let formatSupportsTarget = true;
+
+            function isAddMode() {
+                const checked = form.querySelector('input[name="import_mode"]:checked');
+                return checked && checked.value === 'add';
+            }
+
+            function showTargetError(message) {
+                targetError.textContent = message || '';
+                targetError.style.display = message ? 'block' : 'none';
+                submitBtn.disabled = !!message;
+                submitBtn.style.opacity = message ? '0.5' : '';
+            }
+
+            function applyMode() {
+                const add = isAddMode();
+                targetBlock.style.display = add ? 'block' : 'none';
+                targetSelect.required = add;
+                form.querySelectorAll('[data-create-only]').forEach(el => {
+                    el.style.display = add ? 'none' : '';
+                    // Con viaje destino no se envían número de viaje ni salida.
+                    el.querySelectorAll('input').forEach(input => input.disabled = add);
+                });
+                form.querySelectorAll('[data-add-only]').forEach(el => el.style.display = add ? '' : 'none');
+                if (!add) {
+                    targetSelect.value = '';
+                    leaderSelect.value = '';
+                    convoyBlock.style.display = 'none';
+                    leaderSelect.required = false;
+                    showTargetError(null);
+                }
+                checkTarget();
+            }
+
+            async function checkTarget() {
+                if (!isAddMode()) return;
+                if (!formatSupportsTarget) {
+                    showTargetError('Este formato todavía no admite agregar archivos a un viaje existente.');
+                    return;
+                }
+                if (!targetSelect.value || !vesselSelect.value) {
+                    convoyBlock.style.display = 'none';
+                    showTargetError(null);
+                    return;
+                }
+                const params = new URLSearchParams({
+                    target_voyage_id: targetSelect.value,
+                    vessel_id: vesselSelect.value,
+                });
+                if (leaderSelect.value) params.append('convoy_leader_vessel_id', leaderSelect.value);
+
+                try {
+                    const response = await fetch(checkUrl + '?' + params.toString(), {
+                        headers: { 'Accept': 'application/json' },
+                    });
+                    const check = await response.json();
+                    convoyBlock.style.display = check.needs_convoy ? 'block' : 'none';
+                    leaderSelect.required = !!check.needs_convoy;
+                    if (!check.needs_convoy) leaderSelect.value = '';
+                    // Falta elegir el líder: el bloque de convoy ya lo explica.
+                    const pendingLeader = check.needs_convoy && !leaderSelect.value;
+                    showTargetError(check.allowed || pendingLeader ? null : check.error);
+                    if (pendingLeader) {
+                        submitBtn.disabled = true;
+                        submitBtn.style.opacity = '0.5';
+                    }
+                } catch (error) {
+                    showTargetError('No se pudo verificar el viaje elegido. Intente nuevamente.');
+                }
+            }
+
+            async function detectVessel(file) {
+                proposal.style.display = 'none';
+                formatSupportsTarget = true;
+                const data = new FormData();
+                data.append('manifest_file', file);
+                data.append('_token', csrf);
+
+                try {
+                    const response = await fetch(detectUrl, {
+                        method: 'POST',
+                        headers: { 'Accept': 'application/json' },
+                        body: data,
+                    });
+                    if (!response.ok) return;
+                    const result = await response.json();
+                    formatSupportsTarget = !!result.supports_target;
+
+                    if (result.vessel_id) {
+                        vesselSelect.value = String(result.vessel_id);
+                        proposal.textContent = 'Embarcación propuesta según el archivo: ' + result.vessel_name
+                            + '. Confírmela o elija otra.';
+                    } else if (result.vessel_name) {
+                        proposal.textContent = 'El archivo informa la embarcación «' + result.vessel_name
+                            + '», que no está registrada en su empresa. Elija la embarcación.';
+                    } else {
+                        proposal.textContent = '';
+                    }
+                    proposal.style.display = proposal.textContent ? 'block' : 'none';
+                } catch (error) {
+                    // Sin propuesta: el usuario elige la embarcación.
+                } finally {
+                    checkTarget();
+                }
+            }
+
+            modeInputs.forEach(input => input.addEventListener('change', applyMode));
+            targetSelect.addEventListener('change', checkTarget);
+            vesselSelect.addEventListener('change', checkTarget);
+            leaderSelect.addEventListener('change', checkTarget);
+            applyMode();
+
             // Info de archivo seleccionado (solo consola, diagnóstico)
             const fileInput = document.getElementById('manifest_file');
             if (fileInput) {
@@ -382,6 +578,7 @@
                     const file = e.target.files[0];
                     if (file) {
                         console.log('Archivo:', file.name, (file.size / 1024 / 1024).toFixed(2) + 'MB');
+                        detectVessel(file);
                     }
                 });
             }
