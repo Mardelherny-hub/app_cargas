@@ -83,7 +83,7 @@ Todo lo que sigue es una **propuesta de diseño**. Code la contrasta con el cód
 | Equipo Charly (Work) | T1 y T4 |
 | Equipo Claudia (Code) | T2, T3, T5 y T6 |
 
-Las observaciones se corrigen con un commit nuevo en la misma rama. **La prueba integral final** (convoy Observador + CARE I + CONAY I, reversión de un agregado y repetición de una importación) la ejecuta Work, la revisa Code y se hace en stage con «Empresa QA Test», previo OK de Víctor para el deploy.
+Las pruebas de importación del QA cruzado se corren en el servidor de pruebas de asus02 (`docs/SERVIDOR-PRUEBAS-IMPORTACION.md`), comparando contra la línea de base de `main`. Las observaciones se corrigen con un commit nuevo en la misma rama. **La prueba integral final** (convoy Observador + CARE I + CONAY I, reversión de un agregado y repetición de una importación) la ejecuta Work, la revisa Code y se hace en stage con «Empresa QA Test», previo OK de Víctor para el deploy.
 
 ## 5. Secuencia y fechas internas
 
