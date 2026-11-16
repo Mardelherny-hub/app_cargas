@@ -39,7 +39,12 @@ Documento interno del equipo. `docs/` no viaja en el paquete de producción.
 
 Todo lo que sigue es una **propuesta de diseño**. Code la contrasta con el código real antes de escribirla. Si algo no existe como se describe, lo informa y se ajusta acá.
 
-- **Opción nueva de `parse()`:** `target_voyage_id`, junto con `target_vessel_id` (la embarcación confirmada). Si viene `null`, el parser hace exactamente lo de hoy. **Cero cambios de comportamiento en el flujo actual.**
+- **Opción nueva de `parse()`:** `target_voyage_id`. La embarcación confirmada viaja en la opción `vessel_id`, que ya existía. Si `target_voyage_id` viene `null`, el parser hace exactamente lo de hoy. **Cero cambios de comportamiento en el flujo actual.**
+- **Implementado en T1** (rama `feature/import-to-existing-voyage`, `edab713`):
+  - el trait `app/Services/Parsers/Concerns/ResolvesTargetVoyage.php`: `resolveTargetVoyage()` y el registro de objetos que excluye el viaje y la carga preexistentes;
+  - el bloqueo `app/Services/Simple/AfipVesselLock.php`.
+
+  **T4 y T5 se ramifican desde ahí y usan ese trait tal cual.** Si un parser necesita algo distinto, se avisa a Claudia y no se modifica el trait.
 - **Trait nuevo en `Concerns/`** con tres responsabilidades:
   - Resolver el viaje destino: misma empresa, estado `planning` y regla de bloqueo (sección 4, T0).
   - Resolver la carga destino: la carga existente de esa embarcación en el viaje, o una carga nueva con la siguiente `sequence_in_voyage`, respetando cómo la app modela hoy los convoyes (`vessel_role`, `is_lead_vessel`).
