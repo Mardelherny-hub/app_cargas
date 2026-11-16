@@ -35,6 +35,12 @@ class ProcessManifestImportJob implements ShouldQueue
     public ?int $targetVoyageId = null;
 
     /**
+     * Líder elegido para convertir el viaje destino en convoy.
+     * null = el viaje no se convierte.
+     */
+    public ?int $convoyLeaderVesselId = null;
+
+    /**
      * Con viaje destino, los ajustes posteriores al parseo se limitan a los
      * conocimientos creados por esta importación. null = todo el viaje.
      */
@@ -52,6 +58,7 @@ class ProcessManifestImportJob implements ShouldQueue
         ?string $dischargeDate = null,
         ?string $operationType = null,
         ?int $targetVoyageId = null,
+        ?int $convoyLeaderVesselId = null,
     ) {
         $this->departureDate = $departureDate;
         $this->voyageNumber = $voyageNumber;
@@ -59,6 +66,7 @@ class ProcessManifestImportJob implements ShouldQueue
         $this->dischargeDate = $dischargeDate;
         $this->operationType = $operationType;
         $this->targetVoyageId = $targetVoyageId;
+        $this->convoyLeaderVesselId = $targetVoyageId !== null ? $convoyLeaderVesselId : null;
         $this->onQueue('imports');
     }
 
@@ -85,9 +93,18 @@ class ProcessManifestImportJob implements ShouldQueue
         ]);
 
         $importacionExitosa = false;
+        $convoySnapshot = null;
 
         try {
             $parser = (new ManifestParserFactory())->getParser($fullPath);
+
+            if ($this->targetVoyageId !== null && !self::parserSupportsTargetVoyage($parser)) {
+                throw new \DomainException(
+                    'Este formato todavía no admite agregar archivos a un viaje existente.'
+                );
+            }
+
+            $convoySnapshot = $this->convertTargetVoyageToConvoy();
 
             /** @var ManifestParseResult $result */
             $result = $parser->parse($fullPath, [
@@ -111,6 +128,14 @@ class ProcessManifestImportJob implements ShouldQueue
 
                 $voyageId = $result->voyage?->id;
                 $manifestImportId = $this->resolveManifestImportId($voyageId);
+
+                if ($convoySnapshot !== null) {
+                    app(\App\Services\VoyageConvoyConversionService::class)->attachToImport(
+                        \App\Models\ManifestImport::findOrFail($manifestImportId),
+                        $convoySnapshot
+                    );
+                    $convoySnapshot = null;
+                }
 
                 $tracking->markCompleted(
                     $result->hasWarnings(),
@@ -151,6 +176,11 @@ class ProcessManifestImportJob implements ShouldQueue
 
             throw $e;
         } finally {
+            // Importación fallida: el viaje vuelve a su estado previo.
+            if ($convoySnapshot !== null) {
+                $this->restoreConvoySnapshot($convoySnapshot);
+            }
+
             /*
              * Se conserva el archivo recién procesado para trazabilidad.
              * Los fallidos se conservan siempre. La limpieza elimina únicamente
@@ -411,6 +441,55 @@ class ProcessManifestImportJob implements ShouldQueue
         );
 
         return array_map('intval', (array) ($import?->created_bill_ids ?? []));
+    }
+
+    /**
+     * Solo los parsers adaptados al contrato de viaje destino lo reciben;
+     * los demás crearían un viaje nuevo ignorando la opción.
+     */
+    public static function parserSupportsTargetVoyage(object $parser): bool
+    {
+        return in_array(
+            \App\Services\Parsers\Concerns\ResolvesTargetVoyage::class,
+            class_uses_recursive($parser),
+            true
+        );
+    }
+
+    /**
+     * Convierte el viaje destino en convoy antes del parseo, para que el
+     * parser lo encuentre listo. Devuelve la foto previa o null.
+     */
+    protected function convertTargetVoyageToConvoy(): ?array
+    {
+        if ($this->targetVoyageId === null || $this->convoyLeaderVesselId === null) {
+            return null;
+        }
+
+        $voyage = \App\Models\Voyage::where('id', $this->targetVoyageId)
+            ->where('company_id', Auth::user()?->company?->id)
+            ->where('status', 'planning')
+            ->first();
+
+        if (!$voyage) {
+            throw new \DomainException('El viaje elegido no existe, no pertenece a su empresa o no está en planificación.');
+        }
+
+        return app(\App\Services\VoyageConvoyConversionService::class)
+            ->convert($voyage, $this->convoyLeaderVesselId, $this->vesselId);
+    }
+
+    protected function restoreConvoySnapshot(array $snapshot): void
+    {
+        try {
+            app(\App\Services\VoyageConvoyConversionService::class)->restore($snapshot);
+        } catch (Throwable $e) {
+            Log::error('ProcessManifestImportJob: no se pudo deshacer la conversión a convoy', [
+                'tracking_id' => $this->trackingId,
+                'voyage_id' => $snapshot['voyage_id'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     protected function resolveManifestImportId(?int $voyageId): ?int
