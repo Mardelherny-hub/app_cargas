@@ -62,11 +62,140 @@ class ManifestImportController extends Controller
             ->orderBy('name')
             ->get();
 
+        // Viajes a los que se puede agregar un archivo: solo en planificación.
+        $planningVoyages = Voyage::where('company_id', $company->id)
+            ->where('status', 'planning')
+            ->with(['leadVessel:id,name', 'shipments:id,voyage_id,vessel_id'])
+            ->orderByDesc('id')
+            ->get(['id', 'voyage_number', 'lead_vessel_id', 'is_convoy', 'departure_date']);
+
         return view('company.manifests.import', [
             'supportedFormats' => $supportedFormats,
             'formatStats' => $formatStats,
-            'vessels' => $vessels
+            'vessels' => $vessels,
+            'planningVoyages' => $planningVoyages,
         ]);
+    }
+
+    /**
+     * Propone la embarcación según el archivo, antes de importar.
+     */
+    public function detectVessel(Request $request)
+    {
+        $request->validate(['manifest_file' => 'required|file|max:10240']);
+
+        $company = auth()->user()->company;
+        $uploadedFile = $request->file('manifest_file');
+        $path = $uploadedFile->storeAs(
+            'imports/manifests/preview',
+            $this->generateUniqueFileName($uploadedFile->getClientOriginalName(), $uploadedFile->getClientOriginalExtension()),
+            'local'
+        );
+
+        try {
+            $parser = $this->parserFactory->getParser(Storage::path($path));
+            $vesselName = method_exists($parser, 'detectVesselName')
+                ? $parser->detectVesselName(Storage::path($path))
+                : null;
+        } catch (Exception $e) {
+            return response()->json(['message' => 'No se reconoce el formato del archivo.'], 422);
+        } finally {
+            Storage::disk('local')->delete($path);
+        }
+
+        $vesselName = $vesselName !== null ? trim($vesselName) : null;
+        $vessel = $vesselName
+            ? Vessel::where('company_id', $company->id)
+                ->where('active', true)
+                ->where('operational_status', 'active')
+                ->whereRaw('UPPER(TRIM(name)) = ?', [mb_strtoupper($vesselName)])
+                ->first(['id', 'name'])
+            : null;
+
+        return response()->json([
+            'supports_target' => \App\Jobs\ProcessManifestImportJob::parserSupportsTargetVoyage($parser),
+            'vessel_name' => $vesselName,
+            'vessel_id' => $vessel?->id,
+        ]);
+    }
+
+    /**
+     * Verifica en pantalla si el archivo se puede agregar al viaje elegido.
+     */
+    public function checkTarget(Request $request)
+    {
+        $data = $request->validate([
+            'target_voyage_id' => 'required|integer',
+            'vessel_id' => 'required|integer',
+            'convoy_leader_vessel_id' => 'nullable|integer',
+        ]);
+
+        $check = $this->inspectTargetVoyage(
+            auth()->user()->company->id,
+            (int) $data['target_voyage_id'],
+            (int) $data['vessel_id'],
+            isset($data['convoy_leader_vessel_id']) ? (int) $data['convoy_leader_vessel_id'] : null
+        );
+
+        return response()->json($check);
+    }
+
+    /**
+     * Reglas para agregar un archivo a un viaje existente.
+     *
+     * @return array{allowed: bool, needs_convoy: bool, error: ?string}
+     */
+    protected function inspectTargetVoyage(int $companyId, int $voyageId, int $vesselId, ?int $leaderId): array
+    {
+        $deny = fn (string $error, bool $needsConvoy = false) => [
+            'allowed' => false, 'needs_convoy' => $needsConvoy, 'error' => $error,
+        ];
+
+        $voyage = Voyage::where('id', $voyageId)
+            ->where('company_id', $companyId)
+            ->where('status', 'planning')
+            ->first();
+
+        if (!$voyage) {
+            return $deny('El viaje elegido no existe, no pertenece a su empresa o no está en planificación.');
+        }
+
+        $voyageVesselIds = Shipment::where('voyage_id', $voyage->id)->pluck('vessel_id')
+            ->push($voyage->lead_vessel_id)->filter()->map(fn ($id) => (int) $id)->unique()->values();
+        $needsConvoy = !$voyage->is_convoy && !$voyageVesselIds->contains($vesselId);
+
+        if (!$needsConvoy) {
+            $leaderId = null;
+        } elseif ($leaderId === null) {
+            return $deny(
+                "El viaje {$voyage->voyage_number} no es un convoy. Para agregar otra embarcación, conviértalo en convoy y elija el líder.",
+                true
+            );
+        } elseif (!Vessel::where('id', $leaderId)->where('company_id', $companyId)
+            ->where('active', true)->where('operational_status', 'active')->exists()) {
+            return $deny('La embarcación líder elegida no es válida o no pertenece a su empresa.', true);
+        }
+
+        // La conversión cambia el rol de todas las embarcaciones del viaje.
+        $checked = $leaderId !== null
+            ? $voyageVesselIds->push($vesselId)->push($leaderId)->unique()
+            : collect([$vesselId]);
+
+        $lock = app(\App\Services\Simple\AfipVesselLock::class);
+        foreach ($checked as $checkedVesselId) {
+            $result = $lock->inspectAfipVesselLock($companyId, $voyage->id, (int) $checkedVesselId);
+            if ($result['locked']) {
+                $name = Vessel::whereKey($checkedVesselId)->value('name') ?? "#{$checkedVesselId}";
+
+                return $deny(
+                    "La embarcación {$name} tiene registros vigentes en AFIP para este viaje: "
+                        . implode(' ', array_column($result['reasons'], 'message')),
+                    $needsConvoy
+                );
+            }
+        }
+
+        return ['allowed' => true, 'needs_convoy' => $needsConvoy, 'error' => null];
     }
 
     /**
@@ -83,6 +212,7 @@ class ManifestImportController extends Controller
             'voyage_number' => 'nullable|string|max:100',
             'operation_type' => 'nullable|in:import,export',
             'target_voyage_id' => 'nullable|integer',
+            'convoy_leader_vessel_id' => 'nullable|integer',
         ], [
             'manifest_file.required' => 'Debe seleccionar un archivo para importar.',
             'manifest_file.file' => 'El archivo seleccionado no es válido.',
@@ -130,27 +260,23 @@ class ManifestImportController extends Controller
             ? (int) $request->input('target_voyage_id')
             : null;
 
+        $convoyLeaderVesselId = null;
+
         if ($targetVoyageId !== null) {
-            $targetVoyage = \App\Models\Voyage::where('id', $targetVoyageId)
-                ->where('company_id', $company->id)
-                ->where('status', 'planning')
-                ->first();
+            $check = $this->inspectTargetVoyage(
+                $company->id,
+                $targetVoyageId,
+                $vessel->id,
+                $request->filled('convoy_leader_vessel_id') ? (int) $request->input('convoy_leader_vessel_id') : null
+            );
 
-            if (!$targetVoyage) {
-                return back()->withInput()->withErrors([
-                    'target_voyage_id' => 'El viaje elegido no existe, no pertenece a su empresa o no está en planificación.',
-                ]);
+            if (!$check['allowed']) {
+                return back()->withInput()->withErrors(['target_voyage_id' => $check['error']]);
             }
 
-            $lock = app(\App\Services\Simple\AfipVesselLock::class)
-                ->inspectAfipVesselLock($company->id, $targetVoyage->id, $vessel->id);
-
-            if ($lock['locked']) {
-                return back()->withInput()->withErrors([
-                    'target_voyage_id' => 'La embarcación tiene registros vigentes en AFIP para este viaje: '
-                        . implode(' ', array_column($lock['reasons'], 'message')),
-                ]);
-            }
+            $convoyLeaderVesselId = $check['needs_convoy']
+                ? (int) $request->input('convoy_leader_vessel_id')
+                : null;
         }
 
         $uploadedFile = $request->file('manifest_file');
@@ -200,6 +326,17 @@ class ManifestImportController extends Controller
                     ]);
             }
 
+            if (
+                $targetVoyageId !== null
+                && !\App\Jobs\ProcessManifestImportJob::parserSupportsTargetVoyage($detectedParser)
+            ) {
+                Storage::disk('local')->delete($path);
+
+                return back()->withInput()->withErrors([
+                    'target_voyage_id' => 'Este formato todavía no admite agregar archivos a un viaje existente.',
+                ]);
+            }
+
             // Registro de seguimiento: existe desde el encolado, lo sigue el spinner.
             // Independiente de si el parser llega a crear su ManifestImport.
             $tracking = \App\Models\ImportTracking::create([
@@ -226,7 +363,8 @@ class ManifestImportController extends Controller
                 $request->input('loading_date'),
                 $request->input('discharge_date'),
                 $request->input('operation_type'),
-                $targetVoyageId
+                $targetVoyageId,
+                $convoyLeaderVesselId
             );
 
             Log::info('Manifest import encolado', [
@@ -239,6 +377,7 @@ class ManifestImportController extends Controller
                 'company_id'    => $company->id,
                 'operation_type' => $request->input('operation_type'),
                 'target_voyage_id' => $targetVoyageId,
+                'convoy_leader_vessel_id' => $convoyLeaderVesselId,
             ]);
 
             // Pantalla de espera con spinner (polling por uuid hasta que el worker termine).
