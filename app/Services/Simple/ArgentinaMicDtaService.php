@@ -3530,6 +3530,43 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception("SOAP Fault en RectifConvoyMicDta: " . $errorMsg);
             }
 
+            // Verificar errores informados por AFIP dentro de la respuesta
+            $afipMessages = $this->extractAfipMessages($response);
+
+            if (!empty($afipMessages['errores'])) {
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $afipMessages['errores']);
+
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+
+                $transaction = $this->createWebserviceTransaction($voyage, [
+                    'transaction_id' => $transactionId,
+                    'webservice_method' => 'RectifConvoyMicDta',
+                    'request_xml' => $xmlContent,
+                    'response_xml' => $response,
+                    'status' => 'error',
+                ]);
+
+                $transaction?->update([
+                    'error_message' => $errorMessage,
+                    'response_at' => now(),
+                ]);
+
+                $this->logOperation('error', 'RectifConvoyMicDta rechazado por AFIP', [
+                    'voyage_id' => $voyage->id,
+                    'nro_viaje' => $data['nro_viaje'],
+                    'error' => $errorMessage,
+                ]);
+
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_messages' => $afipMessages,
+                ];
+            }
+
             // Guardar transacción exitosa con XMLs completos
             $this->createWebserviceTransaction($voyage, [
                 'transaction_id' => $transactionId,
