@@ -114,6 +114,38 @@ Las fechas internas dejan margen sobre los plazos comprometidos con el cliente.
 - Nada de referencias internas en código, comentarios ni mensajes visibles.
 - Ninguna prueba envía datos a la Aduana.
 
+## 6 bis. Regla de bloqueo AFIP — decisión del 16/11/2026 (resultado de T0, parte A)
+
+Work mostró que el `status` por sí solo no alcanza, por tres razones:
+- el reset total marca `cancelled` sin enviar nada a AFIP;
+- `AnularTitulo` cancela las transacciones de toda la carga, aunque la transacción haya registrado varios títulos;
+- los TRACK no identifican cada conocimiento.
+
+Se adopta una versión **simple y conservadora**: ante la duda, bloquea. No se reconstruye nada desde TRACK ni metadatos, no se consulta AFIP y no se corrige ningún flujo existente.
+
+**Método único**, que implementa Code en T1 y usa también T6:
+
+```
+inspectAfipVesselLock(companyId, voyageId, vesselId) → libre | bloqueado + lista de motivos (transacciones que lo justifican)
+```
+
+1. **Alcance:** transacciones AR del viaje, en el entorno vigente de la empresa (`WebserviceEnvironment::resolve`). Nunca se cruzan entornos.
+   - Se toman las de las cargas de esa embarcación.
+   - Una transacción sin `shipment_id` se considera de **todas** las embarcaciones del viaje.
+2. **Registros que cuentan:** `RegistrarTitEnvios`, `RegistrarEnvios`, `RegistrarMicDta` y `RegistrarTitMicDta`.
+   - Bloquean en estado `processing`, `sending`, `sent` o `success`.
+   - En estado `cancelled` bloquean si tienen evidencia de respuesta de AFIP (`external_reference` o `success_data`), porque pueden venir de un reset local.
+   - **No bloquean** en `pending`, `error`, `retry`, `rejected` o `skipped`.
+   - Riesgo aceptado: un timeout guardado como `error` no bloquea. Si AFIP lo había aceptado, el reenvío lo rechazará AFIP.
+3. **Se libera solo con anulación acreditada de todo:**
+   - Cada MIC/DTA registrado tiene una `SolicitarAnularMicDta` posterior con `success_data.aprobacion_confirmada_at`.
+   - Cada título registrado tiene un `AnularTitulo` posterior en `success` con `success_data.titulo_anulado` igual a ese título. Los títulos registrados se leen del XML guardado de `RegistrarTitEnvios` y `RegistrarEnvios`, no de los conocimientos actuales.
+   - Un registro nuevo posterior a la anulación vuelve a bloquear.
+4. **No liberan:** la rectificación de convoy, desvincular títulos del MIC/DTA ni el reset total.
+5. **En pantalla:** cuando bloquea, se muestra el motivo de forma simple. No hay forma de saltear el bloqueo.
+
+**Parte B (Work, después del traspaso):** verificar los tres casos con datos reales de la base de asus02 y validar el punto 2, sobre todo que un `cancelled` de reset conserve `external_reference` o `success_data`.
+
 ## 7. Tarjetas de tarea (para pasar a cada agente)
 
 Cada tarea arranca **solo con la orden explícita** de quien dirige su equipo.
