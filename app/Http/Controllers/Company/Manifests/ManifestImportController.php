@@ -82,6 +82,7 @@ class ManifestImportController extends Controller
             'discharge_date' => 'nullable|date',
             'voyage_number' => 'nullable|string|max:100',
             'operation_type' => 'nullable|in:import,export',
+            'target_voyage_id' => 'nullable|integer',
         ], [
             'manifest_file.required' => 'Debe seleccionar un archivo para importar.',
             'manifest_file.file' => 'El archivo seleccionado no es válido.',
@@ -119,6 +120,37 @@ class ManifestImportController extends Controller
 
         if (!$vessel) {
             return back()->with('error', 'La embarcación seleccionada no es válida o no pertenece a su empresa.');
+        }
+
+        /*
+         * Agregar a un viaje existente: se valida antes de encolar para dar
+         * el motivo en pantalla. El parser vuelve a validarlo al procesar.
+         */
+        $targetVoyageId = $request->filled('target_voyage_id')
+            ? (int) $request->input('target_voyage_id')
+            : null;
+
+        if ($targetVoyageId !== null) {
+            $targetVoyage = \App\Models\Voyage::where('id', $targetVoyageId)
+                ->where('company_id', $company->id)
+                ->where('status', 'planning')
+                ->first();
+
+            if (!$targetVoyage) {
+                return back()->withInput()->withErrors([
+                    'target_voyage_id' => 'El viaje elegido no existe, no pertenece a su empresa o no está en planificación.',
+                ]);
+            }
+
+            $lock = app(\App\Services\Simple\AfipVesselLock::class)
+                ->inspectAfipVesselLock($company->id, $targetVoyage->id, $vessel->id);
+
+            if ($lock['locked']) {
+                return back()->withInput()->withErrors([
+                    'target_voyage_id' => 'La embarcación tiene registros vigentes en AFIP para este viaje: '
+                        . implode(' ', array_column($lock['reasons'], 'message')),
+                ]);
+            }
         }
 
         $uploadedFile = $request->file('manifest_file');
@@ -193,7 +225,8 @@ class ManifestImportController extends Controller
                 $request->input('voyage_number'),
                 $request->input('loading_date'),
                 $request->input('discharge_date'),
-                $request->input('operation_type')
+                $request->input('operation_type'),
+                $targetVoyageId
             );
 
             Log::info('Manifest import encolado', [
@@ -205,6 +238,7 @@ class ManifestImportController extends Controller
                 'user_id'       => auth()->id(),
                 'company_id'    => $company->id,
                 'operation_type' => $request->input('operation_type'),
+                'target_voyage_id' => $targetVoyageId,
             ]);
 
             // Pantalla de espera con spinner (polling por uuid hasta que el worker termine).
