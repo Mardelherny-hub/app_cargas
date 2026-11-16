@@ -62,10 +62,10 @@ class ProcessManifestImportJobTargetVoyageTest extends TestCase
         ]);
     }
 
-    private function job(?int $targetVoyageId, ?string $departureDate = null, ?string $loadingDate = null): ProcessManifestImportJob
+    private function job(?int $targetVoyageId, ?string $departureDate = null, ?string $loadingDate = null, ?int $leaderId = null): ProcessManifestImportJob
     {
         return new ProcessManifestImportJob(1, 'imports/manifests/qa.txt', 100, 1, 'qa.txt',
-            $departureDate, null, $loadingDate, null, null, $targetVoyageId);
+            $departureDate, null, $loadingDate, null, null, $targetVoyageId, $leaderId);
     }
 
     private function applyStep(ProcessManifestImportJob $job, string $method, ?int $targetVoyageId): void
@@ -124,5 +124,21 @@ class ProcessManifestImportJobTargetVoyageTest extends TestCase
         $this->applyStep($this->job(null, '2026-12-01'), 'applyOperationalImportDates', null);
 
         $this->assertStringStartsWith('2026-12-01', (string) DB::table('voyages')->value('departure_date'));
+    }
+
+    public function test_convoy_leader_is_only_kept_with_a_target_voyage(): void
+    {
+        $this->assertSame(300, $this->job(1, null, null, 300)->convoyLeaderVesselId);
+        $this->assertNull($this->job(null, null, null, 300)->convoyLeaderVesselId);
+    }
+
+    public function test_only_parsers_adapted_to_the_contract_accept_a_target_voyage(): void
+    {
+        $adapted = new class {
+            use \App\Services\Parsers\Concerns\ResolvesTargetVoyage;
+        };
+
+        $this->assertTrue(ProcessManifestImportJob::parserSupportsTargetVoyage($adapted));
+        $this->assertFalse(ProcessManifestImportJob::parserSupportsTargetVoyage(new \stdClass()));
     }
 }
