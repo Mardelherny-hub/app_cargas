@@ -31,6 +31,15 @@ class ProcessManifestImportJob implements ShouldQueue
     public ?string $dischargeDate = null;
     public ?string $operationType = null;
 
+    /** Viaje existente al que se agrega el archivo. null = crear viaje nuevo. */
+    public ?int $targetVoyageId = null;
+
+    /**
+     * Con viaje destino, los ajustes posteriores al parseo se limitan a los
+     * conocimientos creados por esta importación. null = todo el viaje.
+     */
+    protected ?array $scopedBillIds = null;
+
     public function __construct(
         public int $trackingId,
         public string $storedPath,
@@ -42,12 +51,14 @@ class ProcessManifestImportJob implements ShouldQueue
         ?string $loadingDate = null,
         ?string $dischargeDate = null,
         ?string $operationType = null,
+        ?int $targetVoyageId = null,
     ) {
         $this->departureDate = $departureDate;
         $this->voyageNumber = $voyageNumber;
         $this->loadingDate = $loadingDate;
         $this->dischargeDate = $dischargeDate;
         $this->operationType = $operationType;
+        $this->targetVoyageId = $targetVoyageId;
         $this->onQueue('imports');
     }
 
@@ -86,9 +97,14 @@ class ProcessManifestImportJob implements ShouldQueue
                 'loading_date' => $this->loadingDate,
                 'discharge_date' => $this->dischargeDate,
                 'operation_type' => $this->operationType,
+                'target_voyage_id' => $this->targetVoyageId,
             ]);
 
             if ($result->isSuccessful()) {
+                $this->scopedBillIds = $this->targetVoyageId
+                    ? $this->targetImportBillIds($result)
+                    : null;
+
                 $this->applyOperationalImportDates($parser, $result);
                 $this->applyContainerPrimaryTypes($result);
                 $this->applyTransitTransshipment($result);
@@ -186,8 +202,10 @@ class ProcessManifestImportJob implements ShouldQueue
         /*
          * Salida: un valor ingresado explícitamente en el formulario reemplaza
          * la fuente. Si quedó vacío, se conserva lo resuelto por el parser.
+         * Con viaje destino, los datos del viaje no se modifican desde el
+         * archivo: las fechas sólo se aplican a los conocimientos agregados.
          */
-        if ($this->departureDate !== null) {
+        if ($this->departureDate !== null && $this->targetVoyageId === null) {
             $voyage->departure_date = $this->departureDate;
             $voyage->saveQuietly();
         }
@@ -196,7 +214,7 @@ class ProcessManifestImportJob implements ShouldQueue
          * Descarga/llegada estimada: mismo contrato. Si el operador la
          * completa, reemplaza el dato de fuente para el viaje.
          */
-        if ($this->dischargeDate !== null) {
+        if ($this->dischargeDate !== null && $this->targetVoyageId === null) {
             $voyage->estimated_arrival_date = $this->dischargeDate;
             $voyage->saveQuietly();
         }
@@ -218,6 +236,7 @@ class ProcessManifestImportJob implements ShouldQueue
             'shipment_id',
             $shipmentIds
         )
+            ->when($this->scopedBillIds !== null, fn ($query) => $query->whereIn('id', $this->scopedBillIds))
             ->with('shipmentItems.containers')
             ->get();
 
@@ -296,7 +315,9 @@ class ProcessManifestImportJob implements ShouldQueue
         $billIds = \App\Models\BillOfLading::whereIn(
             'shipment_id',
             $shipmentIds
-        )->pluck('id');
+        )
+            ->when($this->scopedBillIds !== null, fn ($query) => $query->whereIn('id', $this->scopedBillIds))
+            ->pluck('id');
 
         if ($billIds->isEmpty()) {
             return;
@@ -369,12 +390,27 @@ class ProcessManifestImportJob implements ShouldQueue
         $bills = \App\Models\BillOfLading::whereIn(
             'shipment_id',
             $shipmentIds
-        )->get();
+        )
+            ->when($this->scopedBillIds !== null, fn ($query) => $query->whereIn('id', $this->scopedBillIds))
+            ->get();
 
         foreach ($bills as $bill) {
             $bill->is_transit_transshipment = 'S';
             $bill->saveQuietly();
         }
+    }
+
+    /**
+     * Conocimientos creados por la importación que se agregó al viaje
+     * destino. Sin registro explícito no se ajusta ninguno.
+     */
+    protected function targetImportBillIds(ManifestParseResult $result): array
+    {
+        $import = \App\Models\ManifestImport::find(
+            $this->resolveManifestImportId($result->voyage?->id)
+        );
+
+        return array_map('intval', (array) ($import?->created_bill_ids ?? []));
     }
 
     protected function resolveManifestImportId(?int $voyageId): ?int
