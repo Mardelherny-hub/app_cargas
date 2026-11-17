@@ -61,6 +61,8 @@ class ManifestImportRevertServiceTest extends TestCase
             $t->string('vessel_role'); $t->boolean('is_lead_vessel')->default(false);
             $t->integer('convoy_position')->nullable(); $t->decimal('cargo_capacity_tons', 10, 2)->nullable();
             $t->integer('container_capacity')->default(0); $t->string('status')->default('planning');
+            $t->decimal('cargo_weight_loaded', 12, 2)->default(0); $t->decimal('utilization_percentage', 5, 2)->default(0);
+            $t->boolean('has_dangerous_cargo')->default(false);
             $t->timestamps();
             $t->unique(['voyage_id', 'vessel_id']); $t->unique(['voyage_id', 'sequence_in_voyage']);
         });
@@ -69,6 +71,9 @@ class ManifestImportRevertServiceTest extends TestCase
         });
         Schema::create('shipment_items', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('bill_of_lading_id');
+            $t->decimal('gross_weight_kg', 12, 2)->default(0); $t->decimal('volume_m3', 10, 3)->default(0);
+            $t->decimal('declared_value', 12, 2)->default(0); $t->integer('package_quantity')->default(0);
+            $t->boolean('is_dangerous_goods')->default(false); $t->boolean('requires_refrigeration')->default(false);
         });
         Schema::create('containers', function (Blueprint $t) {
             $t->id(); $t->string('container_number');
@@ -209,6 +214,36 @@ class ManifestImportRevertServiceTest extends TestCase
         $this->revert($added);
 
         $this->assertSame($before, $this->state());
+    }
+
+    public function test_reverting_an_added_import_restores_the_weights_of_the_existing_shipment(): void
+    {
+        $this->originImport();
+        DB::table('shipment_items')->insert(['bill_of_lading_id' => 1, 'gross_weight_kg' => 1000]);
+        \App\Models\Shipment::findOrFail(1)->recalculateItemStats();
+        $before = $this->weights();
+        $this->assertSame(['1000.00', '1000.00', '1000.00'], $before);
+
+        // El parser agrega 500 kg a la carga existente y acumula los pesos.
+        $added = $this->addedImport(self::BARGE, 'BL-PESO');
+        DB::table('shipment_items')->whereIn('id', $added->created_item_ids)->update(['gross_weight_kg' => 500]);
+        DB::table('shipments')->where('id', 1)->update(['cargo_weight_loaded' => 1500]);
+        DB::table('voyages')->where('id', self::VOYAGE)->update(['total_cargo_weight_loaded' => 1500, 'total_cargo_weight' => 1500]);
+
+        $this->revert($added);
+
+        $this->assertSame($before, $this->weights());
+    }
+
+    /** cargo_weight_loaded de la carga, total_cargo_weight_loaded y total_cargo_weight del viaje. */
+    private function weights(): array
+    {
+        $voyage = DB::table('voyages')->where('id', self::VOYAGE)->first();
+
+        return array_map(
+            fn ($value) => number_format((float) $value, 2, '.', ''),
+            [DB::table('shipments')->where('id', 1)->value('cargo_weight_loaded'), $voyage->total_cargo_weight_loaded, $voyage->total_cargo_weight]
+        );
     }
 
     public function test_revert_keeps_a_container_shared_with_another_voyage(): void
