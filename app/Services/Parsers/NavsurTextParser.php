@@ -20,6 +20,7 @@ use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Services\Parsers\Concerns\ResolvesPorts;
+use App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -41,6 +42,7 @@ class NavsurTextParser implements ManifestParserInterface
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
     use ResolvesPorts;
+    use ResolvesTargetVoyage;
 
     protected array $stats = [
         'processed_bls' => 0,
@@ -96,7 +98,7 @@ class NavsurTextParser implements ManifestParserInterface
     /**
      * Parsear archivo Navsur TXT
      */
-    public function parse(string $filePath): ManifestParseResult
+    public function parse(string $filePath, array $options = []): ManifestParseResult
     {
         $startTime = microtime(true);
 
@@ -133,20 +135,42 @@ class NavsurTextParser implements ManifestParserInterface
             }
 
             // Procesar en transacción
-            $result = DB::transaction(function () use ($bls, $importRecord, $startTime) {
-                // Crear voyage único para todos los BLs
-                $voyageData = $this->extractVoyageData($bls[0]);
-                $voyage = $this->findOrCreateVoyage($voyageData);
-                
-                // Crear shipment
-                $shipment = $this->findOrCreateShipment($voyage, $voyageData);
+            $result = DB::transaction(function () use ($bls, $importRecord, $startTime, $options) {
+                $targetVoyage = $this->resolveTargetVoyage($options);
+
+                if ($targetVoyage) {
+                    // Agregar a un viaje existente: sus datos no se tocan.
+                    $voyage = $targetVoyage;
+                    $shipment = $this->resolveTargetShipment($voyage, (int) $options['vessel_id'], [
+                        'shipment_number' => sprintf(
+                            'SHP-%s-%03d',
+                            $voyage->voyage_number,
+                            (int) Shipment::where('voyage_id', $voyage->id)->max('sequence_in_voyage') + 1
+                        ),
+                        'cargo_capacity_tons' => null,
+                        'container_capacity' => 0,
+                        'status' => 'planning',
+                    ]);
+                } else {
+                    // Crear voyage único para todos los BLs
+                    $voyageData = $this->extractVoyageData($bls[0]);
+                    $voyage = $this->findOrCreateVoyage($voyageData);
+
+                    // Crear shipment
+                    $shipment = $this->findOrCreateShipment($voyage, $voyageData);
+                }
                 
                 $allBills = [];
                 $allContainers = [];
+                $createdContainerIds = [];
                 $allItems = [];
 
                 // Procesar cada BL
                 foreach ($bls as $blData) {
+                    if ($targetVoyage && $this->skipRepeatedBill($voyage, $blData['numero_bl'])) {
+                        continue;
+                    }
+
                     // Crear BillOfLading
                     $bill = $this->createBillOfLading($shipment, $blData);
                     $allBills[] = $bill;
@@ -158,6 +182,9 @@ class NavsurTextParser implements ManifestParserInterface
                             $container = $this->createContainer($bill, $containerData);
                             if ($container) {
                                 $allContainers[] = $container;
+                                if ($container->wasRecentlyCreated) {
+                                    $createdContainerIds[] = $container->id;
+                                }
                                 $this->stats['processed_containers']++;
                             }
                             
@@ -181,13 +208,27 @@ class NavsurTextParser implements ManifestParserInterface
 
                 // Registrar objetos creados y completar el registro de importación.
                 // El revert reconstruye items/containers (incluido el pivote) desde el voyage_id.
-                if ($importRecord) {
+                if ($importRecord && $targetVoyage) {
+                    $this->recordTargetVoyageObjects($importRecord, $voyage, [
+                        'shipment'  => [$shipment->id],
+                        'bill'      => array_map(fn($b) => $b->id, $allBills),
+                        'item'      => array_map(fn($i) => $i->id, $allItems),
+                        'container' => $createdContainerIds,
+                    ]);
+
+                    if ($warning = $this->repeatedBillsWarning()) {
+                        $this->stats['warnings'][] = $warning;
+                    }
+                } elseif ($importRecord) {
                     $importRecord->recordCreatedObjects([
                         'voyage'   => [$voyage->id],
                         'shipment' => [$shipment->id],
                         'bill'     => array_map(fn($b) => $b->id, $allBills),
                         'item'     => array_map(fn($i) => $i->id, $allItems),
                     ]);
+                }
+
+                if ($importRecord) {
                     $completionData = [
                         'voyage_id'               => $voyage->id,
                         'created_bills'           => count($allBills),
@@ -260,6 +301,29 @@ class NavsurTextParser implements ManifestParserInterface
                 $this->stats['warnings'],
                 $this->stats
             );
+        }
+    }
+
+    /**
+     * Embarcación que declara el archivo, para proponerla al importar.
+     */
+    public function detectVesselName(string $filePath): ?string
+    {
+        try {
+            $content = file_get_contents($filePath);
+            if (!$content) {
+                return null;
+            }
+
+            if (!mb_check_encoding($content, 'UTF-8')) {
+                $content = mb_convert_encoding($content, 'UTF-8', 'ISO-8859-1');
+            }
+
+            $name = trim((string) ($this->parseAllBLs($content)[0]['buque'] ?? ''));
+
+            return $name !== '' ? $name : null;
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 
