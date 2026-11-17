@@ -4,7 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, Shipment, ShipmentItem, Vessel, Voyage};
-use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
+use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use Carbon\Carbon;
 use DomainException;
@@ -16,7 +16,9 @@ use Throwable;
 
 class DonToyoExcelParser implements ManifestParserInterface
 {
-    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType;
+    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType;
+
+    private bool $allowSharedContainers = false;
 
     private const HEADERS = [
         'BUQUE' => ['Armador', 'CODIGO IMO BUQUE:', 'VIAJE:', 'IMPO/EXPO'],
@@ -32,6 +34,11 @@ class DonToyoExcelParser implements ManifestParserInterface
         } catch (Throwable $e) {
             return false;
         }
+    }
+
+    public function detectVesselName(string $filePath): ?string
+    {
+        return null;
     }
 
     /** Only the three manifest sheets are loaded; surcharge data is never read. */
@@ -160,10 +167,15 @@ class DonToyoExcelParser implements ManifestParserInterface
             if (strlen($number) !== 11 || !ctype_upper(substr($number, 0, 4)) || !ctype_alpha(substr($number, 0, 4)) || !ctype_digit(substr($number, 4))) {
                 $errors[] = "{$label}: número de contenedor inválido ({$number}).";
             }
-            if (isset($numbers[$number])) {
+            $containerKey = $this->allowSharedContainers ? $number . ':' . ($row['BL'] ?? '') : $number;
+            if (isset($numbers[$containerKey])) {
                 $errors[] = "{$label}: contenedor repetido ({$number}).";
             }
-            $numbers[$number] = true;
+            $numbers[$containerKey] = true;
+            if ($this->allowSharedContainers && isset($numbers['iso:' . $number]) && $numbers['iso:' . $number] !== ($row['TIPO (ISO)'] ?? '')) {
+                $errors[] = "{$label}: contenedor compartido con códigos ISO distintos ({$number}).";
+            }
+            $numbers['iso:' . $number] = $row['TIPO (ISO)'] ?? '';
             $bl = $row['BL'] ?? '';
             if (!isset($bills[$bl])) {
                 $errors[] = "{$label}: BL inexistente en BLS ({$bl}).";
@@ -243,7 +255,7 @@ class DonToyoExcelParser implements ManifestParserInterface
             throw new DomainException('Seleccione una embarcación activa de su empresa; el archivo no informa su nombre.');
         }
         $voyageNumber = $this->text($options['voyage_number'] ?? '') ?: $this->text($data['vessel']['VIAJE:'] ?? '');
-        if ($voyageNumber === '' || mb_strlen($voyageNumber) > 50) {
+        if (empty($options['target_voyage_id']) && ($voyageNumber === '' || mb_strlen($voyageNumber) > 50)) {
             throw new DomainException('Informe un número de viaje válido de hasta 50 caracteres.');
         }
         $types = [];
@@ -298,8 +310,8 @@ class DonToyoExcelParser implements ManifestParserInterface
         $first = reset($data['bills']);
         $origin = $ports[$first['Carga']];
         $destination = $ports[$first['Descarga']];
-        $cargoType = $this->resolveVoyageCargoTypeForCompany((int) $companyId, $origin, $destination);
-        return compact('companyId', 'vessel', 'voyageNumber', 'types', 'ports', 'cargo', 'packaging', 'existingContainers', 'origin', 'destination', 'cargoType') + ['departure' => $this->dateOption($options['departure_date'] ?? null)];
+        $cargoType = empty($options['target_voyage_id']) ? $this->resolveVoyageCargoTypeForCompany((int) $companyId, $origin, $destination) : null;
+        return compact('companyId', 'vessel', 'voyageNumber', 'types', 'ports', 'cargo', 'packaging', 'existingContainers', 'origin', 'destination', 'cargoType') + ['departure' => (empty($options['target_voyage_id']) ? $this->dateOption($options['departure_date'] ?? null) : null)];
     }
 
     private function clientPlan(string $name, int $countryHint, array &$warnings): array
@@ -332,6 +344,9 @@ class DonToyoExcelParser implements ManifestParserInterface
     public function parse(string $filePath, array $options = []): ManifestParseResult
     {
         $import = null;
+        $this->allowSharedContainers = !empty($options['target_voyage_id']);
+        $this->skippedRepeatedBills = [];
+        $this->targetShipmentCreated = false;
         $started = microtime(true);
         $warnings = ['El archivo no informa fechas documentales, direcciones ni tipo de bulto de la mercadería. Pendiente completar antes de presentar a Aduana.'];
         try {
@@ -341,11 +356,12 @@ class DonToyoExcelParser implements ManifestParserInterface
                 return ManifestParseResult::failure($errors);
             }
             $data = $this->transform($raw);
-            $plan = $this->preflight($data, $options);
-            if (count(array_unique(array_column($data['bills'], 'Descarga'))) > 1) {
+            $hasTarget = !empty($options['target_voyage_id']);
+            $plan = $hasTarget ? ['companyId' => auth()->user()?->company?->id] : $this->preflight($data, $options);
+            if (!$hasTarget && count(array_unique(array_column($data['bills'], 'Descarga'))) > 1) {
                 $warnings[] = 'Los BL tienen varios puertos de descarga. El viaje utiliza el del primer BL; cada conocimiento conserva su propio puerto.';
             }
-            if ($data['vessel']['CODIGO IMO BUQUE:'] !== $this->text($plan['vessel']->imo_number)) {
+            if (!$hasTarget && $data['vessel']['CODIGO IMO BUQUE:'] !== $this->text($plan['vessel']->imo_number)) {
                 $warnings[] = 'El IMO declarado no coincide con el de la ficha seleccionada o falta en ella. Se utiliza la embarcación confirmada sin modificar su catálogo.';
             }
             foreach ($data['bills'] as $number => $row) {
@@ -358,7 +374,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                 }
             }
             $hash = ManifestImport::generateFileHash($filePath);
-            if (ManifestImport::isFileAlreadyImported($hash, (int) $plan['companyId'])) {
+            if (!$hasTarget && ManifestImport::isFileAlreadyImported($hash, (int) $plan['companyId'])) {
                 return ManifestParseResult::failure(['El archivo ya fue importado. Revise el historial de importaciones.']);
             }
             $import = ManifestImport::createForImport([
@@ -367,9 +383,32 @@ class DonToyoExcelParser implements ManifestParserInterface
                 'file_size_bytes' => filesize($filePath), 'file_hash' => $hash,
                 'parser_config' => ['parser_class' => self::class, 'options' => $options],
             ]);
-            return DB::transaction(function () use ($data, $plan, $import, $warnings, $started) {
-                return Model::withoutEvents(function () use ($data, $plan, $import, $warnings, $started) {
-                    $this->guardVoyageNumberIsFree($plan['voyageNumber'], (int) $plan['vessel']->id);
+            return DB::transaction(function () use ($data, $plan, $import, $warnings, $started, $options) {
+                return Model::withoutEvents(function () use ($data, $plan, $import, $warnings, $started, $options) {
+                    $voyage = $this->resolveTargetVoyage($options);
+                    $isTarget = $voyage !== null;
+                    if ($isTarget) {
+                        foreach ($data['bills'] as $number => $row) {
+                            if ($this->skipRepeatedBill($voyage, (string) $number)) {
+                                unset($data['bills'][$number], $data['containers'][$number]);
+                            }
+                        }
+                        if ($data['bills'] === []) {
+                            throw new DomainException('Todos los conocimientos del archivo ya existen en el viaje. No se agregó ninguna carga.');
+                        }
+                        if (ManifestImport::isFileAlreadyImported($import->file_hash, (int) $import->company_id)) {
+                            throw new DomainException('El archivo ya fue importado. Revise el historial de importaciones.');
+                        }
+                        $plan = $this->preflight($data, $options);
+                        if ($warning = $this->repeatedBillsWarning()) {
+                            $warnings[] = $warning;
+                        }
+                        if ($data['vessel']['CODIGO IMO BUQUE:'] !== $this->text($plan['vessel']->imo_number)) {
+                            $warnings[] = 'El IMO declarado no coincide con el de la ficha seleccionada o falta en ella. Se utiliza la embarcación confirmada sin modificar su catálogo.';
+                        }
+                    } else {
+                        $this->guardVoyageNumberIsFree($plan['voyageNumber'], (int) $plan['vessel']->id);
+                    }
                     $created = array_fill_keys(['voyage', 'shipment', 'bill', 'item', 'container', 'client', 'port'], []);
                     $clients = [];
                     $this->clientIdentityIndex = null;
@@ -390,23 +429,34 @@ class DonToyoExcelParser implements ManifestParserInterface
                             $clients[$name] = $client;
                         }
                     }
-                    $voyage = Voyage::create([
-                        'company_id' => $plan['companyId'], 'lead_vessel_id' => $plan['vessel']->id,
-                        'voyage_number' => $plan['voyageNumber'], 'origin_port_id' => $plan['origin']->id,
-                        'destination_port_id' => $plan['destination']->id, 'origin_country_id' => $plan['origin']->country_id,
-                        'destination_country_id' => $plan['destination']->country_id, 'departure_date' => $plan['departure'],
-                        'estimated_arrival_date' => null, 'voyage_type' => 'single_vessel', 'cargo_type' => $plan['cargoType'],
-                        'status' => 'planning', 'vessel_count' => 1, 'created_by_user_id' => auth()->id(),
-                        'operational_notes' => 'Importado desde resumen Don Toyo. Armador: ' . $data['vessel']['Armador'] . '; IMO declarado: ' . $data['vessel']['CODIGO IMO BUQUE:'] . '; IMPO/EXPO fuente: ' . $data['vessel']['IMPO/EXPO'],
-                    ]);
-                    $created['voyage'][] = $voyage->id;
-                    $shipment = Shipment::create([
-                        'voyage_id' => $voyage->id, 'vessel_id' => $plan['vessel']->id,
-                        'shipment_number' => $plan['voyageNumber'] . '-01', 'sequence_in_voyage' => 1,
-                        'status' => 'planning', 'is_lead_vessel' => true, 'vessel_role' => 'single',
-                        'cargo_capacity_tons' => null, 'departure_time' => null, 'created_by_user_id' => auth()->id(),
-                    ]);
-                    $created['shipment'][] = $shipment->id;
+                    if (!$isTarget) {
+                        $voyage = Voyage::create([
+                            'company_id' => $plan['companyId'], 'lead_vessel_id' => $plan['vessel']->id,
+                            'voyage_number' => $plan['voyageNumber'], 'origin_port_id' => $plan['origin']->id,
+                            'destination_port_id' => $plan['destination']->id, 'origin_country_id' => $plan['origin']->country_id,
+                            'destination_country_id' => $plan['destination']->country_id, 'departure_date' => $plan['departure'],
+                            'estimated_arrival_date' => null, 'voyage_type' => 'single_vessel', 'cargo_type' => $plan['cargoType'],
+                            'status' => 'planning', 'vessel_count' => 1, 'created_by_user_id' => auth()->id(),
+                            'operational_notes' => 'Importado desde resumen Don Toyo. Armador: ' . $data['vessel']['Armador'] . '; IMO declarado: ' . $data['vessel']['CODIGO IMO BUQUE:'] . '; IMPO/EXPO fuente: ' . $data['vessel']['IMPO/EXPO'],
+                        ]);
+                        $created['voyage'][] = $voyage->id;
+                        $shipment = Shipment::create([
+                            'voyage_id' => $voyage->id, 'vessel_id' => $plan['vessel']->id,
+                            'shipment_number' => $plan['voyageNumber'] . '-01', 'sequence_in_voyage' => 1,
+                            'status' => 'planning', 'is_lead_vessel' => true, 'vessel_role' => 'single',
+                            'cargo_capacity_tons' => null, 'departure_time' => null, 'created_by_user_id' => auth()->id(),
+                        ]);
+                        $created['shipment'][] = $shipment->id;
+                    } else {
+                        $shipment = $this->resolveTargetShipment($voyage, (int) $options['vessel_id'], [
+                            'shipment_number' => $voyage->voyage_number . '-01',
+                            'status' => 'planning', 'cargo_capacity_tons' => null,
+                            'departure_time' => null, 'created_by_user_id' => auth()->id(),
+                        ]);
+                        if ($this->targetShipmentCreated) {
+                            $created['shipment'][] = $shipment->id;
+                        }
+                    }
                     $bills = $containers = [];
                     foreach ($data['bills'] as $number => $row) {
                         $rows = $data['containers'][$number];
@@ -449,8 +499,9 @@ class DonToyoExcelParser implements ManifestParserInterface
                                     'set_temperature' => $containerRow['Temperatura'], 'created_by_user_id' => auth()->id(),
                                 ]);
                                 $created['container'][] = $container->id;
+                                $plan['existingContainers']->put($containerRow['CONTENEDOR'], $container);
                             }
-                            $containers[] = $container;
+                            $containers[$container->id] = $container;
                             DB::table('container_shipment_item')->insert([
                                 'container_id' => $container->id, 'shipment_item_id' => $item->id,
                                 'package_quantity' => null, 'gross_weight_kg' => $containerRow['Peso'], 'net_weight_kg' => null,
@@ -461,24 +512,44 @@ class DonToyoExcelParser implements ManifestParserInterface
                             ]);
                         }
                     }
-                    $documentaryWeight = number_format(array_sum(array_column($data['bills'], 'weight')), 2, '.', '');
-                    $shipment->update(['cargo_weight_loaded' => $documentaryWeight]);
-                    $voyage->update([
-                        'total_cargo_weight' => $documentaryWeight,
-                        'total_cargo_weight_loaded' => $documentaryWeight,
-                    ]);
-                    $import->recordExplicitlyCreatedObjects($created);
+                    if ($isTarget) {
+                        $shipment->unsetRelation('shipmentItems');
+                        $shipment->recalculateItemStats();
+                        $shipment->update(['containers_loaded' => DB::table('container_shipment_item')
+                            ->whereIn('shipment_item_id', $shipment->shipmentItems()->select('shipment_items.id'))
+                            ->distinct()->count('container_id')]);
+                        $voyage->unsetRelation('shipments');
+                        $voyage->recalculateShipmentStats();
+                        $voyageContainerCount = DB::table('container_shipment_item')
+                            ->whereIn('shipment_item_id', ShipmentItem::whereIn('bill_of_lading_id', $voyage->billsOfLading()->select('bills_of_lading.id'))->select('id'))
+                            ->distinct()->count('container_id');
+                        $voyage->update(['total_containers' => $voyageContainerCount, 'total_containers_loaded' => $voyageContainerCount]);
+                        $this->recordTargetVoyageObjects($import, $voyage, array_intersect_key($created, array_flip(['shipment', 'bill', 'item', 'container'])));
+                        $import->recordExplicitlyCreatedObjects(['client' => $created['client'], 'port' => []]);
+                    } else {
+                        $documentaryWeight = number_format(array_sum(array_column($data['bills'], 'weight')), 2, '.', '');
+                        $shipment->update(['cargo_weight_loaded' => $documentaryWeight]);
+                        $voyage->update([
+                            'total_cargo_weight' => $documentaryWeight,
+                            'total_cargo_weight_loaded' => $documentaryWeight,
+                        ]);
+                        $import->recordExplicitlyCreatedObjects($created);
+                    }
+                    $containers = array_values($containers);
                     $statistics = ['bills_created' => count($bills), 'items_created' => count($created['item']), 'containers_processed' => count($containers), 'containers_created' => count($created['container']), 'import_id' => $import->id];
                     $import->markAsCompletedWithWarnings(['voyage_id' => $voyage->id, 'warnings' => $warnings, 'warnings_count' => count($warnings), 'import_statistics' => $statistics, 'processing_time_seconds' => round(microtime(true) - $started, 2)]);
                     return ManifestParseResult::success($voyage, [$shipment], $containers, $bills, $warnings, $statistics);
                 });
             });
         } catch (Throwable $e) {
+            if ($warning = $this->repeatedBillsWarning()) {
+                $warnings[] = $warning;
+            }
             $duplicate = str_contains($e->getMessage(), 'voyages_voyage_number_unique');
             $message = $duplicate ? 'El número de viaje ya existe para esta embarcación en su empresa. No se duplicó ningún dato.' : ($e instanceof DomainException ? $e->getMessage() : 'No se pudo importar el manifiesto. No se guardaron cargas; revise el archivo y los catálogos.');
             if ($import) {
                 try {
-                    $import->markAsFailed([$message]);
+                    $import->markAsFailed([$message], ['warnings' => $warnings, 'warnings_count' => count($warnings)]);
                 } catch (Throwable $trackingError) {
                     Log::error('No se pudo registrar el fallo de importación Don Toyo', ['exception' => $trackingError]);
                 }
