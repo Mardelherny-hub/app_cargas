@@ -26,13 +26,14 @@ class ManifestParserFactory
         NavsurTextParserCompat::class,
         G2OceanXmlParserCompat::class,
         MscVesselNameParserCompat::class,
+        DonToyoExcelParserCompat::class,
     ];
 
     protected array $extensionMappings = [
         'dat' => [KlineDataParserCompat::class],
         'txt' => [KlineDataParserCompat::class, NavsurTextParserCompat::class, TfpTextParserCompat::class, MscVesselNameParserCompat::class],
-        'xlsx' => [ParanaExcelParserCompat::class, GuaranExcelParserCompat::class],
-        'xls' => [ParanaExcelParserCompat::class, GuaranExcelParserCompat::class],
+        'xlsx' => [ParanaExcelParserCompat::class, GuaranExcelParserCompat::class, DonToyoExcelParserCompat::class],
+        'xls' => [ParanaExcelParserCompat::class, GuaranExcelParserCompat::class, DonToyoExcelParserCompat::class],
         'xml' => [LoginXmlParserCompat::class, G2OceanXmlParserCompat::class],
         'edi' => [CmspEdiParserCompat::class],
     ];
