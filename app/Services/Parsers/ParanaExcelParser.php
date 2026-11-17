@@ -46,6 +46,7 @@ class ParanaExcelParser implements ManifestParserInterface
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
     use ResolvesPorts;
+    use \App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 
     protected array $warnings = [];
 
@@ -181,6 +182,8 @@ class ParanaExcelParser implements ManifestParserInterface
     public function parse(string $filePath, array $options = []): ManifestParseResult
     {
         $this->warnings = [];
+        $this->skippedRepeatedBills = [];
+        $this->targetShipmentCreated = false;
 
         $startTime = microtime(true);
         Log::info('Starting PARANA Excel parsing', ['file' => $filePath]);
@@ -198,27 +201,34 @@ class ParanaExcelParser implements ManifestParserInterface
             $highestRow = $worksheet->getHighestRow();
             Log::info('PARANA file loaded', ['rows' => $highestRow]);
 
-            // Extraer información del Viaje de la primera fila
-            $voyageData = $this->extractVoyageData($worksheet);
-            $vesselData = $this->extractVesselDataFromExcel($worksheet);
-            $voyageData = array_merge($voyageData, $vesselData);
-                        
-            // Crear Viaje
-            $voyage = $this->createVoyage($voyageData, $options);
-            
-            // Crear shipment principal
-            $vessel = Vessel::findOrFail($voyage->lead_vessel_id);
-            $shipment = $this->createShipment(
-                $voyage,
-                $vessel,
-                $voyageData
-            );
+            $targetVoyage = $this->resolveTargetVoyage($options);
+            $shipment = null;
+            if ($targetVoyage) {
+                $voyage = $targetVoyage;
+            } else {
+                // Extraer información del Viaje de la primera fila
+                $voyageData = $this->extractVoyageData($worksheet);
+                $vesselData = $this->extractVesselDataFromExcel($worksheet);
+                $voyageData = array_merge($voyageData, $vesselData);
+
+                // Crear Viaje
+                $voyage = $this->createVoyage($voyageData, $options);
+
+                // Crear shipment principal
+                $vessel = Vessel::findOrFail($voyage->lead_vessel_id);
+                $shipment = $this->createShipment(
+                    $voyage,
+                    $vessel,
+                    $voyageData
+                );
+            }
 
             // Procesar filas de datos (ignorar header si existe)
             $containers = [];
             $bills = [];
             $items = [];
             $processedBLs = [];
+            $repeatedBLs = [];
             
             for ($row = 2; $row <= $highestRow; $row++) {
                 $rowData = $this->extractRowData($worksheet, $row);
@@ -228,7 +238,36 @@ class ParanaExcelParser implements ManifestParserInterface
                 }
 
                 // Crear BL solo si no existe
-                $blNumber = $rowData['BL_NUMBER'];
+                $blNumber = $targetVoyage
+                    ? trim((string) $rowData['BL_NUMBER'])
+                    : $rowData['BL_NUMBER'];
+                if ($targetVoyage) {
+                    $rowData['BL_NUMBER'] = $blNumber;
+                    $rowData['CONTAINER_NUMBER'] = trim((string) ($rowData['CONTAINER_NUMBER'] ?? ''));
+                    if (!isset($processedBLs[$blNumber])) {
+                        if (!array_key_exists($blNumber, $repeatedBLs)) {
+                            $repeatedBLs[$blNumber] = $this->skipRepeatedBill($voyage, $blNumber);
+                        }
+                        if ($repeatedBLs[$blNumber]) {
+                            continue;
+                        }
+                    }
+                    if (!$shipment) {
+                        $vessel = Vessel::findOrFail((int) $options['vessel_id']);
+                        $shipment = Shipment::withoutEvents(fn () => $this->resolveTargetShipment(
+                            $voyage,
+                            (int) $vessel->id,
+                            [
+                                'shipment_number' => 'PARANA-' . $voyage->voyage_number . '-' . $vessel->id,
+                                'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
+                                'container_capacity' => $vessel->container_capacity ?? 0,
+                                'status' => 'planning',
+                                'active' => true,
+                                'created_by_user_id' => auth()->id(),
+                            ]
+                        ));
+                    }
+                }
                 if (!isset($processedBLs[$blNumber])) {
                     // La unicidad se valida dentro del embarque actual, no globalmente.
                     $existingBL = BillOfLading::where('shipment_id', $shipment->id)
@@ -247,12 +286,18 @@ class ParanaExcelParser implements ManifestParserInterface
 
                 // Crear contenedor para esta fila
                 if (!empty($rowData['CONTAINER_NUMBER'])) {
-                    $container = $this->createContainer($bill, $rowData);
-                    $containers[] = $container;
+                    $container = $targetVoyage
+                        ? $this->resolveTargetContainer($bill, $rowData)
+                        : $this->createContainer($bill, $rowData);
+                    if (!$targetVoyage || $container->wasRecentlyCreated) {
+                        $containers[] = $container;
+                    }
                 }
 
                 // AGREGAR: Crear ShipmentItem para cada fila
-                $shipmentItem = $this->createShipmentItem($bill, $rowData);
+                $shipmentItem = $targetVoyage
+                    ? ShipmentItem::withoutEvents(fn () => $this->createShipmentItem($bill, $rowData))
+                    : $this->createShipmentItem($bill, $rowData);
                 if ($shipmentItem) {
                     $items[] = $shipmentItem;
                     Log::info('ShipmentItem created', ['item_id' => $shipmentItem->id]);
@@ -266,14 +311,18 @@ class ParanaExcelParser implements ManifestParserInterface
                 'items_count' => count($items)
             ]);
 
+            if ($targetVoyage && ($warning = $this->repeatedBillsWarning())) {
+                $this->warnings[] = $warning;
+            }
+
             // NUEVO: Registrar objetos creados y completar importación
-            $this->completeImportRecord($importRecord, $voyage, $bills, $containers, $items, $startTime);
+            $this->completeImportRecord($importRecord, $voyage, $bills, $containers, $items, $startTime, $targetVoyage ? $shipment : null, (bool) $targetVoyage);
 
             \Illuminate\Support\Facades\DB::commit();
 
             return ManifestParseResult::success(
                 voyage: $voyage,
-                shipments: [$shipment],
+                shipments: $shipment ? [$shipment] : [],
                 containers: $containers,
                 billsOfLading: $bills,
                 warnings: $this->warnings,
@@ -826,6 +875,55 @@ class ParanaExcelParser implements ManifestParserInterface
         }
     }
 
+
+    public function detectVesselName(string $filePath): ?string
+    {
+        if (!is_file($filePath) || !is_readable($filePath)) {
+            return null;
+        }
+
+        $spreadsheet = null;
+        try {
+            $reader = IOFactory::createReaderForFile($filePath);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($filePath);
+            $name = trim((string) ($this->extractVesselDataFromExcel($spreadsheet->getActiveSheet())['barge_name'] ?? ''));
+
+            return $name !== '' ? $name : null;
+        } catch (\Throwable $e) {
+            return null;
+        } finally {
+            if ($spreadsheet !== null) {
+                $spreadsheet->disconnectWorksheets();
+            }
+        }
+    }
+
+    protected function resolveTargetContainer(BillOfLading $bill, array $data): ?Container
+    {
+        $number = trim((string) ($data['CONTAINER_NUMBER'] ?? ''));
+        $container = Container::where('container_number', $number)->first();
+        if (!$container) {
+            return $this->createContainer($bill, $data);
+        }
+
+        $type = $this->findExistingContainerType($this->requireParanaSourceText(
+            $data['CONTAINER_TYPE'] ?? null,
+            'CONTAINER_TYPE'
+        ));
+        $state = $this->mapParanaContainerState($data['CONTAINER_STATUS'] ?? null);
+        if (!$type || (int) $container->container_type_id !== (int) $type->id
+            || $container->condition !== $state['condition']
+            || $container->operational_status !== $state['operational_status']
+            || !$container->active || $container->blocked
+            || $container->out_of_service || $container->requires_repair) {
+            throw new \DomainException(
+                "PARANA: no se puede verificar compatibilidad de tipo y estado del contenedor {$number}."
+            );
+        }
+
+        return $container;
+    }
 
     protected function createContainer(
         BillOfLading $bill,
@@ -1689,28 +1787,39 @@ class ParanaExcelParser implements ManifestParserInterface
         array $bills,
         array $containers,
         array $items,
-        float $startTime
+        float $startTime,
+        ?Shipment $targetShipment = null,
+        bool $hasTargetVoyage = false
     ): void {
         $processingTime = microtime(true) - $startTime;
 
-        $shipmentId = $voyage->shipments()->value('id');
+        if ($hasTargetVoyage) {
+            $this->recordTargetVoyageObjects($importRecord, $voyage, [
+                'shipment' => $targetShipment ? [$targetShipment->id] : [],
+                'bill' => array_map(fn ($bill) => $bill->id, $bills),
+                'item' => array_map(fn ($item) => $item->id, $items),
+                'container' => array_values(array_unique(array_map(fn ($container) => $container->id, $containers))),
+            ]);
+        } else {
+            $shipmentId = $voyage->shipments()->value('id');
 
-        $importRecord->recordExplicitlyCreatedObjects([
-            'voyage' => [$voyage->id],
-            'shipment' => array_filter([$shipmentId]),
-            'bill' => array_map(
-                fn ($bill) => $bill->id,
-                $bills
-            ),
-            'container' => array_map(
-                fn ($container) => $container->id,
-                $containers
-            ),
-            'item' => array_map(
-                fn ($item) => $item->id,
-                $items
-            ),
-        ]);
+            $importRecord->recordExplicitlyCreatedObjects([
+                'voyage' => [$voyage->id],
+                'shipment' => array_filter([$shipmentId]),
+                'bill' => array_map(
+                    fn ($bill) => $bill->id,
+                    $bills
+                ),
+                'container' => array_map(
+                    fn ($container) => $container->id,
+                    $containers
+                ),
+                'item' => array_map(
+                    fn ($item) => $item->id,
+                    $items
+                ),
+            ]);
+        }
 
         $this->warnings = array_values(array_unique($this->warnings));
 
