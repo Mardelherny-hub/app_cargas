@@ -73,6 +73,9 @@ class ManifestImportRevertServiceTest extends TestCase
         Schema::create('containers', function (Blueprint $t) {
             $t->id(); $t->string('container_number');
         });
+        Schema::create('container_shipment_item', function (Blueprint $t) {
+            $t->unsignedBigInteger('container_id'); $t->unsignedBigInteger('shipment_item_id');
+        });
         Schema::create('webservice_transactions', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id');
             $t->unsignedBigInteger('voyage_id')->nullable(); $t->unsignedBigInteger('shipment_id')->nullable();
@@ -121,7 +124,7 @@ class ManifestImportRevertServiceTest extends TestCase
      * Importación agregada. Con $leader, convierte el viaje en convoy como
      * lo hace el job antes del parseo.
      */
-    private function addedImport(int $vesselId, string $billNumber, ?int $leader = null): ManifestImport
+    private function addedImport(int $vesselId, string $billNumber, ?int $leader = null, ?int $reusedContainerId = null): ManifestImport
     {
         $conversion = app(VoyageConvoyConversionService::class);
         $snapshot = $leader !== null ? $conversion->convert(Voyage::findOrFail(self::VOYAGE), $leader, $vesselId) : null;
@@ -140,7 +143,10 @@ class ManifestImportRevertServiceTest extends TestCase
         }
         $billId = DB::table('bills_of_lading')->insertGetId(['shipment_id' => $shipmentId, 'bill_number' => $billNumber]);
         $itemId = DB::table('shipment_items')->insertGetId(['bill_of_lading_id' => $billId]);
-        $containerId = DB::table('containers')->insertGetId(['container_number' => "CONT-{$billNumber}"]);
+        // Con $reusedContainerId, el parser reutiliza un contenedor existente por número.
+        $containerId = $reusedContainerId
+            ?? DB::table('containers')->insertGetId(['container_number' => "CONT-{$billNumber}"]);
+        DB::table('container_shipment_item')->insert(['container_id' => $containerId, 'shipment_item_id' => $itemId]);
 
         $import = ManifestImport::forceCreate([
             'company_id' => 1, 'voyage_id' => self::VOYAGE,
@@ -167,6 +173,7 @@ class ManifestImportRevertServiceTest extends TestCase
             'bills' => DB::table('bills_of_lading')->whereNull('deleted_at')->orderBy('id')->pluck('bill_number')->all(),
             'items' => DB::table('shipment_items')->count(),
             'containers' => DB::table('containers')->count(),
+            'pivot' => DB::table('container_shipment_item')->count(),
         ];
     }
 
@@ -202,6 +209,33 @@ class ManifestImportRevertServiceTest extends TestCase
         $this->revert($added);
 
         $this->assertSame($before, $this->state());
+    }
+
+    public function test_revert_keeps_a_container_shared_with_another_voyage(): void
+    {
+        // Otro viaje ya usa el contenedor.
+        DB::table('voyages')->insert(['id' => 99, 'company_id' => 1, 'voyage_number' => 'V-OTRO', 'lead_vessel_id' => self::TUG]);
+        DB::table('shipments')->insert(['id' => 99, 'voyage_id' => 99, 'vessel_id' => self::TUG, 'shipment_number' => 'SHP-OTRO',
+            'sequence_in_voyage' => 1, 'vessel_role' => 'single', 'is_lead_vessel' => true]);
+        DB::table('bills_of_lading')->insert(['id' => 99, 'shipment_id' => 99, 'bill_number' => 'BL-OTRO']);
+        DB::table('shipment_items')->insert(['id' => 99, 'bill_of_lading_id' => 99]);
+        $shared = DB::table('containers')->insertGetId(['container_number' => 'MSCU1234565']);
+        DB::table('container_shipment_item')->insert(['container_id' => $shared, 'shipment_item_id' => 99]);
+
+        $this->originImport();
+        $before = $this->state();
+
+        $added = $this->addedImport(self::BARGE, 'BL-REUTILIZA', null, $shared);
+        $this->assertSame([$shared], $added->created_container_ids);
+
+        $this->revert($added);
+
+        $this->assertSame($before, $this->state());
+        $this->assertTrue(DB::table('containers')->where('id', $shared)->exists());
+        $this->assertSame(
+            [['container_id' => $shared, 'shipment_item_id' => 99]],
+            DB::table('container_shipment_item')->get()->map(fn ($row) => (array) $row)->all()
+        );
     }
 
     public function test_reverting_the_whole_voyage_goes_from_newest_added_import_to_the_origin(): void
