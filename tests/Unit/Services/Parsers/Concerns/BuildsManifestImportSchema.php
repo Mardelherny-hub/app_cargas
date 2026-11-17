@@ -71,6 +71,16 @@ trait BuildsManifestImportSchema
             $t->timestamps();
         });
 
+        // El servicio de reversión consulta los registros aduaneros del viaje.
+        // Estos casos no tienen transacciones: la tabla vacía mantiene activo el control.
+        Schema::create('webservice_transactions', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('company_id');
+            $t->unsignedBigInteger('voyage_id');
+            $t->string('country');
+            $t->string('environment')->nullable();
+        });
+
         $catalogs = [
             'companies' => ['legal_name', 'country'],
             'users' => ['name', 'email', 'password', 'userable_type', 'userable_id'],

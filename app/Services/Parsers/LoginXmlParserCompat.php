@@ -21,7 +21,7 @@ class LoginXmlParserCompat extends LoginXmlParser
     ): ManifestParseResult {
         $this->importOptions = $options;
 
-        return parent::parse($filePath);
+        return parent::parse($filePath, $options);
     }
 
     protected function createVoyage(

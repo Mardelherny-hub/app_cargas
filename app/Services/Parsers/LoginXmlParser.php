@@ -25,6 +25,7 @@ use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
+use App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -55,6 +56,11 @@ class LoginXmlParser implements ManifestParserInterface
     use ResolvesClientAddresses;
     use ResolvesExistingClient;
     use ResolvesVoyageCargoType;
+    use ResolvesTargetVoyage;
+
+    private array $targetImportOptions = [];
+    private bool $importingToTargetVoyage = false;
+    private array $newContainerIds = [];
     // Mapeo de tipos de contenedor del XML a tipos del sistema
     protected array $containerTypeMapping = [
         '40RH' => 'Reefer High Cube 40ft',
@@ -152,8 +158,18 @@ class LoginXmlParser implements ManifestParserInterface
     /**
      * Parsear el archivo Login XML (Interface compatible)
      */
-    public function parse(string $filePath): ManifestParseResult
+    public function parse(string $filePath, array $options = []): ManifestParseResult
     {
+        $this->targetImportOptions = $options;
+        $this->importingToTargetVoyage = false;
+        $this->targetShipmentCreated = false;
+        $this->skippedRepeatedBills = [];
+        $this->newContainerIds = [];
+        $this->createdContainersInImport = [];
+        $this->warnings = [];
+        if ($options === [] && !empty($this->importOptions['target_voyage_id'])) {
+            throw new Exception('La importación Login a un viaje existente todavía no está disponible en este formato.');
+        }
         Log::debug('=== INICIO LOGIN XML PARSER ===', [
             'file_path' => $filePath,
             'file_exists' => file_exists($filePath),
@@ -174,6 +190,30 @@ class LoginXmlParser implements ManifestParserInterface
                 'line' => $e->getLine()
             ]);
             throw $e;
+        }
+    }
+
+    public function detectVesselName(string $filePath): ?string
+    {
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $xml = simplexml_load_file($filePath, SimpleXMLElement::class, LIBXML_NONET);
+            if ($xml === false) {
+                return null;
+            }
+            foreach ($xml->BillOfLading as $bill) {
+                $raw = (string) $bill->BillOfLadingHeader->InitialVesselVoyFlag;
+                if (trim($raw) !== '') {
+                    [$name] = $this->parseVesselVoyageFlag($raw);
+                    return $name;
+                }
+            }
+            return null;
+        } catch (Exception $e) {
+            return null;
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
         }
     }
 
@@ -264,26 +304,60 @@ class LoginXmlParser implements ManifestParserInterface
             $transformedData = $this->transform($rawData);
             
             // 5. Crear objetos del modelo
-            $voyage = $this->createVoyage($transformedData, $context);
-            $shipment = $this->createShipment($transformedData, $voyage, $context);
+            $voyage = $this->resolveTargetVoyage($this->targetImportOptions);
+            $this->importingToTargetVoyage = $voyage !== null;
+            if ($this->importingToTargetVoyage) {
+                // Evitar que los eventos de carga modifiquen el viaje destino.
+                $shipment = Shipment::withoutEvents(fn () => $this->resolveTargetShipment(
+                    $voyage,
+                    (int) $this->targetImportOptions['vessel_id'],
+                    [
+                        'shipment_number' => $transformedData['shipment']['shipment_number'],
+                        'cargo_capacity_tons' => 0,
+                        'container_capacity' => 0,
+                        'status' => $transformedData['shipment']['status'],
+                        'active' => true,
+                        'created_date' => now(),
+                        'created_by_user_id' => $context['user_id'],
+                    ]
+                ));
+            } else {
+                $voyage = $this->createVoyage($transformedData, $context);
+                $shipment = $this->createShipment($transformedData, $voyage, $context);
+            }
             
             // 6. Crear MÚLTIPLES BillOfLading con sus items
             // Acumulamos solo IDs (no objetos Eloquent) para minimizar memoria
             // en archivos grandes (100+ BLs, cientos de contenedores).
             $allBillIds = [];
             $allItemIds = [];
+            $importedContainers = [];
             
             foreach ($transformedData['bills_of_lading'] as $blData) {
+                if ($this->importingToTargetVoyage && $this->skipRepeatedBill($voyage, $blData['bill_number'])) {
+                    continue;
+                }
+                if ($this->importingToTargetVoyage) {
+                    array_push($importedContainers, ...$blData['containers']);
+                }
                 $billOfLading = $this->createBillOfLadingFromData($blData, $shipment, $context);
                 $allBillIds[] = $billOfLading->id;
                 
-                $itemId = $this->createShipmentItemFromBillData(
+                $createItem = fn () => $this->createShipmentItemFromBillData(
                     $blData,
                     $billOfLading,
                     $context
                 );
+                $itemId = $this->importingToTargetVoyage
+                    ? ShipmentItem::withoutEvents($createItem)
+                    : $createItem();
 
                 $allItemIds[] = $itemId;
+
+                if ($this->importingToTargetVoyage) {
+                    $billOfLading->unsetRelation('shipmentItems');
+                    BillOfLading::withoutEvents(fn () => $billOfLading->recalculateItemStats());
+                }
 
                 /*
                  * Los eventos de ShipmentItem recalculan estadísticas.
@@ -313,6 +387,15 @@ class LoginXmlParser implements ManifestParserInterface
                 unset($billOfLading);
             }
             
+            if ($this->importingToTargetVoyage) {
+                if ($warning = $this->repeatedBillsWarning()) {
+                    $this->addWarningOnce($warning);
+                }
+            }
+            $statisticsContainers = $this->importingToTargetVoyage
+                ? $importedContainers
+                : $transformedData['containers'];
+
             // Completar el tracking dentro de la misma transacción.
             // Si esto falla, también deben revertirse voyage, shipment,
             // BLs, items, contenedores y clientes creados por la importación.
@@ -344,8 +427,8 @@ class LoginXmlParser implements ManifestParserInterface
                 statistics: [
                     'format' => 'Login XML',
                     'bills_of_lading' => count($allBillIds),
-                    'containers' => count($transformedData['containers']),
-                    'total_weight_kg' => array_sum(array_column($transformedData['containers'], 'gross_weight_kg')),
+                    'containers' => count($statisticsContainers),
+                    'total_weight_kg' => array_sum(array_column($statisticsContainers, 'gross_weight_kg')),
                     'shipper' => 'Multiple shippers',
                     'consignee' => 'Multiple consignees',
                     'warnings_count' => count($this->warnings)
@@ -1748,6 +1831,10 @@ class LoginXmlParser implements ManifestParserInterface
                     ]
                 );
 
+                if ($this->importingToTargetVoyage && $container->wasRecentlyCreated) {
+                    $this->newContainerIds[$container->id] = $container->id;
+                }
+
                 if (!$container->wasRecentlyCreated) {
                     if (
                         (int) $container->container_type_id
@@ -2246,6 +2333,10 @@ class LoginXmlParser implements ManifestParserInterface
         $fileName = basename($filePath);
         $fileSize = filesize($filePath);
         $fileHash = ManifestImport::generateFileHash($filePath);
+
+        if (ManifestImport::isFileAlreadyImported($fileHash, (int) $context['company_id'])) {
+            throw new Exception('Este archivo ya fue importado anteriormente. Revise el historial de importaciones.');
+        }
         
         return ManifestImport::createForImport([
             'company_id' => $context['company_id'],
@@ -2282,7 +2373,16 @@ class LoginXmlParser implements ManifestParserInterface
             'items' => $itemIds,
         ];
 
-        $importRecord->recordCreatedObjects($createdObjects);
+        if ($this->importingToTargetVoyage) {
+            $this->recordTargetVoyageObjects($importRecord, $voyage, [
+                'shipment' => $shipmentIds,
+                'bill' => $billIds,
+                'item' => $itemIds,
+                'container' => array_values($this->newContainerIds),
+            ]);
+        } else {
+            $importRecord->recordCreatedObjects($createdObjects);
+        }
 
         $completionData = [
             'voyage_id' => $voyage->id,
