@@ -4,7 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, CargoType, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, Port, Shipment, ShipmentItem, Vessel, Voyage};
-use App\Services\Parsers\Concerns\{ExtractsEmbeddedTaxId, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
+use App\Services\Parsers\Concerns\{ExtractsEmbeddedTaxId, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use DomainException;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +19,7 @@ class MscVesselNameParser implements ManifestParserInterface
     use ResolvesExistingClient;
     use ResolvesPorts;
     use ResolvesVoyageCargoType;
+    use ResolvesTargetVoyage;
 
     protected array $warnings = [];
     protected array $createdClientIds = [];
@@ -36,6 +37,18 @@ class MscVesselNameParser implements ManifestParserInterface
             && preg_match('/^BILL OF LADING(?: {2,}|\t+)\S/m', $head) === 1
             && preg_match('/^LOADING PORT NAME(?: {2,}|\t+)\S/m', $head) === 1
             && preg_match('/^DISCHARGE PORT CODE(?: {2,}|\t+)\S/m', $head) === 1;
+    }
+
+    public function detectVesselName(string $filePath): ?string
+    {
+        $head = @file_get_contents($filePath, false, null, 0, 8192);
+        if ($head === false) {
+            return null;
+        }
+        $header = $this->fields(explode("\n", $this->normalizeContent($head), 2)[0]);
+        $name = $this->value($header, 'VESSEL NAME');
+
+        return $name !== '' ? $name : null;
     }
 
     protected function normalizeContent(string $content): string
@@ -270,6 +283,8 @@ class MscVesselNameParser implements ManifestParserInterface
         $this->warnings = [];
         $this->createdClientIds = [];
         $this->clientIdentityIndex = null;
+        $this->skippedRepeatedBills = [];
+        $this->targetShipmentCreated = false;
         $import = null;
         try {
             if (!$this->canParse($filePath)) {
@@ -325,33 +340,48 @@ class MscVesselNameParser implements ManifestParserInterface
                 'parser_config' => ['parser_class' => self::class, 'vessel_id' => $vessel->id],
             ]);
 
-            return DB::transaction(function () use ($data, $companyId, $vessel, $origin, $destination, $cargoType, $types, $voyageNumber, $import) {
-                return Model::withoutEvents(function () use ($data, $companyId, $vessel, $origin, $destination, $cargoType, $types, $voyageNumber, $import) {
-                    if (Voyage::where('company_id', $companyId)->where('lead_vessel_id', $vessel->id)
-                        ->where('voyage_number', $voyageNumber)->exists()) {
-                        throw new DomainException('El viaje ya existe para esta embarcación y empresa. Revise el historial antes de volver a importar.');
+            return DB::transaction(function () use ($data, $companyId, $vessel, $origin, $destination, $cargoType, $types, $voyageNumber, $import, $options) {
+                return Model::withoutEvents(function () use ($data, $companyId, $vessel, $origin, $destination, $cargoType, $types, $voyageNumber, $import, $options) {
+                    $targetVoyage = $this->resolveTargetVoyage($options);
+                    $voyage = $targetVoyage;
+                    $shipment = null;
+                    if (!$targetVoyage) {
+                        if (Voyage::where('company_id', $companyId)->where('lead_vessel_id', $vessel->id)
+                            ->where('voyage_number', $voyageNumber)->exists()) {
+                            throw new DomainException('El viaje ya existe para esta embarcación y empresa. Revise el historial antes de volver a importar.');
+                        }
+                        $voyage = Voyage::create([
+                            'company_id' => $companyId, 'lead_vessel_id' => $vessel->id, 'voyage_number' => $voyageNumber,
+                            'origin_port_id' => $origin->id, 'destination_port_id' => $destination->id,
+                            'origin_country_id' => $origin->country_id, 'destination_country_id' => $destination->country_id,
+                            'departure_date' => null, 'estimated_arrival_date' => null,
+                            'voyage_type' => 'single_vessel', 'status' => 'planning',
+                            'cargo_type' => $this->resolveVoyageCargoTypeForCompany($companyId, $origin, $destination),
+                            'total_cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 0,
+                            'total_container_capacity' => $vessel->container_capacity ?? 0,
+                        ]);
+                        $shipment = Shipment::create([
+                            'voyage_id' => $voyage->id, 'vessel_id' => $vessel->id,
+                            'shipment_number' => 'MSC-' . $voyage->id, 'sequence_in_voyage' => 1,
+                            'vessel_role' => 'single', 'is_lead_vessel' => true, 'status' => 'planning',
+                            'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
+                            'container_capacity' => $vessel->container_capacity ?? 0,
+                        ]);
                     }
-                    $voyage = Voyage::create([
-                        'company_id' => $companyId, 'lead_vessel_id' => $vessel->id, 'voyage_number' => $voyageNumber,
-                        'origin_port_id' => $origin->id, 'destination_port_id' => $destination->id,
-                        'origin_country_id' => $origin->country_id, 'destination_country_id' => $destination->country_id,
-                        'departure_date' => null, 'estimated_arrival_date' => null,
-                        'voyage_type' => 'single_vessel', 'status' => 'planning',
-                        'cargo_type' => $this->resolveVoyageCargoTypeForCompany($companyId, $origin, $destination),
-                        'total_cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 0,
-                        'total_container_capacity' => $vessel->container_capacity ?? 0,
-                    ]);
-                    $shipment = Shipment::create([
-                        'voyage_id' => $voyage->id, 'vessel_id' => $vessel->id,
-                        'shipment_number' => 'MSC-' . $voyage->id, 'sequence_in_voyage' => 1,
-                        'vessel_role' => 'single', 'is_lead_vessel' => true, 'status' => 'planning',
-                        'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
-                        'container_capacity' => $vessel->container_capacity ?? 0,
-                    ]);
                     $bills = $items = $containers = $createdContainers = [];
                     $totalWeight = 0;
                     foreach ($data as $billIndex => $source) {
                         $h = $source['header'];
+                        if ($targetVoyage && $this->skipRepeatedBill($voyage, $this->value($h, 'BILL OF LADING'))) {
+                            continue;
+                        }
+                        if ($targetVoyage && $shipment === null) {
+                            $shipment = $this->resolveTargetShipment($voyage, (int) $options['vessel_id'], [
+                                'shipment_number' => 'MSC-' . $voyage->id, 'status' => 'planning',
+                                'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
+                                'container_capacity' => $vessel->container_capacity ?? 0,
+                            ]);
+                        }
                         $shipper = $this->party($h, 'SHIPPER', $origin, $companyId);
                         $consignee = $this->party($h, 'CONSIGNEE', $destination, $companyId);
                         $notify = $this->party($h, 'NOTIFY', $destination, $companyId);
@@ -437,15 +467,46 @@ class MscVesselNameParser implements ManifestParserInterface
                             $this->warnings[] = 'Conocimiento ' . ($billIndex + 1) . ': la tara total difiere de la suma por sección; se conservaron los valores de origen.';
                         }
                     }
-                    $shipment->update(['cargo_weight_loaded' => $totalWeight, 'containers_loaded' => count($containers)]);
-                    $voyage->update(['total_cargo_weight_loaded' => $totalWeight, 'total_containers_loaded' => count($containers)]);
+                    if ($targetVoyage) {
+                        $warning = $this->repeatedBillsWarning();
+                        if ($warning !== null) {
+                            $this->warnings[] = $warning;
+                        }
+                    }
                     $stats = ['processed_bls' => count($bills), 'processed_items' => count($items),
                         'processed_containers' => count($containers), 'container_associations' => count($items), 'import_id' => $import->id];
-                    $import->recordExplicitlyCreatedObjects([
-                        'voyage' => [$voyage->id], 'shipment' => [$shipment->id],
-                        'bill' => array_map(fn ($b) => $b->id, $bills), 'item' => array_map(fn ($i) => $i->id, $items),
-                        'container' => $createdContainers, 'client' => $this->createdClientIds, 'port' => [],
-                    ]);
+                    if ($targetVoyage) {
+                        $this->recordTargetVoyageObjects($import, $voyage, [
+                            'shipment' => $shipment ? [$shipment->id] : [],
+                            'bill' => array_map(fn ($b) => $b->id, $bills),
+                            'item' => array_map(fn ($i) => $i->id, $items),
+                            'container' => $createdContainers,
+                        ]);
+                        if ($bills === []) {
+                            $message = 'MSC: todos los conocimientos ya existen en el viaje. No se agregó carga.';
+                            $import->markAsFailed([$message], [
+                                'import_statistics' => $stats, 'warnings' => $this->warnings,
+                                'warnings_count' => count($this->warnings),
+                            ]);
+
+                            return ManifestParseResult::failure([$message], $this->warnings, $stats);
+                        }
+                        $shipment->unsetRelation('shipmentItems');
+                        $shipment->recalculateItemStats();
+                        $shipment->update(['containers_loaded' => DB::table('container_shipment_item')
+                            ->whereIn('shipment_item_id', $shipment->shipmentItems()->select('shipment_items.id'))
+                            ->distinct()->count('container_id')]);
+                        $voyage->unsetRelation('shipments');
+                        $voyage->recalculateShipmentStats();
+                    } else {
+                        $shipment->update(['cargo_weight_loaded' => $totalWeight, 'containers_loaded' => count($containers)]);
+                        $voyage->update(['total_cargo_weight_loaded' => $totalWeight, 'total_containers_loaded' => count($containers)]);
+                        $import->recordExplicitlyCreatedObjects([
+                            'voyage' => [$voyage->id], 'shipment' => [$shipment->id],
+                            'bill' => array_map(fn ($b) => $b->id, $bills), 'item' => array_map(fn ($i) => $i->id, $items),
+                            'container' => $createdContainers, 'client' => $this->createdClientIds, 'port' => [],
+                        ]);
+                    }
                     $this->warnings = array_values(array_unique($this->warnings));
                     $completion = ['voyage_id' => $voyage->id, 'import_statistics' => $stats,
                         'warnings' => $this->warnings, 'warnings_count' => count($this->warnings)];
