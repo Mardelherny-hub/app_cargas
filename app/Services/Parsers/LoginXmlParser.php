@@ -2333,6 +2333,10 @@ class LoginXmlParser implements ManifestParserInterface
         $fileName = basename($filePath);
         $fileSize = filesize($filePath);
         $fileHash = ManifestImport::generateFileHash($filePath);
+
+        if (ManifestImport::isFileAlreadyImported($fileHash, (int) $context['company_id'])) {
+            throw new Exception('Este archivo ya fue importado anteriormente. Revise el historial de importaciones.');
+        }
         
         return ManifestImport::createForImport([
             'company_id' => $context['company_id'],
