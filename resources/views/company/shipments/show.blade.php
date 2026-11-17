@@ -143,7 +143,7 @@
                 <div class="bg-indigo-500 rounded-lg p-4 text-white">
                     <div class="flex items-center justify-between">
                         <div>
-                            <div class="text-2xl font-bold">{{ number_format($stats['cargo_utilization_percentage'], 1) }}%</div>
+                            <div class="text-2xl font-bold">{{ ($stats['cargo_utilization_percentage'] ?? null) !== null ? number_format($stats['cargo_utilization_percentage'], 1) . '%' : '—' }}</div>
                             <div class="text-sm opacity-90">Utilización</div>
                         </div>
                         <svg class="w-8 h-8 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -178,11 +178,11 @@
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Ruta:</span>
-                                            <span class="text-xs text-gray-900">{{ $shipment->voyage->originPort->name }} → {{ $shipment->voyage->destinationPort->name }}</span>
+                                            <span class="text-xs text-gray-900">{{ $shipment->voyage->originPort?->name ?? '—' }} → {{ $shipment->voyage->destinationPort?->name ?? '—' }}</span>
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Salida:</span>
-                                            <span class="text-xs text-gray-900">{{ $shipment->voyage->departure_date?->format('d/m/Y H:i') ?? 'No informado' }}</span>
+                                            <span class="text-xs text-gray-900">{{ $shipment->voyage->departure_date?->format('d/m/Y H:i') ?? '—' }}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -197,16 +197,16 @@
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Tipo:</span>
-                                            <span class="text-xs text-gray-900">{{ $shipment->vessel->vesselType->name ?? 'Barcaza Estándar de Contenedores' }}</span>
+                                            <span class="text-xs text-gray-900">{{ $shipment->vessel->vesselType?->name ?? '—' }}</span>
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Propietario:</span>
-                                            <span class="text-xs text-gray-900">{{ $shipment->voyage->company->commercial_name ?? 'ARMADORES DEL RIO SA' }}</span>
+                                            <span class="text-xs text-gray-900">{{ $shipment->vessel->owner?->legal_name ?? '—' }}</span>
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Rol:</span>
-                                            <span class="text-xs text-gray-900">Embarcación Única 
-                                                <span class="ml-1 text-blue-600">Líder</span>
+                                            <span class="text-xs text-gray-900">{{ ['single' => 'Embarcación Única', 'lead' => 'Líder', 'towed' => 'Remolcada', 'pushed' => 'Empujada', 'escort' => 'Escolta'][$shipment->vessel_role] ?? '—' }}
+                                                @if($shipment->is_lead_vessel && $shipment->vessel_role !== 'lead')<span class="ml-1 text-blue-600">Líder</span>@endif
                                             </span>
                                         </div>
                                     </div>
@@ -220,22 +220,22 @@
                                     <div class="grid grid-cols-2 gap-4">
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Nombre:</span>
-                                            <span class="text-xs text-gray-900">{{ $shipment->captain->full_name ?? 'Alberto Ramón Mendoza Torres' }}</span>
+                                            <span class="text-xs text-gray-900">{{ $shipment->captain->full_name ?? '—' }}</span>
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Licencia:</span>
                                             <span class="text-xs text-gray-900">
-                                                {{ $shipment->captain->license_number ?? 'PNA-AR-000789' }}
-                                                <span class="ml-1 text-green-600 text-xs">Válid</span>
+                                                {{ $shipment->captain->license_number ?? '—' }}
+                                                @if($shipment->captain->license_status !== null)<span class="ml-1 text-xs">{{ $shipment->captain->license_status }}</span>@endif
                                             </span>
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Experiencia:</span>
-                                            <span class="text-xs text-gray-900">{{ $shipment->captain->years_of_experience ?? '35' }} años</span>
+                                            <span class="text-xs text-gray-900">{{ $shipment->captain->years_of_experience !== null ? $shipment->captain->years_of_experience . ' años' : '—' }}</span>
                                         </div>
                                         <div class="flex justify-between">
                                             <span class="text-xs text-gray-500">Contacto:</span>
-                                            <span class="text-xs text-gray-900">+54 376 442-3456</span>
+                                            <span class="text-xs text-gray-900">{{ $shipment->captain->phone ?? '—' }}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -253,24 +253,24 @@
                                 <div>
                                     <div class="flex justify-between text-sm mb-2">
                                         <span>Cargado / Capacidad</span>
-                                        <span>{{ number_format($shipment->cargo_weight_loaded ?? 4.2, 1) }}t / {{ number_format($shipment->cargo_capacity_tons ?? 200, 1) }}t</span>
+                                        <span>{{ $shipment->cargo_weight_loaded !== null ? number_format($shipment->cargo_weight_loaded / 1000, 1) . 't' : '—' }} / {{ $shipment->cargo_capacity_tons !== null ? number_format($shipment->cargo_capacity_tons, 1) . 't' : '—' }}</span>
                                     </div>
                                     <div class="w-full bg-gray-200 rounded-full h-3">
-                                        <div class="bg-blue-600 h-3 rounded-full" style="width: {{ min(100, $stats['cargo_utilization_percentage'] ?? 0.2) }}%"></div>
+                                        <div class="bg-blue-600 h-3 rounded-full" style="width: {{ min(100, $stats['cargo_utilization_percentage'] ?? 0) }}%"></div>
                                     </div>
-                                    <div class="text-xs text-gray-500 mt-1">{{ number_format($stats['cargo_utilization_percentage'] ?? 0.2, 1) }}% utilizado</div>
+                                    <div class="text-xs text-gray-500 mt-1">{{ ($stats['cargo_utilization_percentage'] ?? null) !== null ? number_format($stats['cargo_utilization_percentage'], 1) . '% utilizado' : '—' }}</div>
                                 </div>
 
                                 {{-- Contenedores --}}
                                 <div>
                                     <div class="flex justify-between text-sm mb-2">
                                         <span>Cargados / Capacidad</span>
-                                        <span>{{ $shipment->containers_loaded ?? 0 }} / {{ $shipment->container_capacity ?? 50 }}</span>
+                                        <span>{{ $shipment->containers_loaded ?? '—' }} / {{ $shipment->container_capacity ?? '—' }}</span>
                                     </div>
                                     <div class="w-full bg-gray-200 rounded-full h-3">
-                                        <div class="bg-green-600 h-3 rounded-full" style="width: {{ min(100, $stats['container_utilization_percentage'] ?? 0) }}%"></div>
+                                        <div class="bg-green-600 h-3 rounded-full" style="width: {{ min(100, ($shipment->containers_loaded !== null && $shipment->container_capacity !== null) ? ($stats['container_utilization_percentage'] ?? 0) : 0) }}%"></div>
                                     </div>
-                                    <div class="text-xs text-gray-500 mt-1">{{ number_format($stats['container_utilization_percentage'] ?? 0, 1) }}% utilizado</div>
+                                    <div class="text-xs text-gray-500 mt-1">{{ $shipment->containers_loaded !== null && $shipment->container_capacity !== null && ($stats['container_utilization_percentage'] ?? null) !== null ? number_format($stats['container_utilization_percentage'], 1) . '% utilizado' : '—' }}</div>
                                 </div>
                             </div>
                         </div>
@@ -349,13 +349,13 @@
                             {{-- Lista de Conocimientos --}}
                             @if($shipment->billsOfLading && $shipment->billsOfLading->count() > 0)
                             <div class="space-y-3">
-                            @foreach($shipment->billsOfLading as $bill)
+                            @foreach($shipment->billsOfLading->take(10) as $bill)
                             <div class="flex items-center justify-between p-3 border rounded-lg">
                             <div class="flex-1">
-                            <div class="font-medium text-sm">{{ $bill->bill_number ?? 'BL-2025-0001-250811' }}</div>
+                            <div class="font-medium text-sm">{{ $bill->bill_number ?? '—' }}</div>
                             <div class="text-xs text-gray-500">
-                            {{ $bill->shipper->legal_name ?? 'Exportadora Buenos Aires S.A.' }} →
-                            {{ $bill->consignee->legal_name ?? 'Terminal Villeta S.A.' }}
+                            {{ $bill->shipper->legal_name ?? '—' }} →
+                            {{ $bill->consignee->legal_name ?? '—' }}
                             </div>
                             </div>
                             <div class="flex items-center space-x-4">
@@ -384,6 +384,7 @@
                             </div>
                             @endforeach
                             </div>
+                            <a href="{{ route('company.bills-of-lading.index', ['shipment_id' => $shipment->id]) }}" class="inline-block mt-3 text-sm text-blue-600 hover:text-blue-500">Ver los {{ $shipment->billsOfLading->count() }} conocimientos</a>
                             @else
                             <div class="text-center py-6">
                             <div class="text-sm text-gray-500 mb-2">El shipment debe estar cargado para crear conocimientos</div>
@@ -460,23 +461,23 @@
                             <dl class="space-y-2">
                                 <div class="flex justify-between">
                                     <dt class="text-sm text-gray-500">Mercancías Peligrosas</dt>
-                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['dangerous_goods_count'] ?? 0 }}</dd>
+                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['dangerous_goods_count'] ?? '—' }}</dd>
                                 </div>
                                 <div class="flex justify-between">
                                     <dt class="text-sm text-gray-500">Mercancías Perecederas</dt>
-                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['perishable_goods_count'] ?? 0 }}</dd>
+                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['perishable_goods_count'] ?? '—' }}</dd>
                                 </div>
                                 <div class="flex justify-between">
                                     <dt class="text-sm text-gray-500">Requieren Refrigeración</dt>
-                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['refrigerated_goods_count'] ?? 0 }}</dd>
+                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['refrigerated_goods_count'] ?? '—' }}</dd>
                                 </div>
                                 <div class="flex justify-between">
                                     <dt class="text-sm text-gray-500">Conocimientos de Embarque</dt>
-                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['total_bills_of_lading'] ?? 1 }}</dd>
+                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['total_bills_of_lading'] ?? '—' }}</dd>
                                 </div>
                                 <div class="flex justify-between">
                                     <dt class="text-sm text-gray-500">Items con Discrepancias</dt>
-                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['items_with_discrepancies'] ?? 0 }}</dd>
+                                    <dd class="text-sm font-medium text-gray-900">{{ $stats['items_with_discrepancies'] ?? '—' }}</dd>
                                 </div>
                             </dl>
                         </div>
@@ -489,27 +490,19 @@
                             <div class="space-y-2">
                                 <div class="flex items-center justify-between">
                                     <span class="text-sm text-gray-500">Seguridad Aprobada</span>
-                                    <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                                    </svg>
+                                    <span class="text-sm text-gray-900">{{ $shipment->safety_approved === null ? '—' : ($shipment->safety_approved ? 'Sí' : 'No') }}</span>
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <span class="text-sm text-gray-500">Aduana Liberada</span>
-                                    <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                                    </svg>
+                                    <span class="text-sm text-gray-900">{{ $shipment->customs_cleared === null ? '—' : ($shipment->customs_cleared ? 'Sí' : 'No') }}</span>
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <span class="text-sm text-gray-500">Documentación Completa</span>
-                                    <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                                    </svg>
+                                    <span class="text-sm text-gray-900">{{ $shipment->documentation_complete === null ? '—' : ($shipment->documentation_complete ? 'Sí' : 'No') }}</span>
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <span class="text-sm text-gray-500">Carga Inspeccionada</span>
-                                    <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                                    </svg>
+                                    <span class="text-sm text-gray-900">{{ $shipment->cargo_inspected === null ? '—' : ($shipment->cargo_inspected ? 'Sí' : 'No') }}</span>
                                 </div>
                             </div>
                         </div>
