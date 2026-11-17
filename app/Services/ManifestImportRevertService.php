@@ -49,6 +49,10 @@ class ManifestImportRevertService
 
             $summary = $this->deleteCreatedObjects($import);
 
+            if ($this->isTargeted($import)) {
+                $this->recalculateReceivingShipments($import);
+            }
+
             $snapshot = $import->parser_config['convoy_conversion'] ?? null;
             if (is_array($snapshot)) {
                 $this->convoyConversion->restore($snapshot);
@@ -195,6 +199,21 @@ class ManifestImportRevertService
                 );
             }
         }
+    }
+
+    /**
+     * Las cargas existentes que recibieron conocimientos recalculan su peso
+     * desde los ítems que les quedan; el viaje se recalcula desde sus cargas.
+     */
+    private function recalculateReceivingShipments(ManifestImport $import): void
+    {
+        $shipmentIds = BillOfLading::withTrashed()
+            ->whereIn('id', $import->created_bill_ids ?? [])
+            ->pluck('shipment_id')
+            ->unique()
+            ->diff($import->created_shipment_ids ?? []);
+
+        Shipment::whereIn('id', $shipmentIds)->get()->each->recalculateItemStats();
     }
 
     /**
