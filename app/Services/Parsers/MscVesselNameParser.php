@@ -337,7 +337,7 @@ class MscVesselNameParser implements ManifestParserInterface
             }
             $voyageNumber = $this->value($header, 'VOYAGE');
             $hash = ManifestImport::generateFileHash($filePath);
-            if (empty($options['target_voyage_id']) && ManifestImport::isFileAlreadyImported($hash, $companyId)) {
+            if (ManifestImport::isFileAlreadyImported($hash, $companyId)) {
                 throw new DomainException('El archivo ya fue importado. Revise el historial de importaciones.');
             }
             $import = ManifestImport::createForImport([
