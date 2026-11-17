@@ -4,7 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, Shipment, ShipmentItem, Vessel, Voyage};
-use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesPorts, ResolvesVoyageCargoType};
+use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use Carbon\Carbon;
 use DomainException;
@@ -16,7 +16,7 @@ use Throwable;
 
 class DonToyoExcelParser implements ManifestParserInterface
 {
-    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesPorts, ResolvesVoyageCargoType;
+    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType;
 
     private const HEADERS = [
         'BUQUE' => ['Armador', 'CODIGO IMO BUQUE:', 'VIAJE:', 'IMPO/EXPO'],
@@ -230,7 +230,7 @@ class DonToyoExcelParser implements ManifestParserInterface
         }
     }
 
-    /** Resolve all catalogs and clients without modifying existing records. */
+    /** Validate catalogs and ports without modifying existing records. */
     protected function preflight(array $data, array $options): array
     {
         $user = auth()->user();
@@ -286,14 +286,6 @@ class DonToyoExcelParser implements ManifestParserInterface
         if (!$cargo || !$packaging) {
             throw new DomainException('Falta clasificación activa CONTENEDORES / CONTENEDOR en el catálogo.');
         }
-        $clients = [];
-        foreach ($data['bills'] as $row) {
-            foreach (['Shipper', 'Cnee'] as $role) {
-                // CUIT SIM identifies the customs party, not necessarily either named party.
-                $name = $row[$role];
-                $clients[$name] ??= $this->clientPlan($name);
-            }
-        }
         $existingContainers = Container::whereIn('container_number', array_merge(...array_map(fn ($rows) => array_column($rows, 'CONTENEDOR'), array_values($data['containers']))))->get()->keyBy('container_number');
         foreach ($data['containers'] as $rows) {
             foreach ($rows as $row) {
@@ -307,29 +299,32 @@ class DonToyoExcelParser implements ManifestParserInterface
         $origin = $ports[$first['Carga']];
         $destination = $ports[$first['Descarga']];
         $cargoType = $this->resolveVoyageCargoTypeForCompany((int) $companyId, $origin, $destination);
-        return compact('companyId', 'vessel', 'voyageNumber', 'types', 'ports', 'cargo', 'packaging', 'clients', 'existingContainers', 'origin', 'destination', 'cargoType') + ['departure' => $this->dateOption($options['departure_date'] ?? null)];
+        return compact('companyId', 'vessel', 'voyageNumber', 'types', 'ports', 'cargo', 'packaging', 'existingContainers', 'origin', 'destination', 'cargoType') + ['departure' => $this->dateOption($options['departure_date'] ?? null)];
     }
 
-    private function clientPlan(string $name): array
+    private function clientPlan(string $name, int $countryHint, array &$warnings): array
     {
         $tax = $this->resolveTaxId(null, $name);
-        $matches = $tax ? Client::where('tax_id', $tax)->get() : Client::where(function ($q) use ($name) {
-            $q->where('legal_name', $name)->orWhere('commercial_name', $name);
-        })->get();
-        if ($matches->count() > 1) {
-            throw new DomainException("Cliente {$name}: hay varias fichas coincidentes; resuelva la duplicidad antes de importar.");
+        $countryId = $countryHint;
+        $documentId = null;
+        if ($tax !== null) {
+            if (!in_array(strlen($tax), [7, 8, 9, 11], true)) {
+                throw new DomainException("Cliente {$name}: identificación fiscal sin país y tipo documental admitidos.");
+            }
+            $countryCode = strlen($tax) === 11 ? 'AR' : 'PY';
+            $countryId = Country::where('alpha2_code', $countryCode)->value('id');
+            $documentId = DocumentType::where('country_id', $countryId)->where('code', $countryCode === 'AR' ? 'CUIT' : 'RUC')->where('active', true)->value('id');
+            if (!$countryId || !$documentId) {
+                throw new DomainException("Cliente {$name}: falta país o tipo documental activo en el catálogo.");
+            }
         }
-        if ($matches->count() === 1) {
-            return ['existing' => $matches->first()];
+        $resolved = $this->resolveExistingClient($tax, $name, (int) $countryId, $documentId);
+        $warnings = array_values(array_unique(array_merge($warnings, $resolved['warnings'])));
+        if ($resolved['client'] !== null) {
+            return ['existing' => $resolved['client']];
         }
-        if (!$tax || !in_array(strlen($tax), [7, 8, 9, 11], true)) {
+        if ($tax === null) {
             throw new DomainException("Cliente {$name}: falta ficha existente o identificación fiscal que permita determinar país y tipo documental. CUIT SIM no se asigna automáticamente al Shipper ni al Cnee.");
-        }
-        $countryCode = strlen($tax) === 11 ? 'AR' : 'PY';
-        $countryId = Country::where('alpha2_code', $countryCode)->value('id');
-        $documentId = DocumentType::where('country_id', $countryId)->where('code', $countryCode === 'AR' ? 'CUIT' : 'RUC')->where('active', true)->value('id');
-        if (!$countryId || !$documentId) {
-            throw new DomainException("Cliente {$name}: falta país o tipo documental activo en el catálogo.");
         }
         return ['create' => ['legal_name' => $name, 'commercial_name' => $name, 'tax_id' => $tax, 'country_id' => $countryId, 'document_type_id' => $documentId, 'status' => 'active']];
     }
@@ -377,13 +372,23 @@ class DonToyoExcelParser implements ManifestParserInterface
                     $this->guardVoyageNumberIsFree($plan['voyageNumber'], (int) $plan['vessel']->id);
                     $created = array_fill_keys(['voyage', 'shipment', 'bill', 'item', 'container', 'client', 'port'], []);
                     $clients = [];
-                    foreach ($plan['clients'] as $name => $clientPlan) {
-                        $client = $clientPlan['existing'] ?? null;
-                        if (!$client) {
-                            $client = Client::create($clientPlan['create'] + ['created_by_company_id' => $plan['companyId'], 'verified_at' => now()]);
-                            $created['client'][] = $client->id;
+                    $this->clientIdentityIndex = null;
+                    foreach ($data['bills'] as $row) {
+                        foreach (['Shipper', 'Cnee'] as $role) {
+                            $name = $row[$role];
+                            if (isset($clients[$name])) {
+                                continue;
+                            }
+                            // Origin is only a hint for existing records, never a country for creation.
+                            $clientPlan = $this->clientPlan($name, (int) $plan['ports'][$row['Origen']]->country_id, $warnings);
+                            $client = $clientPlan['existing'] ?? null;
+                            if (!$client) {
+                                $client = Client::create($clientPlan['create'] + ['created_by_company_id' => $plan['companyId'], 'verified_at' => now()]);
+                                $this->rememberClientIdentity($client);
+                                $created['client'][] = $client->id;
+                            }
+                            $clients[$name] = $client;
                         }
-                        $clients[$name] = $client;
                     }
                     $voyage = Voyage::create([
                         'company_id' => $plan['companyId'], 'lead_vessel_id' => $plan['vessel']->id,
@@ -456,6 +461,12 @@ class DonToyoExcelParser implements ManifestParserInterface
                             ]);
                         }
                     }
+                    $documentaryWeight = number_format(array_sum(array_column($data['bills'], 'weight')), 2, '.', '');
+                    $shipment->update(['cargo_weight_loaded' => $documentaryWeight]);
+                    $voyage->update([
+                        'total_cargo_weight' => $documentaryWeight,
+                        'total_cargo_weight_loaded' => $documentaryWeight,
+                    ]);
                     $import->recordExplicitlyCreatedObjects($created);
                     $statistics = ['bills_created' => count($bills), 'items_created' => count($created['item']), 'containers_processed' => count($containers), 'containers_created' => count($created['container']), 'import_id' => $import->id];
                     $import->markAsCompletedWithWarnings(['voyage_id' => $voyage->id, 'warnings' => $warnings, 'warnings_count' => count($warnings), 'import_statistics' => $statistics, 'processing_time_seconds' => round(microtime(true) - $started, 2)]);
