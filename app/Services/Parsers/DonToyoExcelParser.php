@@ -362,10 +362,14 @@ class DonToyoExcelParser implements ManifestParserInterface
                     $warnings[] = "BL {$number}: el volumen de BLS difiere de CONTENEDORES; se conservan ambos.";
                 }
             }
+            $hash = ManifestImport::generateFileHash($filePath);
+            if (ManifestImport::isFileAlreadyImported($hash, (int) $plan['companyId'])) {
+                return ManifestParseResult::failure(['El archivo ya fue importado. Revise el historial de importaciones.']);
+            }
             $import = ManifestImport::createForImport([
                 'company_id' => $plan['companyId'], 'user_id' => auth()->id(),
                 'file_name' => basename($filePath), 'file_format' => 'don_toyo_excel',
-                'file_size_bytes' => filesize($filePath), 'file_hash' => hash_file('sha256', $filePath),
+                'file_size_bytes' => filesize($filePath), 'file_hash' => $hash,
                 'parser_config' => ['parser_class' => self::class, 'options' => $options],
             ]);
             return DB::transaction(function () use ($data, $plan, $import, $warnings, $started) {
