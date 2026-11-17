@@ -297,9 +297,6 @@ class MscVesselNameParser implements ManifestParserInterface
                 || mb_strtoupper(trim($vessel->name)) !== mb_strtoupper($this->value($header, 'VESSEL NAME'))) {
                 throw new DomainException('Seleccione vessel_id de su empresa que coincida con la embarcación del archivo MSC.');
             }
-            if ($vessel->cargo_capacity_tons === null || $vessel->container_capacity === null) {
-                throw new DomainException('MSC: complete las capacidades de la embarcación seleccionada antes de importar.');
-            }
             $origin = $this->loadingPort($this->value($header, 'LOADING PORT NAME'));
             $destination = $this->resolvePortStrict($this->value($header, 'DISCHARGE PORT CODE'));
             $cargoType = CargoType::where('code', 'CON001')->where('active', true)->first();
@@ -341,15 +338,15 @@ class MscVesselNameParser implements ManifestParserInterface
                         'departure_date' => null, 'estimated_arrival_date' => null,
                         'voyage_type' => 'single_vessel', 'status' => 'planning',
                         'cargo_type' => $this->resolveVoyageCargoTypeForCompany($companyId, $origin, $destination),
-                        'total_cargo_capacity_tons' => $vessel->cargo_capacity_tons,
-                        'total_container_capacity' => $vessel->container_capacity,
+                        'total_cargo_capacity_tons' => $vessel->cargo_capacity_tons ?? 0,
+                        'total_container_capacity' => $vessel->container_capacity ?? 0,
                     ]);
                     $shipment = Shipment::create([
                         'voyage_id' => $voyage->id, 'vessel_id' => $vessel->id,
                         'shipment_number' => 'MSC-' . $voyage->id, 'sequence_in_voyage' => 1,
                         'vessel_role' => 'single', 'is_lead_vessel' => true, 'status' => 'planning',
                         'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
-                        'container_capacity' => $vessel->container_capacity,
+                        'container_capacity' => $vessel->container_capacity ?? 0,
                     ]);
                     $bills = $items = $containers = $createdContainers = [];
                     $totalWeight = 0;
