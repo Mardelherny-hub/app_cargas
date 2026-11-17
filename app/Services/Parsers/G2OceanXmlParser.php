@@ -18,6 +18,7 @@ use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
+use App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 use App\Models\ManifestImport;
 use App\Models\CargoType;
 use App\Models\PackagingType;
@@ -47,6 +48,7 @@ class G2OceanXmlParser implements ManifestParserInterface
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
+    use ResolvesTargetVoyage;
 
     protected array $stats = [
         'processed' => 0,
@@ -106,6 +108,16 @@ class G2OceanXmlParser implements ManifestParserInterface
         array $options = []
     ): ManifestParseResult {
         $startTime = microtime(true);
+        $this->stats = [
+            'processed' => 0,
+            'errors' => 0,
+            'warnings' => [],
+            'created_voyages' => 0,
+            'created_shipments' => 0,
+            'created_bills' => 0,
+        ];
+        $this->skippedRepeatedBills = [];
+        $this->targetShipmentCreated = false;
 
         try {
             if (empty($options['vessel_id'])) {
@@ -136,10 +148,12 @@ class G2OceanXmlParser implements ManifestParserInterface
                 );
             }
 
-            $duplicateCheck =
-                $this->checkForDuplicateBills($billsData);
+            $hasTarget = !empty($options['target_voyage_id']);
+            $duplicateCheck = $hasTarget
+                ? null
+                : $this->checkForDuplicateBills($billsData);
 
-            if ($duplicateCheck['all_duplicates']) {
+            if (!$hasTarget && $duplicateCheck['all_duplicates']) {
                 throw new Exception(
                     'Todos los conocimientos de embarque '
                     . 'del archivo ya existen.'
@@ -151,19 +165,19 @@ class G2OceanXmlParser implements ManifestParserInterface
                     $billsData,
                     $options,
                     $importRecord,
-                    $startTime
+                    $startTime,
+                    $hasTarget
                 ) {
                     $firstBL = reset($billsData);
 
-                    $voyage = $this->createVoyage(
-                        $firstBL,
-                        $options
-                    );
+                    $voyage = $hasTarget
+                        ? $this->resolveTargetVoyage($options)
+                        : $this->createVoyage($firstBL, $options);
 
-                    $shipment = $this->createShipment(
-                        $voyage,
-                        $options
-                    );
+                    // Con destino, crear la carga solo al encontrar un BL nuevo.
+                    $shipment = $hasTarget
+                        ? null
+                        : $this->createShipment($voyage, $options);
 
                     $createdBills = [];
                     $createdItems = [];
@@ -175,8 +189,12 @@ class G2OceanXmlParser implements ManifestParserInterface
                                 'blNo'
                             );
 
+                        if ($hasTarget && $this->skipRepeatedBill($voyage, $blNumber)) {
+                            continue;
+                        }
+
                         if (
-                            BillOfLading::where(
+                            !$hasTarget && BillOfLading::where(
                                 'bill_number',
                                 $blNumber
                             )->exists()
@@ -185,6 +203,11 @@ class G2OceanXmlParser implements ManifestParserInterface
                                 "BL {$blNumber} ya existe, omitiendo";
 
                             continue;
+                        }
+
+                        if ($hasTarget && $shipment === null) {
+                            $shipment = $this->createShipment($voyage, $options);
+                            $this->stats['created_shipments'] = (int) $this->targetShipmentCreated;
                         }
 
                         /*
@@ -198,7 +221,9 @@ class G2OceanXmlParser implements ManifestParserInterface
 
                         $createdBills[] = $bill;
 
-                        $items = $this->createShipmentItems(
+                        $items = $hasTarget
+                            ? ShipmentItem::withoutEvents(fn () => $this->createShipmentItems($bill, $blData))
+                            : $this->createShipmentItems(
                             $bill,
                             $blData
                         );
@@ -211,20 +236,64 @@ class G2OceanXmlParser implements ManifestParserInterface
                         $this->stats['created_bills']++;
                     }
 
+                    if ($hasTarget) {
+                        if ($warning = $this->repeatedBillsWarning()) {
+                            $this->stats['warnings'][] = $warning;
+                        }
+
+                        $this->recordTargetVoyageObjects($importRecord, $voyage, [
+                            'shipment' => $shipment ? [$shipment->id] : [],
+                            'bill' => array_map(fn ($bill) => $bill->id, $createdBills),
+                            'item' => array_map(fn ($item) => $item->id, $createdItems),
+                            'container' => [],
+                        ]);
+
+                        $completionData = [
+                            'warnings' => $this->stats['warnings'],
+                            'warnings_count' => count($this->stats['warnings']),
+                            'processing_time_seconds' => round(microtime(true) - $startTime, 2),
+                            'import_statistics' => array_merge($this->stats, [
+                                'shipment_id' => $shipment?->id,
+                                'processed_items' => count($createdItems),
+                                'total_bills' => count($createdBills),
+                            ]),
+                        ];
+
+                        if (empty($createdBills)) {
+                            $message = 'Todos los conocimientos del archivo ya existen en el viaje destino. No se agregó carga.';
+                            $importRecord->markAsFailed([$message], $completionData);
+
+                            return ManifestParseResult::failure(
+                                [$message],
+                                $this->stats['warnings'],
+                                array_merge($completionData['import_statistics'], ['import_id' => $importRecord->id])
+                            );
+                        }
+
+                        $completionData['notes'] = 'Importación G2Ocean XML agregada al viaje existente';
+                        if ($this->stats['warnings'] !== []) {
+                            $importRecord->markAsCompletedWithWarnings($completionData);
+                        } else {
+                            $importRecord->markAsCompleted($completionData);
+                        }
+                    }
+
                     if (empty($createdBills)) {
                         throw new Exception(
                             'No se creó ningún Bill of Lading.'
                         );
                     }
 
-                    $this->completeImportRecord(
-                        $importRecord,
-                        $voyage,
-                        $createdBills,
-                        $createdItems,
-                        [],
-                        $startTime
-                    );
+                    if (!$hasTarget) {
+                        $this->completeImportRecord(
+                            $importRecord,
+                            $voyage,
+                            $createdBills,
+                            $createdItems,
+                            [],
+                            $startTime
+                        );
+                    }
 
                     return ManifestParseResult::success(
                         voyage: $voyage,
@@ -273,6 +342,33 @@ class G2OceanXmlParser implements ManifestParserInterface
         }
     }
 
+
+    public function detectVesselName(string $filePath): ?string
+    {
+        if (!is_file($filePath) || !is_readable($filePath)) {
+            return null;
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $xml = simplexml_load_file($filePath, SimpleXMLElement::class, LIBXML_NONET);
+            if ($xml === false) {
+                return null;
+            }
+
+            foreach ($xml->bill_of_lading as $bill) {
+                $name = trim((string) ($bill->bl_header->vesselName ?? ''));
+                if ($name !== '') {
+                    return $name;
+                }
+            }
+
+            return null;
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+    }
 
     /**
      * Extraer datos del envelope
@@ -1040,6 +1136,22 @@ class G2OceanXmlParser implements ManifestParserInterface
         Voyage $voyage,
         array $options
     ): Shipment {
+        if (!empty($options['target_voyage_id'])) {
+            $vessel = Vessel::findOrFail((int) $options['vessel_id']);
+            if ((int) $vessel->company_id !== (int) $voyage->company_id) {
+                throw new Exception('La embarcación seleccionada no pertenece a la empresa importadora.');
+            }
+
+            return Shipment::withoutEvents(fn () => $this->resolveTargetShipment($voyage, (int) $options['vessel_id'], [
+                'shipment_number' => 'G2O-SHIP-' . $voyage->id,
+                'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
+                'container_capacity' => $vessel->container_capacity ?? 0,
+                'status' => 'planning',
+                'active' => true,
+                'created_by_user_id' => auth()->id(),
+            ]));
+        }
+
         $vessel = Vessel::findOrFail(
             $voyage->lead_vessel_id
         );
