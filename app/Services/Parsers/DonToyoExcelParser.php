@@ -374,7 +374,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                 }
             }
             $hash = ManifestImport::generateFileHash($filePath);
-            if (!$hasTarget && ManifestImport::isFileAlreadyImported($hash, (int) $plan['companyId'])) {
+            if (ManifestImport::isFileAlreadyImported($hash, (int) $plan['companyId'])) {
                 return ManifestParseResult::failure(['El archivo ya fue importado. Revise el historial de importaciones.']);
             }
             $import = ManifestImport::createForImport([
@@ -400,9 +400,6 @@ class DonToyoExcelParser implements ManifestParserInterface
                             $statistics = ['bills_created' => 0, 'items_created' => 0, 'containers_processed' => 0, 'containers_created' => 0, 'import_id' => $import->id];
                             $import->markAsCompletedWithWarnings(['voyage_id' => $voyage->id, 'warnings' => $warnings, 'warnings_count' => count($warnings), 'import_statistics' => $statistics, 'processing_time_seconds' => round(microtime(true) - $started, 2)]);
                             return ManifestParseResult::success($voyage, [], [], [], $warnings, $statistics);
-                        }
-                        if (ManifestImport::isFileAlreadyImported($import->file_hash, (int) $import->company_id)) {
-                            throw new DomainException('El archivo ya fue importado. Revise el historial de importaciones.');
                         }
                         $plan = $this->preflight($data, $options);
                         if ($warning = $this->repeatedBillsWarning()) {
