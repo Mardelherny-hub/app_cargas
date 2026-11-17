@@ -519,7 +519,8 @@ class ManifestImportController extends Controller
 
         return view('company.manifests.import-details', [
             'import' => $import,
-            'company' => $company
+            'company' => $company,
+            'targetVoyage' => $this->targetVoyageReport($import),
         ]);
     }
 
@@ -855,6 +856,7 @@ public function showReport(Request $request)
             ],
             'warnings' => $import->warnings ?? [],
             'errors'   => $import->errors ?? [],
+            'targetVoyage' => $this->targetVoyageReport($import),
         ];
 
         if ($import->voyage) {
@@ -874,9 +876,24 @@ public function showReport(Request $request)
     }
 
     /**
-     * Revertir una importación específica
-     * Solo permite revertir si el Viaje está en estado 'planning'
+     * Informe de una importación agregada a un viaje existente: conocimientos
+     * salteados por repetidos y conversión a convoy. null si creó su viaje.
      */
+    protected function targetVoyageReport(ManifestImport $import): ?array
+    {
+        $target = $import->parser_config['target_voyage'] ?? null;
+
+        if (!is_array($target)) {
+            return null;
+        }
+
+        return [
+            'skipped_bills' => array_values((array) ($target['skipped_bills'] ?? [])),
+            'shipment_created' => (bool) ($target['shipment_created'] ?? false),
+            'converted_to_convoy' => isset($import->parser_config['convoy_conversion']),
+        ];
+    }
+
     /**
      * Revertir una importación específica
      * Solo permite revertir si el Viaje está en estado 'planning'
