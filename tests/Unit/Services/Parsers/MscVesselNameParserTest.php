@@ -181,6 +181,23 @@ class MscVesselNameParserTest extends TestCase
         $this->assertSame(0, ManifestImport::count());
     }
 
+    public function test_unknown_discharge_port_code_fails_with_clear_message_and_creates_nothing(): void
+    {
+        $before = $this->operationalCounts();
+        $ports = DB::table('ports')->count();
+
+        $result = $this->import($this->file(str_replace("PORT CODE\tPYASU", "PORT CODE\tPYXXX", $this->manifest())));
+
+        $this->assertFalse($result->success);
+        $this->assertCount(1, $result->errors);
+        $this->assertStringStartsWith("El código de puerto 'PYXXX' no está en el catálogo del sistema. ", $result->errors[0]);
+        $this->assertStringContainsString('Puertos parecidos: PYASU (ASUNCION).', $result->errors[0]);
+        $this->assertStringContainsString('no se dan de alta automáticamente', $result->errors[0]);
+        $this->assertSame($before, $this->operationalCounts());
+        $this->assertSame($ports, DB::table('ports')->count());
+        $this->assertSame(0, ManifestImport::count());
+    }
+
     public function test_revert_leaves_operational_data_as_before(): void
     {
         $this->addPreviousVoyage('TSTU0000001', '40HC');
