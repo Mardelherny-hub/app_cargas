@@ -575,6 +575,14 @@ class ShipmentController extends Controller
     private function calculateShipmentDetailStats(\App\Models\Shipment $shipment): array
     {
         $items = $shipment->shipmentItems;
+        $cargoUtilization = null;
+        if ($shipment->cargo_weight_loaded !== null && $shipment->cargo_capacity_tons !== null) {
+            $loadedKg = (float) $shipment->cargo_weight_loaded;
+            $capacityTons = (float) $shipment->cargo_capacity_tons;
+            if ($capacityTons > 0) {
+                $cargoUtilization = min(100, ($loadedKg / ($capacityTons * 1000)) * 100);
+            }
+        }
         
         return [
             // Estadísticas de items
@@ -586,7 +594,7 @@ class ShipmentController extends Controller
             'total_declared_value' => $items->sum('declared_value'),
             
             // Estadísticas de utilización
-            'cargo_utilization_percentage' => $shipment->utilization_percentage,
+            'cargo_utilization_percentage' => $cargoUtilization,
             'container_utilization_percentage' => $shipment->container_capacity > 0 
                 ? ($shipment->containers_loaded / $shipment->container_capacity) * 100 
                 : 0,
