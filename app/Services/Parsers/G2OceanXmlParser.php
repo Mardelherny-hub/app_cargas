@@ -1779,7 +1779,15 @@ class G2OceanXmlParser implements ManifestParserInterface
         $fileSize = file_exists($filePath) ? filesize($filePath) : null;
         $fileHash = file_exists($filePath) ? ManifestImport::generateFileHash($filePath) : null;
         
-        $companyId = $user->userable_type === 'App\Models\Company' ? $user->userable_id : null;
+        $companyId = (int) ($user?->company?->id ?? 0);
+
+        if (!$companyId) {
+            throw new Exception('El usuario no tiene una empresa asociada.');
+        }
+
+        if ($fileHash !== null && ManifestImport::isFileAlreadyImported($fileHash, $companyId)) {
+            throw new Exception('Este archivo ya fue importado exitosamente para esta empresa.');
+        }
         
         return ManifestImport::createForImport([
             'company_id' => $companyId,
