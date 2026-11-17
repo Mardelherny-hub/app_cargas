@@ -1767,7 +1767,15 @@ class ParanaExcelParser implements ManifestParserInterface
         $fileHash = ManifestImport::generateFileHash($filePath);
         
         $user = auth()->user();
-        $companyId = $user->company_id ?: ($user->userable_type === 'App\Models\Company' ? $user->userable_id : null);
+        $companyId = $user?->company?->id;
+
+        if (!$companyId) {
+            throw new Exception('El usuario no tiene una empresa asignada.');
+        }
+
+        if (ManifestImport::isFileAlreadyImported($fileHash, (int) $companyId)) {
+            throw new Exception('Este archivo ya fue importado para esta empresa.');
+        }
         
         return ManifestImport::createForImport([
             'company_id' => $companyId,
