@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services\Parsers\Concerns;
 
+use App\Http\Controllers\Company\Manifests\ManifestImportController;
 use App\Models\BillOfLading;
 use App\Models\BillOfLadingContact;
 use App\Models\Client;
@@ -13,6 +14,7 @@ use App\Models\ShipmentItem;
 use App\Models\User;
 use App\Models\Voyage;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -52,7 +54,7 @@ trait BuildsManifestImportSchema
             Schema::create($instance->getTable(), function (Blueprint $t) use ($instance) {
                 $t->id();
                 foreach (array_unique($instance->getFillable()) as $column) {
-                    $t->text($column)->nullable();
+                    $this->column($t, $column);
                 }
                 $t->timestamps();
                 $t->softDeletes();
@@ -64,7 +66,7 @@ trait BuildsManifestImportSchema
             foreach (['container_id', 'shipment_item_id', 'package_quantity', 'gross_weight_kg', 'net_weight_kg',
                 'volume_m3', 'verified_gross_mass_kg', 'required_temperature', 'source_seals', 'source_line_numbers',
                 'container_condition', 'status', 'webservice_data', 'created_by_user_id', 'created_date'] as $column) {
-                $t->text($column)->nullable();
+                $this->column($t, $column);
             }
             $t->timestamps();
         });
@@ -84,7 +86,7 @@ trait BuildsManifestImportSchema
             Schema::create($table, function (Blueprint $t) use ($columns) {
                 $t->id();
                 foreach ($columns as $column) {
-                    $t->text($column)->nullable();
+                    $this->column($t, $column);
                 }
                 $t->timestamps();
             });
@@ -113,6 +115,14 @@ trait BuildsManifestImportSchema
         Auth::login(User::findOrFail(self::USER));
     }
 
+    /** Las claves *_id son enteras, como en la base real; el resto, texto. */
+    private function column(Blueprint $t, string $column): void
+    {
+        str_ends_with($column, '_id')
+            ? $t->unsignedBigInteger($column)->nullable()
+            : $t->text($column)->nullable();
+    }
+
     protected function addVessel(string $name): void
     {
         DB::table('vessels')->insert([
@@ -138,6 +148,55 @@ trait BuildsManifestImportSchema
             'legal_name' => $name, 'commercial_name' => $name, 'tax_id' => $taxId,
             'country_id' => $countryId, 'status' => 'active', 'created_by_company_id' => self::COMPANY,
         ]);
+    }
+
+    /**
+     * Viaje anterior de la empresa con un contenedor que el archivo vuelve
+     * a declarar: la importación lo reutiliza por número.
+     */
+    protected function addPreviousVoyage(string $containerNumber, string $typeCode): void
+    {
+        $voyage = DB::table('voyages')->insertGetId([
+            'company_id' => self::COMPANY, 'lead_vessel_id' => self::VESSEL, 'voyage_number' => 'PREVIO-01',
+            'status' => 'planning', 'total_cargo_weight_loaded' => '900.00',
+        ]);
+        $shipment = DB::table('shipments')->insertGetId([
+            'voyage_id' => $voyage, 'vessel_id' => self::VESSEL, 'shipment_number' => 'PREVIO-01-01',
+            'sequence_in_voyage' => 1, 'status' => 'planning', 'cargo_weight_loaded' => '900.00',
+        ]);
+        $bill = DB::table('bills_of_lading')->insertGetId([
+            'shipment_id' => $shipment, 'bill_number' => 'PREVIO-BL-1', 'gross_weight_kg' => '900.00', 'status' => 'draft',
+        ]);
+        $item = DB::table('shipment_items')->insertGetId([
+            'bill_of_lading_id' => $bill, 'line_number' => 1, 'gross_weight_kg' => '900.00', 'package_quantity' => 1,
+        ]);
+        $container = DB::table('containers')->insertGetId([
+            'container_number' => $containerNumber,
+            'container_type_id' => DB::table('container_types')->where('iso_code', $typeCode)->value('id'),
+        ]);
+        DB::table('container_shipment_item')->insert([
+            'container_id' => $container, 'shipment_item_id' => $item, 'gross_weight_kg' => '900.00',
+        ]);
+    }
+
+    /** Filas vigentes de las tablas operativas, para comparar antes y después. */
+    protected function operationalSnapshot(): array
+    {
+        $snapshot = [];
+        foreach (['voyages', 'shipments', 'bills_of_lading'] as $table) {
+            $snapshot[$table] = DB::table($table)->whereNull('deleted_at')->orderBy('id')->get()->map(fn ($r) => (array) $r)->all();
+        }
+        foreach (['shipment_items', 'containers', 'container_shipment_item'] as $table) {
+            $snapshot[$table] = DB::table($table)->orderBy('id')->get()->map(fn ($r) => (array) $r)->all();
+        }
+
+        return $snapshot;
+    }
+
+    protected function revertImport(ManifestImport $import): void
+    {
+        (new ManifestImportController())->revert(new Request(['reason' => 'Prueba']), $import);
+        $this->assertSame('reverted', $import->fresh()->status);
     }
 
     /** @return array<string, int> */
