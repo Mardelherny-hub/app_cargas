@@ -203,7 +203,8 @@ class ManifestImportRevertService
 
     /**
      * Las cargas existentes que recibieron conocimientos recalculan su peso
-     * desde los ítems que les quedan; el viaje se recalcula desde sus cargas.
+     * y sus contenedores desde lo que les queda; el viaje se recalcula
+     * desde sus cargas.
      */
     private function recalculateReceivingShipments(ManifestImport $import): void
     {
@@ -213,7 +214,19 @@ class ManifestImportRevertService
             ->unique()
             ->diff($import->created_shipment_ids ?? []);
 
-        Shipment::whereIn('id', $shipmentIds)->get()->each->recalculateItemStats();
+        $pivot = $import->detectContainerPivot();
+
+        Shipment::whereIn('id', $shipmentIds)->get()->each(function (Shipment $shipment) use ($pivot) {
+            $shipment->recalculateItemStats();
+
+            if ($pivot) {
+                // Contenedores físicos distintos vinculados a los ítems que le quedan.
+                $shipment->update(['containers_loaded' => DB::table($pivot['table'])
+                    ->whereIn($pivot['item_fk'], $shipment->shipmentItems()->select('shipment_items.id'))
+                    ->distinct()
+                    ->count($pivot['container_fk'])]);
+            }
+        });
     }
 
     /**

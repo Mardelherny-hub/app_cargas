@@ -61,7 +61,8 @@ class ManifestImportRevertServiceTest extends TestCase
             $t->string('vessel_role'); $t->boolean('is_lead_vessel')->default(false);
             $t->integer('convoy_position')->nullable(); $t->decimal('cargo_capacity_tons', 10, 2)->nullable();
             $t->integer('container_capacity')->default(0); $t->string('status')->default('planning');
-            $t->decimal('cargo_weight_loaded', 12, 2)->default(0); $t->decimal('utilization_percentage', 5, 2)->default(0);
+            $t->decimal('cargo_weight_loaded', 12, 2)->default(0); $t->integer('containers_loaded')->default(0);
+            $t->decimal('utilization_percentage', 5, 2)->default(0);
             $t->boolean('has_dangerous_cargo')->default(false);
             $t->timestamps();
             $t->unique(['voyage_id', 'vessel_id']); $t->unique(['voyage_id', 'sequence_in_voyage']);
@@ -233,6 +234,43 @@ class ManifestImportRevertServiceTest extends TestCase
         $this->revert($added);
 
         $this->assertSame($before, $this->weights());
+    }
+
+    public function test_reverting_an_added_import_restores_the_container_counters(): void
+    {
+        $this->originImport();
+        // Viaje con 73 contenedores; uno está vinculado a dos ítems.
+        for ($n = 1; $n <= 73; $n++) {
+            $container = DB::table('containers')->insertGetId(['container_number' => sprintf('BASE%07d', $n)]);
+            $item = DB::table('shipment_items')->insertGetId(['bill_of_lading_id' => 1]);
+            DB::table('container_shipment_item')->insert(['container_id' => $container, 'shipment_item_id' => $item]);
+        }
+        $item = DB::table('shipment_items')->insertGetId(['bill_of_lading_id' => 1]);
+        DB::table('container_shipment_item')->insert(['container_id' => $container, 'shipment_item_id' => $item]);
+        DB::table('shipments')->where('id', 1)->update(['containers_loaded' => 73]);
+        Voyage::findOrFail(self::VOYAGE)->recalculateShipmentStats();
+        $this->assertSame([73, 73, 73], $this->containerCounters());
+
+        // Como MSC al agregar: cuenta los contenedores de la carga y acumula en el viaje.
+        $added = $this->addedImport(self::BARGE, 'BL-MSC');
+        DB::table('shipments')->where('id', 1)->update(['containers_loaded' => 74]);
+        DB::table('voyages')->where('id', self::VOYAGE)->update(['total_containers' => 74, 'total_containers_loaded' => 74]);
+
+        $this->revert($added);
+
+        $this->assertSame([73, 73, 73], $this->containerCounters());
+    }
+
+    /** containers_loaded de la carga, total_containers y total_containers_loaded del viaje. */
+    private function containerCounters(): array
+    {
+        $voyage = DB::table('voyages')->where('id', self::VOYAGE)->first();
+
+        return array_map('intval', [
+            DB::table('shipments')->where('id', 1)->value('containers_loaded'),
+            $voyage->total_containers,
+            $voyage->total_containers_loaded,
+        ]);
     }
 
     /** cargo_weight_loaded de la carga, total_cargo_weight_loaded y total_cargo_weight del viaje. */
