@@ -733,7 +733,9 @@ public function showReport(Request $request)
             $deletedSummary = [];
 
             // Eliminar en orden correcto (dependencias primero)
-            // 0) Eliminar filas de PIVOTE contenedores⇆ítems (si la tabla existe)
+            // 0) Eliminar filas de PIVOTE contenedores⇆ítems (si la tabla existe).
+            // Solo las de los ítems de esta importación: un contenedor reutilizado
+            // conserva sus vínculos con ítems de otros viajes.
             $pivotMeta = $import->detectContainerPivot();
             if ($pivotMeta) {
                 $deletedPivot = 0;
@@ -741,11 +743,6 @@ public function showReport(Request $request)
                 if (!empty($createdObjects['items'])) {
                     $deletedPivot += DB::table($pivotMeta['table'])
                         ->whereIn($pivotMeta['item_fk'], $createdObjects['items'])
-                        ->delete();
-                }
-                if (!empty($createdObjects['containers'])) {
-                    $deletedPivot += DB::table($pivotMeta['table'])
-                        ->whereIn($pivotMeta['container_fk'], $createdObjects['containers'])
                         ->delete();
                 }
 
@@ -777,9 +774,19 @@ public function showReport(Request $request)
             }
 
             // 3. Eliminar contenedores
-            if (!empty($createdObjects['containers'])) {
-                Log::info('REVERT - Eliminando contenedores', ['ids' => $createdObjects['containers']]);
-                $deletedCount = \App\Models\Container::whereIn('id', $createdObjects['containers'])->delete();
+            // Un contenedor que sigue vinculado a ítems de otro viaje ya existía:
+            // los parsers lo reutilizan por número. Solo se borra si quedó sin vínculos.
+            $containerIds = collect($createdObjects['containers'] ?? []);
+            if ($pivotMeta && $containerIds->isNotEmpty()) {
+                $stillLinked = DB::table($pivotMeta['table'])
+                    ->whereIn($pivotMeta['container_fk'], $containerIds)
+                    ->pluck($pivotMeta['container_fk']);
+                $containerIds = $containerIds->diff($stillLinked)->values();
+            }
+
+            if ($containerIds->isNotEmpty()) {
+                Log::info('REVERT - Eliminando contenedores', ['ids' => $containerIds->all()]);
+                $deletedCount = \App\Models\Container::whereIn('id', $containerIds)->delete();
                 Log::info('REVERT - Contenedores eliminados', ['count' => $deletedCount]);
                 if ($deletedCount > 0) {
                     $deletedSummary[] = "{$deletedCount} contenedores";
