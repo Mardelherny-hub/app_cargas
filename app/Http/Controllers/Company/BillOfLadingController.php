@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\BillOfLading;
 use App\Models\Shipment;
 use App\Models\Voyage;
+use App\Models\Vessel;
+use Illuminate\Validation\ValidationException;
 use App\Models\Client;
 use App\Models\Port;
 use App\Models\Country;
@@ -43,6 +45,8 @@ class BillOfLadingController extends Controller
     use UserHelper;
     use AuthorizesRequests;
 
+    private array $deletionVesselCache = [];
+
     /**
      * Mostrar lista de conocimientos de embarque con filtros avanzados
      */
@@ -63,7 +67,7 @@ class BillOfLadingController extends Controller
         // Construir consulta base - filtrar por empresa
         $query = BillOfLading::with([
             'shipmentItems:id,bill_of_lading_id,tariff_position,commodity_code',
-            'shipment.voyage:id,voyage_number,company_id',
+            'shipment.voyage:id,voyage_number,company_id,status',
             'shipper:id,legal_name,tax_id',
             'consignee:id,legal_name,tax_id',
             'loadingPort:id,name,country_id',
@@ -258,8 +262,37 @@ class BillOfLadingController extends Controller
         // Estadísticas rápidas para el dashboard
         $stats = $this->getIndexStats($company);
 
+        $canDeleteBillIds = [];
+        foreach ($billsOfLading as $bill) {
+            $canDeleteBillIds[$bill->id] = $this->billDeletionReason($bill) === null;
+        }
+
+        $bulkDeleteVesselInfo = null;
+        if ($request->filled('shipment_id') && $this->canPerform('view_cargas') && $this->hasCompanyRole('Cargas')) {
+            $shipment = Shipment::with('voyage', 'vessel')
+                ->whereHas('voyage', fn ($q) => $q->where('company_id', $company->id))
+                ->find($request->get('shipment_id'));
+            if ($shipment && $this->canAccessCompanyResource($shipment, 'voyage.company_id')) {
+                $shipmentIds = Shipment::where('voyage_id', $shipment->voyage_id)
+                    ->where('vessel_id', $shipment->vessel_id)->pluck('id');
+                $vesselBills = BillOfLading::with('shipment.voyage')->whereIn('shipment_id', $shipmentIds)->get();
+                if ($vesselBills->isNotEmpty() && $vesselBills->every(fn ($bill) => $this->billDeletionReason($bill) === null)) {
+                    $bulkDeleteVesselInfo = [
+                        'voyage' => $shipment->voyage,
+                        'vessel' => $shipment->vessel,
+                        'voyage_id' => $shipment->voyage_id,
+                        'vessel_id' => $shipment->vessel_id,
+                        'count' => $vesselBills->count(),
+                        'canDelete' => true,
+                    ];
+                }
+            }
+        }
+
         return view('company.bills-of-lading.index', compact(
             'billsOfLading',
+            'canDeleteBillIds',
+            'bulkDeleteVesselInfo',
             'filterData',
             'stats',
             'company'
@@ -429,7 +462,7 @@ class BillOfLadingController extends Controller
 
         // Cargar relaciones necesarias
         $billOfLading->load([
-            'shipment.voyage:id,voyage_number,company_id',
+            'shipment.voyage:id,voyage_number,company_id,status',
             'shipment.vessel:id,name',
             'shipmentItems' => function ($q) {
                 $q->with([
@@ -632,7 +665,7 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
         return response()->json([
             'hasItems' => $itemsCount > 0,
             'itemsCount' => $itemsCount,
-            'canBeDeleted' => $billOfLading->canBeDeleted()
+            'canBeDeleted' => $this->billDeletionReason($billOfLading) === null
         ]);
     }
 
@@ -641,69 +674,161 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
      */
     public function destroy(BillOfLading $billOfLading)
     {
-        // Verificar permisos para eliminar conocimientos
-        if (!$this->canPerform('view_cargas')) {
-            abort(403, 'No tiene permisos para eliminar conocimientos de embarque.');
-        }
-
-        if (!$this->hasCompanyRole('Cargas')) {
-            abort(403, 'Su empresa no tiene el rol de Cargas.');
-        }
-
-        // Verificar que el conocimiento pertenece a la empresa del usuario
-        if (!$this->canAccessCompanyResource($billOfLading, 'shipment.voyage.company_id')) {
-            abort(403, 'No tiene permisos para eliminar este conocimiento.');
-        }
-
-        // Verificar que puede ser eliminado
-        // Verificar que puede ser eliminado
-        if (!$billOfLading->canBeDeleted()) {
-            $itemsCount = $billOfLading->shipmentItems()->count();
-            $errorMessage = 'Este conocimiento no puede ser eliminado.';
-            
-            if ($itemsCount > 0) {
-                $errorMessage .= " Tiene {$itemsCount} item(s) asociados. Elimine primero todos los items.";
-            } elseif ($billOfLading->status !== 'draft') {
-                $errorMessage .= " Solo se pueden eliminar conocimientos en estado borrador.";
-            } elseif ($billOfLading->webservice_sent_at || $billOfLading->argentina_sent_at || $billOfLading->paraguay_sent_at) {
-                $errorMessage .= " Ya fue enviado a webservices.";
-            }
-            
-            return redirect()->route('company.bills-of-lading.show', $billOfLading)
-                ->with('error', $errorMessage);
-        }
+        abort_unless($this->canDeleteBillResource($billOfLading), 403, 'No tiene permisos para eliminar este conocimiento.');
 
         try {
-            DB::beginTransaction();
-
-            $billNumber = $billOfLading->bill_number;
-            
-            // Eliminar el conocimiento (soft delete)
-            $billOfLading->delete();
-
-            DB::commit();
-
-            Log::info('Conocimiento de embarque eliminado', [
-                'bill_id' => $billOfLading->id,
-                'bill_number' => $billNumber,
-                'user_id' => Auth::id()
-            ]);
-
-            return redirect()->route('company.bills-of-lading.index')
-                ->with('success', "Conocimiento de embarque {$billNumber} eliminado exitosamente.");
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            Log::error('Error al eliminar conocimiento de embarque', [
-                'bill_id' => $billOfLading->id,
-                'error' => $e->getMessage(),
-                'user_id' => Auth::id()
-            ]);
-
-            return redirect()->back()
-                ->with('error', 'Error al eliminar el conocimiento de embarque: ' . $e->getMessage());
+            $this->deleteBillsForVessel($billOfLading->shipment->voyage, (int) $billOfLading->shipment->vessel_id, $billOfLading->id);
+        } catch (ValidationException $e) {
+            return back()->with('error', $e->validator->errors()->first());
+        } catch (\Throwable $e) {
+            Log::error('Error al eliminar conocimiento de embarque', ['bill_id' => $billOfLading->id, 'error' => $e->getMessage()]);
+            return back()->with('error', 'No se pudo eliminar el conocimiento. No se realizó ningún cambio.');
         }
+
+        return redirect()->route('company.bills-of-lading.index')
+            ->with('success', 'Conocimiento de embarque e ítems eliminados exitosamente.');
+    }
+
+    public function destroyForVessel(Voyage $voyage, Vessel $vessel)
+    {
+        abort_unless($this->canPerform('view_cargas') && $this->hasCompanyRole('Cargas')
+            && $this->canAccessCompanyResource($voyage, 'company_id'), 403, 'No tiene permisos para eliminar estos conocimientos.');
+        abort_unless(Shipment::where('voyage_id', $voyage->id)->where('vessel_id', $vessel->id)->exists(), 404);
+
+        try {
+            $count = $this->deleteBillsForVessel($voyage, (int) $vessel->id);
+        } catch (ValidationException $e) {
+            return back()->with('error', $e->validator->errors()->first());
+        } catch (\Throwable $e) {
+            Log::error('Error al eliminar conocimientos de embarcación', ['voyage_id' => $voyage->id, 'vessel_id' => $vessel->id, 'error' => $e->getMessage()]);
+            return back()->with('error', 'No se pudieron eliminar los conocimientos. No se realizó ningún cambio.');
+        }
+
+        return redirect()->route('company.bills-of-lading.index', ['voyage_id' => $voyage->id])
+            ->with('success', "Se eliminaron {$count} conocimientos y sus ítems.");
+    }
+
+    private function canDeleteBillResource(BillOfLading $bill): bool
+    {
+        return $this->canPerform('view_cargas') && $this->hasCompanyRole('Cargas')
+            && $this->canAccessCompanyResource($bill, 'shipment.voyage.company_id')
+            && !($this->isUser() && $this->isOperator() && !$this->hasCompanyRole('Cargas')
+                && $bill->created_by_user_id !== Auth::id());
+    }
+
+    private function billDeletionReason(BillOfLading $bill): ?string
+    {
+        if (!$this->canDeleteBillResource($bill)) {
+            return 'No tiene permisos para eliminar este conocimiento.';
+        }
+        $shipment = $bill->shipment;
+        $voyage = $shipment->voyage;
+        $key = "{$voyage->company_id}:{$voyage->id}:{$shipment->vessel_id}";
+        if (!array_key_exists($key, $this->deletionVesselCache)) {
+            $lock = app(\App\Services\Simple\AfipVesselLock::class)
+                ->inspectAfipVesselLock((int) $voyage->company_id, (int) $voyage->id, (int) $shipment->vessel_id);
+            $this->deletionVesselCache[$key] = $lock['locked']
+                ? 'La embarcación está bloqueada por AFIP. ' . implode(' ', array_column($lock['reasons'], 'message'))
+                : null;
+        }
+        if ($this->deletionVesselCache[$key] !== null) {
+            return $this->deletionVesselCache[$key];
+        }
+        if ($voyage->status !== 'planning') {
+            return 'Solo se pueden eliminar conocimientos de viajes en planificación.';
+        }
+        if ($bill->trashed() || $bill->status !== 'draft' || $bill->verified_at !== null) {
+            return 'Solo se pueden eliminar conocimientos en borrador sin verificar.';
+        }
+        if ($bill->webservice_sent_at || $bill->argentina_sent_at || $bill->paraguay_sent_at) {
+            return 'El conocimiento ya fue enviado a webservices.';
+        }
+        if (DB::table('hidrovia_transshipment_allocations')->where(function ($q) use ($bill) {
+            $q->where('bill_of_lading_id', $bill->id)->orWhereIn('shipment_item_id',
+                DB::table('shipment_items')->select('id')->where('bill_of_lading_id', $bill->id));
+        })->exists()) {
+            return 'El conocimiento o sus ítems tienen distribuciones de transbordo.';
+        }
+        if (DB::table('webservice_tracks')->where('bill_of_lading_id', $bill->id)->exists()) {
+            return 'El conocimiento tiene TRACKs de webservices.';
+        }
+        if (DB::table('voyage_attachments')->where('bill_of_lading_id', $bill->id)->where('sent_to_dna', true)->exists()) {
+            return 'El conocimiento tiene documentos enviados a DNA.';
+        }
+        return null;
+    }
+
+    private function deleteBillsForVessel(Voyage $voyage, int $vesselId, ?int $billId = null): int
+    {
+        return DB::transaction(function () use ($voyage, $vesselId, $billId) {
+            $voyage = Voyage::whereKey($voyage->id)->lockForUpdate()->firstOrFail();
+            abort_unless($this->canPerform('view_cargas') && $this->hasCompanyRole('Cargas')
+                && $this->canAccessCompanyResource($voyage, 'company_id'), 403);
+            $shipments = Shipment::where('voyage_id', $voyage->id)->where('vessel_id', $vesselId)
+                ->orderBy('id')->lockForUpdate()->get();
+            $query = BillOfLading::whereIn('shipment_id', $shipments->modelKeys());
+            if ($billId !== null) {
+                $query->whereKey($billId);
+            }
+            $bills = $query->orderBy('id')->lockForUpdate()->get();
+            if ($shipments->isEmpty() || $bills->isEmpty()) {
+                throw ValidationException::withMessages(['deletion' => 'No hay conocimientos disponibles para eliminar.']);
+            }
+            foreach ($bills as $bill) {
+                $shipment = $shipments->firstWhere('id', $bill->shipment_id);
+                $shipment->setRelation('voyage', $voyage);
+                $bill->setRelation('shipment', $shipment);
+            }
+            $itemIds = DB::table('shipment_items')->whereIn('bill_of_lading_id', $bills->modelKeys())
+                ->orderBy('id')->lockForUpdate()->pluck('id')->all();
+            $containerIds = DB::table('container_shipment_item')->whereIn('shipment_item_id', $itemIds)
+                ->lockForUpdate()->pluck('container_id')->unique()->all();
+            DB::table('containers')->whereIn('id', $containerIds)->orderBy('id')->lockForUpdate()->get();
+
+            // La decisión de la pantalla nunca reemplaza la comprobación dentro de la transacción.
+            $this->deletionVesselCache = [];
+            foreach ($bills as $bill) {
+                if (($reason = $this->billDeletionReason($bill)) !== null) {
+                    throw ValidationException::withMessages(['deletion' => $reason]);
+                }
+            }
+
+            DB::table('container_shipment_item')->whereIn('shipment_item_id', $itemIds)->delete();
+            DB::table('shipment_items')->whereIn('id', $itemIds)->delete();
+            BillOfLading::whereIn('id', $bills->modelKeys())->delete();
+            DB::table('containers')->whereIn('id', $containerIds)
+                ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('container_shipment_item')->whereColumn('container_id', 'containers.id'))
+                ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('webservice_tracks')->whereColumn('container_id', 'containers.id'))
+                ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('hidrovia_transshipment_allocations')->whereColumn('container_id', 'containers.id'))
+                ->delete();
+
+            foreach ($shipments->whereIn('id', $bills->pluck('shipment_id')->unique()) as $shipment) {
+                $shipment = $shipment->fresh();
+                Shipment::withoutEvents(function () use ($shipment) {
+                    $shipment->recalculateItemStats();
+                    $shipment->has_dangerous_cargo = $shipment->shipmentItems()->where('is_dangerous_goods', true)->exists();
+                    $shipment->containers_loaded = DB::table('container_shipment_item as pivot')
+                        ->join('shipment_items as items', 'items.id', '=', 'pivot.shipment_item_id')
+                        ->join('bills_of_lading as bills', 'bills.id', '=', 'items.bill_of_lading_id')
+                        ->where('bills.shipment_id', $shipment->id)->whereNull('bills.deleted_at')
+                        ->distinct()->count('pivot.container_id');
+                    $shipment->save();
+                });
+            }
+            $voyage = $voyage->fresh();
+            $voyage->recalculateShipmentStats();
+            $activeBills = BillOfLading::whereHas('shipment', fn ($q) => $q->where('voyage_id', $voyage->id));
+            $voyage->total_bills_of_lading = (clone $activeBills)->count();
+            $voyage->total_cargo_volume = (clone $activeBills)->sum('volume_m3');
+            $voyage->total_packages = (clone $activeBills)->sum('total_packages');
+            $voyage->has_dangerous_cargo = $voyage->shipments()->where('has_dangerous_cargo', true)->exists();
+            $voyage->requires_special_handling = (clone $activeBills)->where(function ($q) {
+                $q->where('contains_dangerous_goods', true)->orWhere('requires_refrigeration', true);
+            })->exists();
+            $voyage->save();
+            $this->deletionVesselCache = [];
+            return $bills->count();
+        });
     }
 
     // ========================================
@@ -731,7 +856,7 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
     {
         return [
             'canEdit' => $this->hasCompanyRole('Cargas') && $billOfLading->canBeEdited(),
-            'canDelete' => $this->hasCompanyRole('Cargas') && $billOfLading->canBeDeleted(),
+            'canDelete' => $this->billDeletionReason($billOfLading) === null,
             'canVerify' => $this->hasCompanyRole('Cargas') && !$billOfLading->verified_at && $billOfLading->status === 'draft',
             'canSendToArgentina' => $this->hasCompanyRole('Cargas') && $billOfLading->isReadyForWebservice() && !$billOfLading->argentina_sent_at,
             'canSendToParaguay' => $this->hasCompanyRole('Cargas') && $billOfLading->isReadyForWebservice() && !$billOfLading->paraguay_sent_at,
