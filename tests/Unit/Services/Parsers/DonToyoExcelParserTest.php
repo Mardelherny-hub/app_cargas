@@ -150,6 +150,39 @@ class DonToyoExcelParserTest extends TestCase
         );
     }
 
+    public function test_unknown_port_fails_with_clear_message_and_creates_nothing(): void
+    {
+        $before = $this->operationalCounts();
+        $ports = DB::table('ports')->count();
+        $sheets = $this->sheets();
+        $sheets['BLS'][2][3] = 'ARXXX';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertFalse($result->success);
+        $this->assertCount(1, $result->errors);
+        $this->assertStringStartsWith("El código de puerto 'ARXXX' no está en el catálogo del sistema. ", $result->errors[0]);
+        $this->assertStringContainsString('Puertos parecidos: ARBUE (BUENOS AIRES).', $result->errors[0]);
+        $this->assertStringContainsString('no se dan de alta automáticamente', $result->errors[0]);
+        $this->assertSame($before, $this->operationalCounts());
+        $this->assertSame($ports, DB::table('ports')->count());
+        $this->assertSame(0, ManifestImport::count());
+    }
+
+    public function test_revert_leaves_operational_data_as_before(): void
+    {
+        $this->addPreviousVoyage('TSTU0000001', '45G0');
+        $before = $this->operationalSnapshot();
+
+        $this->assertTrue($this->import($this->workbook($this->sheets()))->success);
+        $this->assertSame(5, DB::table('container_shipment_item')->count());
+        $this->assertSame(4, DB::table('containers')->count());
+
+        $this->revertImport(ManifestImport::sole());
+
+        $this->assertSame($before, $this->operationalSnapshot());
+    }
+
     public function test_reimport_of_the_same_file_is_rejected_without_changes(): void
     {
         $path = $this->workbook($this->sheets());
