@@ -337,7 +337,7 @@ class MscVesselNameParser implements ManifestParserInterface
             }
             $voyageNumber = $this->value($header, 'VOYAGE');
             $hash = ManifestImport::generateFileHash($filePath);
-            if (ManifestImport::isFileAlreadyImported($hash, $companyId)) {
+            if (empty($options['target_voyage_id']) && ManifestImport::isFileAlreadyImported($hash, $companyId)) {
                 throw new DomainException('El archivo ya fue importado. Revise el historial de importaciones.');
             }
             $import = ManifestImport::createForImport([
@@ -490,13 +490,13 @@ class MscVesselNameParser implements ManifestParserInterface
                             'container' => $createdContainers,
                         ]);
                         if ($bills === []) {
-                            $message = 'MSC: todos los conocimientos ya existen en el viaje. No se agregó carga.';
-                            $import->markAsFailed([$message], [
+                            $this->warnings[] = 'MSC: todos los conocimientos ya existen en el viaje. No se agregó carga.';
+                            $import->markAsCompletedWithWarnings([
                                 'import_statistics' => $stats, 'warnings' => $this->warnings,
                                 'warnings_count' => count($this->warnings),
                             ]);
 
-                            return ManifestParseResult::failure([$message], $this->warnings, $stats);
+                            return ManifestParseResult::success($voyage, [], [], [], $this->warnings, $stats);
                         }
                         $shipment->unsetRelation('shipmentItems');
                         $shipment->recalculateItemStats();
