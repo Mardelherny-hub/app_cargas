@@ -126,7 +126,9 @@ class AfipVesselLock
         // Un cancelled puede venir de un reset local: si conserva respuesta
         // de AFIP, el registro pudo quedar vigente.
         return $tx->status === 'cancelled'
-            && (trim((string) $tx->external_reference) !== '' || !empty($tx->success_data));
+            && (trim((string) $tx->external_reference) !== ''
+                || !empty($tx->success_data)
+                || trim((string) ($tx->response_xml ?? '')) !== '');
     }
 
     private function pendingAnnulmentMessage(object $tx, Collection $annulments): ?string
