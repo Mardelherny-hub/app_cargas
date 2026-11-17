@@ -209,14 +209,11 @@ class ManifestImportRevertService
 
         $summary = [];
 
+        // Pivote: solo las filas de los ítems de esta importación. Un contenedor
+        // reutilizado conserva sus vínculos con ítems de otros viajes.
         $pivot = $import->detectContainerPivot();
-        if ($pivot) {
-            if (!empty($created['items'])) {
-                DB::table($pivot['table'])->whereIn($pivot['item_fk'], $created['items'])->delete();
-            }
-            if (!empty($created['containers'])) {
-                DB::table($pivot['table'])->whereIn($pivot['container_fk'], $created['containers'])->delete();
-            }
+        if ($pivot && !empty($created['items'])) {
+            DB::table($pivot['table'])->whereIn($pivot['item_fk'], $created['items'])->delete();
         }
 
         $steps = [
@@ -228,6 +225,16 @@ class ManifestImportRevertService
         ];
 
         foreach ($steps as $key => [$model, $label]) {
+            // Un contenedor que sigue vinculado a ítems de otro viaje ya existía:
+            // los parsers lo reutilizan por número. Solo se borra si quedó sin vínculos.
+            if ($key === 'containers' && $pivot && !empty($created[$key])) {
+                $stillLinked = DB::table($pivot['table'])
+                    ->whereIn($pivot['container_fk'], $created[$key])
+                    ->pluck($pivot['container_fk'])
+                    ->all();
+                $created[$key] = array_values(array_diff($created[$key], $stillLinked));
+            }
+
             if (empty($created[$key])) {
                 continue;
             }
