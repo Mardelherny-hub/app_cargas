@@ -313,7 +313,14 @@ class MscVesselNameParser implements ManifestParserInterface
                 throw new DomainException('Seleccione vessel_id de su empresa que coincida con la embarcación del archivo MSC.');
             }
             $origin = $this->loadingPort($this->value($header, 'LOADING PORT NAME'));
-            $destination = $this->resolvePortStrict($this->value($header, 'DISCHARGE PORT CODE'));
+            try {
+                $destination = $this->resolvePortStrict($this->value($header, 'DISCHARGE PORT CODE'));
+            } catch (QueryException $e) {
+                throw $e;
+            } catch (\Exception $e) {
+                // El mensaje del catálogo de puertos es para el usuario: código y sugerencias.
+                throw new DomainException($e->getMessage(), 0, $e);
+            }
             $cargoType = CargoType::where('code', 'CON001')->where('active', true)->first();
             if (!$cargoType) {
                 throw new DomainException('MSC: falta el tipo de carga CON001 activo en el catálogo.');
