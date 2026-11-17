@@ -145,7 +145,7 @@ inspectAfipVesselLock(companyId, voyageId, vesselId) → libre | bloqueado + lis
    - Una transacción sin `shipment_id` se considera de **todas** las embarcaciones del viaje.
 2. **Registros que cuentan:** `RegistrarTitEnvios`, `RegistrarEnvios`, `RegistrarMicDta` y `RegistrarTitMicDta`.
    - Bloquean en estado `processing`, `sending`, `sent` o `success`.
-   - En estado `cancelled` bloquean si tienen evidencia de respuesta de AFIP (`external_reference` o `success_data`), porque pueden venir de un reset local.
+   - En estado `cancelled` bloquean si tienen evidencia de respuesta de AFIP (`external_reference`, `success_data` o `response_xml` no vacío), porque pueden venir de un reset local. **Ajuste 16/11 por T0-B:** en el historial real hay `cancelled` con `response_xml` y los otros dos campos nulos (transacciones 86, 88, 90, 93, 96 y 98).
    - **No bloquean** en `pending`, `error`, `retry`, `rejected` o `skipped`.
    - Riesgo aceptado: un timeout guardado como `error` no bloquea. Si AFIP lo había aceptado, el reenvío lo rechazará AFIP.
 3. **Se libera solo con anulación acreditada de todo:**
@@ -210,6 +210,23 @@ Cada tarea arranca **solo con la orden explícita** de quien dirige su equipo.
 - Esta corrección no cambia la regla de bloqueo de la sección 6 bis, que ya no se apoya en ese `cancelled`.
 
 QA cruzado de T7 y T8: Work.
+
+**T9 · Code · La reversión no debe borrar datos de otros viajes** (garantía, **prioridad máxima**)
+- Bug confirmado en la línea de base de Work: revertir Login borró 412 contenedores que ya existían y revertir Navsur borró 73.
+- Causa:
+  - los parsers reutilizan contenedores existentes por número y los anotan como creados;
+  - `ManifestImportController::revert()` borra esos ids;
+  - además, el paso 0 borra filas de la pivote por `container_fk`, lo que elimina los vínculos con ítems de otros viajes.
+- Corrección, central y simple, solo en `revert()`:
+  - las filas de la pivote se borran **solo por `item_fk`**, es decir, los ítems de esa importación;
+  - un contenedor de la lista se borra **solo si no le queda ninguna fila en la pivote**.
+  - Los parsers no se tocan.
+- Rama: `fix/revert-keeps-shared-data`, desde `origin/main`.
+- Aceptación:
+  - un test con un contenedor compartido entre dos viajes: al revertir la importación B, el contenedor y su vínculo con el viaje A quedan intactos;
+  - en el servidor de pruebas, Work repite las reversiones de Login y Navsur y no se pierde ningún contenedor preexistente.
+- Clientes: la reversión no borra clientes, que son datos maestros que reutiliza la próxima importación. Se acepta como comportamiento.
+- Después del merge, Code incorpora `main` a `feature/import-to-existing-voyage` con un merge, no con rebase, y sigue con el punto 5 de T1 encima.
 
 **T6 · Codex · Eliminar conocimientos en un paso**
 - Objetivo: punto 7 de la sección 1, con la regla de bloqueo de T0.
