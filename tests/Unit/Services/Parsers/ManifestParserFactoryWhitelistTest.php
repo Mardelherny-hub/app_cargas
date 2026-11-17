@@ -3,11 +3,13 @@
 namespace Tests\Unit\Services\Parsers;
 
 use App\Services\Parsers\CmspEdiParserCompat;
+use App\Services\Parsers\DonToyoExcelParserCompat;
 use App\Services\Parsers\G2OceanXmlParserCompat;
 use App\Services\Parsers\GuaranExcelParserCompat;
 use App\Services\Parsers\KlineDataParserCompat;
 use App\Services\Parsers\LoginXmlParserCompat;
 use App\Services\Parsers\ManifestParserFactory;
+use App\Services\Parsers\MscVesselNameParserCompat;
 use App\Services\Parsers\NavsurTextParserCompat;
 use App\Services\Parsers\ParanaExcelParserCompat;
 use App\Services\Parsers\TfpTextParserCompat;
@@ -15,7 +17,7 @@ use Tests\TestCase;
 
 class ManifestParserFactoryWhitelistTest extends TestCase
 {
-    public function test_all_eight_audited_parsers_are_enabled(): void
+    public function test_all_ten_parsers_are_enabled(): void
     {
         $factory = new ManifestParserFactory();
 
@@ -29,6 +31,8 @@ class ManifestParserFactoryWhitelistTest extends TestCase
                 CmspEdiParserCompat::class,
                 NavsurTextParserCompat::class,
                 G2OceanXmlParserCompat::class,
+                MscVesselNameParserCompat::class,
+                DonToyoExcelParserCompat::class,
             ],
             $factory->getAvailableParsers()
         );
