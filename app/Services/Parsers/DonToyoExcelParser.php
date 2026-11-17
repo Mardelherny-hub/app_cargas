@@ -394,7 +394,12 @@ class DonToyoExcelParser implements ManifestParserInterface
                             }
                         }
                         if ($data['bills'] === []) {
-                            throw new DomainException('Todos los conocimientos del archivo ya existen en el viaje. No se agregó ninguna carga.');
+                            $warnings[] = $this->repeatedBillsWarning() . ' No se agregó ninguna carga ni se crearon registros operativos.';
+                            $this->recordTargetVoyageObjects($import, $voyage, ['shipment' => [], 'bill' => [], 'item' => [], 'container' => []]);
+                            $import->recordExplicitlyCreatedObjects(['client' => [], 'port' => []]);
+                            $statistics = ['bills_created' => 0, 'items_created' => 0, 'containers_processed' => 0, 'containers_created' => 0, 'import_id' => $import->id];
+                            $import->markAsCompletedWithWarnings(['voyage_id' => $voyage->id, 'warnings' => $warnings, 'warnings_count' => count($warnings), 'import_statistics' => $statistics, 'processing_time_seconds' => round(microtime(true) - $started, 2)]);
+                            return ManifestParseResult::success($voyage, [], [], [], $warnings, $statistics);
                         }
                         if (ManifestImport::isFileAlreadyImported($import->file_hash, (int) $import->company_id)) {
                             throw new DomainException('El archivo ya fue importado. Revise el historial de importaciones.');
