@@ -2110,7 +2110,16 @@ class GuaranExcelParser implements ManifestParserInterface
     protected function createImportRecord(string $filePath, array $options): ManifestImport
     {
         $user = auth()->user();
-        $companyId = ($user->userable_type === 'App\Models\Company' ? $user->userable_id : null);
+        $companyId = $user?->company?->id;
+
+        if (!$companyId) {
+            throw new Exception('El usuario no tiene una empresa asignada.');
+        }
+
+        $fileHash = ManifestImport::generateFileHash($filePath);
+        if (ManifestImport::isFileAlreadyImported($fileHash, $companyId)) {
+            throw new Exception('Este archivo ya fue importado para esta empresa.');
+        }
         
         return ManifestImport::createForImport([
             'company_id' => $companyId,
@@ -2118,7 +2127,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'file_name' => basename($filePath),
             'file_format' => 'guaran_excel',
             'file_size_bytes' => filesize($filePath),
-            'file_hash' => hash_file('sha256', $filePath),
+            'file_hash' => $fileHash,
             'parser_config' => [
                 'parser_class' => self::class,
                 'options' => $options
