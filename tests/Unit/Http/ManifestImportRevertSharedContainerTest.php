@@ -114,7 +114,7 @@ class ManifestImportRevertSharedContainerTest extends TestCase
 
     public function test_reverting_import_b_keeps_the_container_shared_with_voyage_a(): void
     {
-        app(\App\Services\ManifestImportRevertService::class)->revertImport(ManifestImport::findOrFail(2), 7, 'QA', 'Prueba');
+        (new ManifestImportController())->revert(new Request(), ManifestImport::findOrFail(2));
 
         $this->assertSame('reverted', ManifestImport::find(2)->status);
 
