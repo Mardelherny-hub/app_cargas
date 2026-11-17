@@ -228,6 +228,11 @@ class G2OceanXmlParser implements ManifestParserInterface
                             $blData
                         );
 
+                        if ($hasTarget) {
+                            $bill->unsetRelation('shipmentItems');
+                            BillOfLading::withoutEvents(fn () => $bill->recalculateItemStats());
+                        }
+
                         $createdItems = array_merge(
                             $createdItems,
                             $items
@@ -259,18 +264,9 @@ class G2OceanXmlParser implements ManifestParserInterface
                             ]),
                         ];
 
-                        if (empty($createdBills)) {
-                            $message = 'Todos los conocimientos del archivo ya existen en el viaje destino. No se agregó carga.';
-                            $importRecord->markAsFailed([$message], $completionData);
-
-                            return ManifestParseResult::failure(
-                                [$message],
-                                $this->stats['warnings'],
-                                array_merge($completionData['import_statistics'], ['import_id' => $importRecord->id])
-                            );
-                        }
-
-                        $completionData['notes'] = 'Importación G2Ocean XML agregada al viaje existente';
+                        $completionData['notes'] = empty($createdBills)
+                            ? 'Todos los conocimientos del archivo ya existen en el viaje destino. No se agregó carga.'
+                            : 'Importación G2Ocean XML agregada al viaje existente';
                         if ($this->stats['warnings'] !== []) {
                             $importRecord->markAsCompletedWithWarnings($completionData);
                         } else {
@@ -278,7 +274,7 @@ class G2OceanXmlParser implements ManifestParserInterface
                         }
                     }
 
-                    if (empty($createdBills)) {
+                    if (!$hasTarget && empty($createdBills)) {
                         throw new Exception(
                             'No se creó ningún Bill of Lading.'
                         );
@@ -297,7 +293,7 @@ class G2OceanXmlParser implements ManifestParserInterface
 
                     return ManifestParseResult::success(
                         voyage: $voyage,
-                        shipments: [$shipment],
+                        shipments: $shipment ? [$shipment] : [],
                         containers: [],
                         billsOfLading: $createdBills,
                         warnings: $this->stats['warnings'],
