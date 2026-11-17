@@ -3530,6 +3530,43 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 throw new Exception("SOAP Fault en RectifConvoyMicDta: " . $errorMsg);
             }
 
+            // Verificar errores informados por AFIP dentro de la respuesta
+            $afipMessages = $this->extractAfipMessages($response);
+
+            if (!empty($afipMessages['errores'])) {
+                $errorTexts = array_map(function($msg) {
+                    return "[{$msg['codigo']}] {$msg['descripcion']}";
+                }, $afipMessages['errores']);
+
+                $errorMessage = 'Error AFIP: ' . implode('; ', $errorTexts);
+
+                $transaction = $this->createWebserviceTransaction($voyage, [
+                    'transaction_id' => $transactionId,
+                    'webservice_method' => 'RectifConvoyMicDta',
+                    'request_xml' => $xmlContent,
+                    'response_xml' => $response,
+                    'status' => 'error',
+                ]);
+
+                $transaction?->update([
+                    'error_message' => $errorMessage,
+                    'response_at' => now(),
+                ]);
+
+                $this->logOperation('error', 'RectifConvoyMicDta rechazado por AFIP', [
+                    'voyage_id' => $voyage->id,
+                    'nro_viaje' => $data['nro_viaje'],
+                    'error' => $errorMessage,
+                ]);
+
+                return [
+                    'success' => false,
+                    'error_message' => $errorMessage,
+                    'error_code' => 'AFIP_ERROR',
+                    'afip_messages' => $afipMessages,
+                ];
+            }
+
             // Guardar transacción exitosa con XMLs completos
             $this->createWebserviceTransaction($voyage, [
                 'transaction_id' => $transactionId,
@@ -4320,17 +4357,66 @@ class ArgentinaMicDtaService extends BaseWebserviceService
                 ],
             ]);
 
-            // 10. Marcar transacciones anteriores del título como canceladas (local)
-            \App\Models\WebserviceTransaction::where('voyage_id', $voyage->id)
+            // 10. Marcar como canceladas (local) solo las transacciones de registro
+            // anteriores cuyos títulos tienen TODOS un AnularTitulo exitoso.
+            // Un lote con algún título vigente conserva su estado; la anulación
+            // individual queda registrada en esta transacción.
+            $tituloAnulado = trim((string) $tituloId);
+
+            $anulacionesExitosas = \App\Models\WebserviceTransaction::where('company_id', $this->company->id)
+                ->where('voyage_id', $voyage->id)
+                ->where('environment', $this->config['environment'])
+                ->where('soap_action', 'Ar.Gob.Afip.Dga.wgesregsintia2/AnularTitulo')
+                ->where('status', 'success')
+                ->where('id', '<=', $transaction->id)
+                ->get(['id', 'created_at', 'success_data']);
+
+            $registros = \App\Models\WebserviceTransaction::where('company_id', $this->company->id)
+                ->where('voyage_id', $voyage->id)
+                ->where('environment', $this->config['environment'])
                 ->where('soap_action', 'like', '%RegistrarTitEnvios%')
                 ->whereIn('status', ['success', 'sent'])
-                ->whereHas('shipment.billsOfLading', function($q) use ($tituloId) {
-                    $q->where('bill_number', $tituloId);
-                })
-                ->update([
-                    'status' => 'cancelled',
-                    'error_message' => 'Anulado en AFIP: ' . $motivoAnulacion,
-                ]);
+                ->where('id', '<', $transaction->id)
+                ->where('created_at', '<=', $transaction->created_at)
+                ->get(['id', 'created_at', 'request_xml']);
+
+            foreach ($registros as $registro) {
+                // Títulos enviados en el XML original (carga y contenedores vacíos)
+                $registroXml = new \DOMDocument();
+                if (trim((string) $registro->request_xml) === ''
+                    || !@$registroXml->loadXML((string) $registro->request_xml, LIBXML_NONET)) {
+                    continue;
+                }
+                $titulosRegistro = [];
+                $nodos = (new \DOMXPath($registroXml))->query(
+                    '//*[local-name()="TitTransEnvio" or local-name()="TitTransContVacio"]'
+                    . '/*[local-name()="idTitTrans"]'
+                );
+                foreach ($nodos as $nodo) {
+                    $titulosRegistro[] = trim($nodo->textContent);
+                }
+                $titulosRegistro = array_unique($titulosRegistro);
+
+                if (empty($titulosRegistro)
+                    || in_array('', $titulosRegistro, true)
+                    || !in_array($tituloAnulado, $titulosRegistro, true)) {
+                    continue;
+                }
+
+                // Solo cuentan anulaciones exitosas posteriores a este registro
+                $titulosAnulados = $anulacionesExitosas
+                    ->filter(fn ($anulacion) => $anulacion->id > $registro->id
+                        && $anulacion->created_at >= $registro->created_at)
+                    ->map(fn ($anulacion) => trim((string) ($anulacion->success_data['titulo_anulado'] ?? '')))
+                    ->all();
+
+                if (array_diff($titulosRegistro, $titulosAnulados) === []) {
+                    \App\Models\WebserviceTransaction::whereKey($registro->id)->update([
+                        'status' => 'cancelled',
+                        'error_message' => 'Anulado en AFIP: ' . $motivoAnulacion,
+                    ]);
+                }
+            }
 
             $this->logOperation('info', 'AnularTitulo exitoso', [
                 'voyage_id' => $voyage->id,
