@@ -170,6 +170,8 @@
                 </div>
             @endif
 
+            @include('company.manifests.import-target-voyage-report', ['targetVoyage' => $targetVoyage ?? null])
+
             {{-- =========================================================
                  4. ADVERTENCIAS
                  ========================================================= --}}
