@@ -57,6 +57,7 @@ class GuaranExcelParser implements ManifestParserInterface
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
     use ResolvesPorts;
+    use \App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 
     protected array $warnings = [];
 
@@ -126,9 +127,41 @@ class GuaranExcelParser implements ManifestParserInterface
         }
     }
 
+    public function detectVesselName(string $filePath): ?string
+    {
+        $spreadsheet = null;
+
+        try {
+            $column = array_search('BARGE_NAME', $this->columnMapping, true);
+            if ($column === false) {
+                return null;
+            }
+
+            $reader = IOFactory::createReaderForFile($filePath);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($filePath);
+            $worksheet = $spreadsheet->getActiveSheet();
+
+            for ($row = 7; $row <= $worksheet->getHighestDataRow(); $row++) {
+                $name = trim((string) $worksheet->getCell($column . $row)->getCalculatedValue());
+                if ($name !== '') {
+                    return $name;
+                }
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            return null;
+        } finally {
+            $spreadsheet?->disconnectWorksheets();
+        }
+    }
+
     public function parse(string $filePath, array $options = []): ManifestParseResult
     {
         $this->warnings = [];
+        $this->skippedRepeatedBills = [];
+        $this->targetShipmentCreated = false;
 
         $startTime = microtime(true);
         
@@ -160,8 +193,9 @@ class GuaranExcelParser implements ManifestParserInterface
 
             // Crear objetos usando SOLO datos reales
             $voyageData = $this->extractVoyageData($data[0]);
-            $voyage = $this->createVoyage($voyageData, $options);
-            $shipment = $this->createShipment($voyage, $voyageData);
+            $targetVoyage = $this->resolveTargetVoyage($options);
+            $voyage = $targetVoyage ?? $this->createVoyage($voyageData, $options);
+            $shipment = $targetVoyage ? null : $this->createShipment($voyage, $voyageData);
             
             // Procesar por BL Number
             $groupedByBL = $this->groupDataByBillNumber($data);
@@ -175,7 +209,9 @@ class GuaranExcelParser implements ManifestParserInterface
             // que en manifiestos grandes agotan tiempo/memoria (HTTP 500).
             Model::withoutEvents(function () use (
                 $groupedByBL,
-                $shipment,
+                &$shipment,
+                $voyage,
+                $targetVoyage,
                 &$bills,
                 &$containers,
                 &$createdContainers,
@@ -183,6 +219,27 @@ class GuaranExcelParser implements ManifestParserInterface
                 $options
             ) {
                 foreach ($groupedByBL as $blNumber => $blRows) {
+                    if ($targetVoyage && $this->skipRepeatedBill($voyage, (string) $blNumber)) {
+                        continue;
+                    }
+
+                    if ($targetVoyage && $shipment === null) {
+                        $shipment = $this->resolveTargetShipment(
+                            $voyage,
+                            (int) $options['vessel_id'],
+                            [
+                                'shipment_number' => $this->generateShipmentNumber(
+                                    $voyage,
+                                    $this->getNextSequenceInVoyage($voyage->id)
+                                ),
+                                'departure_time' => null,
+                                'status' => 'planning',
+                                'utilization_percentage' => 0.0,
+                                'cargo_capacity_tons' => null,
+                            ]
+                        );
+                    }
+
                     // Pasamos todas las filas del BL para que pueda contar contenedores únicos
                     $bill = $this->createBillOfLading(
                         $shipment,
@@ -219,7 +276,15 @@ class GuaranExcelParser implements ManifestParserInterface
             // Recalcular estadísticas UNA sola vez por cada BL (con los items ya insertados),
             // en lugar de una vez por item dentro del loop.
             foreach ($bills as $bill) {
-                $bill->recalculateItemStats();
+                if ($targetVoyage) {
+                    Model::withoutEvents(fn () => $bill->recalculateItemStats());
+                } else {
+                    $bill->recalculateItemStats();
+                }
+            }
+
+            if ($targetVoyage && ($warning = $this->repeatedBillsWarning()) !== null) {
+                $this->warnings[] = $warning;
             }
 
             // Completar importación
@@ -229,7 +294,9 @@ class GuaranExcelParser implements ManifestParserInterface
                 $bills,
                 $items,
                 $createdContainers,
-                $startTime
+                $startTime,
+                $shipment,
+                $targetVoyage !== null
             );
             
             DB::commit();
@@ -244,7 +311,7 @@ class GuaranExcelParser implements ManifestParserInterface
 
             return ManifestParseResult::success(
                 voyage: $voyage,
-                shipments: [$shipment],
+                shipments: $shipment ? [$shipment] : [],
                 containers: $containers,
                 billsOfLading: $bills,
                 warnings: $this->warnings,
@@ -2065,13 +2132,17 @@ class GuaranExcelParser implements ManifestParserInterface
         array $bills,
         array $items,
         array $createdContainers,
-        float $startTime
+        float $startTime,
+        ?Shipment $shipment = null,
+        bool $isTargetVoyage = false
     ): void {
         $processingTime = microtime(true) - $startTime;
         
         $createdObjects = [
             'voyage' => [$voyage->id],
-            'shipment' => [$voyage->shipments()->first()->id ?? null],
+            'shipment' => $isTargetVoyage
+                ? ($shipment ? [$shipment->id] : [])
+                : [$voyage->shipments()->first()->id ?? null],
             'bill' => array_map(fn($bill) => $bill->id, $bills),
             'item' => array_map(fn($item) => $item->id, $items),
             'container' => array_map(
@@ -2082,7 +2153,16 @@ class GuaranExcelParser implements ManifestParserInterface
         
         $createdObjects = array_map(fn($ids) => array_filter($ids), $createdObjects);
         
-        $importRecord->recordExplicitlyCreatedObjects($createdObjects);
+        if ($isTargetVoyage) {
+            $this->recordTargetVoyageObjects($importRecord, $voyage, [
+                'shipment' => $createdObjects['shipment'],
+                'bill' => $createdObjects['bill'],
+                'item' => $createdObjects['item'],
+                'container' => $createdObjects['container'],
+            ]);
+        } else {
+            $importRecord->recordExplicitlyCreatedObjects($createdObjects);
+        }
         $this->warnings = array_values(array_unique($this->warnings));
 
         $completionData = [
