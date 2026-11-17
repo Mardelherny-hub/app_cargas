@@ -164,6 +164,37 @@ class MscVesselNameParserTest extends TestCase
         $this->assertCount(2, $import->created_container_ids);
     }
 
+    public function test_unknown_loading_port_fails_with_clear_message_and_creates_nothing(): void
+    {
+        $before = $this->operationalCounts();
+        $ports = DB::table('ports')->count();
+
+        $result = $this->import($this->file(str_replace('BUENOS AIRES', 'PUERTO INEXISTENTE', $this->manifest())));
+
+        $this->assertFalse($result->success);
+        $this->assertSame(
+            ['MSC: puerto de carga inexistente o ambiguo. Revise el catálogo. Sugerencias: ARBUE (BUENOS AIRES), PYASU (ASUNCION).'],
+            $result->errors
+        );
+        $this->assertSame($before, $this->operationalCounts());
+        $this->assertSame($ports, DB::table('ports')->count());
+        $this->assertSame(0, ManifestImport::count());
+    }
+
+    public function test_revert_leaves_operational_data_as_before(): void
+    {
+        $this->addPreviousVoyage('TSTU0000001', '40HC');
+        $before = $this->operationalSnapshot();
+
+        $this->assertTrue($this->import($this->file($this->manifest()))->success);
+        $this->assertSame(4, DB::table('container_shipment_item')->count());
+        $this->assertSame(2, DB::table('containers')->count());
+
+        $this->revertImport(ManifestImport::sole());
+
+        $this->assertSame($before, $this->operationalSnapshot());
+    }
+
     public function test_reimport_of_the_same_file_is_rejected_without_changes(): void
     {
         $path = $this->file($this->manifest());
