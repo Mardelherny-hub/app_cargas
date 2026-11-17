@@ -354,6 +354,11 @@ class LoginXmlParser implements ManifestParserInterface
 
                 $allItemIds[] = $itemId;
 
+                if ($this->importingToTargetVoyage) {
+                    $billOfLading->unsetRelation('shipmentItems');
+                    BillOfLading::withoutEvents(fn () => $billOfLading->recalculateItemStats());
+                }
+
                 /*
                  * Los eventos de ShipmentItem recalculan estadísticas.
                  * Para Login, la cabecera XML vuelve a ser la fuente
