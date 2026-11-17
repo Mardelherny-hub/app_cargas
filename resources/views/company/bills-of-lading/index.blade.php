@@ -75,6 +75,27 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
             </div>
         </div>
 
+        @if($bulkDeleteVesselInfo && $bulkDeleteVesselInfo['count'] > 0)
+            @php
+                $bulkDeleteConfirmation = "¿Eliminar los {$bulkDeleteVesselInfo['count']} conocimientos de la embarcación {$bulkDeleteVesselInfo['vessel']->name} y sus ítems?\n\nEl servidor verificará nuevamente que todos los conocimientos puedan eliminarse. Solo se eliminarán los contenedores exclusivos; los contenedores compartidos se preservarán.\n\nEsta acción es irreversible.";
+            @endphp
+            <div class="bg-red-50 border border-red-200 rounded-lg mb-6 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <p class="text-sm text-red-900">
+                    <span class="font-semibold">{{ $bulkDeleteVesselInfo['vessel']->name }}</span>:
+                    {{ $bulkDeleteVesselInfo['count'] }} conocimientos para eliminar.
+                </p>
+                <form method="POST"
+                      action="{{ route('company.bills-of-lading.destroy-vessel', ['voyage' => $bulkDeleteVesselInfo['voyage_id'], 'vessel' => $bulkDeleteVesselInfo['vessel_id']]) }}"
+                      onsubmit="return confirm(@js($bulkDeleteConfirmation));">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                        Eliminar todos los conocimientos de esta embarcación
+                    </button>
+                </form>
+            </div>
+        @endif
+
         {{-- FILTROS DE CONOCIMIENTOS --}}
         <div class="bg-white rounded-lg shadow-sm mb-6 p-4">
             <form method="GET">
@@ -398,37 +419,20 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
                                                    class="text-red-600 hover:text-red-900 text-sm font-medium">
                                                     PDF
                                                 </a>
-                                                @if(in_array('Cargas', $companyRoles))
-                                                    @if($bill->canBeDeleted())
-                                                        <form action="{{ route('company.bills-of-lading.destroy', $bill) }}" 
-                                                              method="POST" 
-                                                              onsubmit="return confirm('¿Eliminar el conocimiento {{ $bill->bill_number }}?\n\nEsta acción no se puede deshacer.');">
-                                                            @csrf
-                                                            @method('DELETE')
-                                                            <button type="submit" 
-                                                                    class="text-red-700 hover:text-red-900 text-sm font-medium">
-                                                                Eliminar
-                                                            </button>
-                                                        </form>
-                                                    @else
-                                                        @php
-                                                            $itemsCount = $bill->shipmentItems()->count();
-                                                            if ($itemsCount > 0) {
-                                                                $motivo = "Este conocimiento tiene {$itemsCount} item(s) asociados.\n\nElimine primero todos los items desde la vista del conocimiento.";
-                                                            } elseif ($bill->status !== 'draft') {
-                                                                $motivo = "Solo se pueden eliminar conocimientos en estado borrador.";
-                                                            } elseif ($bill->webservice_sent_at || $bill->argentina_sent_at || $bill->paraguay_sent_at) {
-                                                                $motivo = "Este conocimiento ya fue enviado a la Aduana y no puede eliminarse.";
-                                                            } else {
-                                                                $motivo = "Este conocimiento no puede eliminarse.";
-                                                            }
-                                                        @endphp
-                                                        <button type="button" 
-                                                                onclick="alert(@js($motivo))"
-                                                                class="text-gray-400 hover:text-gray-600 text-sm font-medium cursor-help">
+                                                @if($canDeleteBillIds[$bill->id] ?? false)
+                                                    @php
+                                                        $deleteConfirmation = "¿Eliminar el conocimiento {$bill->bill_number} y sus ítems?\n\nSolo se eliminarán los contenedores exclusivos; los contenedores compartidos se preservarán.\n\nEsta acción es irreversible.";
+                                                    @endphp
+                                                    <form action="{{ route('company.bills-of-lading.destroy', $bill) }}"
+                                                          method="POST"
+                                                          onsubmit="return confirm(@js($deleteConfirmation));">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit"
+                                                                class="text-red-700 hover:text-red-900 text-sm font-medium">
                                                             Eliminar
                                                         </button>
-                                                    @endif
+                                                    </form>
                                                 @endif
                                             </div>
                                         </div>
