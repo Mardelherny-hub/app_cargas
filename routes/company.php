@@ -336,6 +336,7 @@ Route::prefix('manifests')->name('company.manifests.')->group(function () {
         Route::get('/status/{uuid}', [ManifestImportController::class, 'importStatus'])->name('status');
         Route::get('/history/{import}', [ManifestImportController::class, 'showImport'])->name('show');
         Route::post('/{import}/revert', [ManifestImportController::class, 'revert'])->name('revert');
+        Route::post('/{import}/revert-voyage', [ManifestImportController::class, 'revertVoyage'])->name('revert-voyage');
     });
 
     // === EXPORTACIÓN - ANTES DE RUTAS CON PARÁMETROS ===
