@@ -304,6 +304,13 @@ class ParanaExcelParser implements ManifestParserInterface
                 }
             }
 
+            if ($targetVoyage) {
+                foreach ($bills as $bill) {
+                    $bill->unsetRelation('shipmentItems');
+                    BillOfLading::withoutEvents(fn () => $bill->recalculateItemStats());
+                }
+            }
+
             Log::info('PARANA parsing completed', [
                 'voyage_id' => $voyage->id,
                 'bills_count' => count($bills),
