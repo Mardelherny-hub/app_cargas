@@ -172,8 +172,11 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     ]);
                 }
 
-                // NUEVO: Verificar duplicados ANTES de procesar
-                $duplicateCheck = $this->checkForDuplicateBills($bills);
+                // NUEVO: Verificar duplicados ANTES de procesar.
+                // Con viaje destino, los repetidos se saltean e informan por conocimiento.
+                $duplicateCheck = empty($options['target_voyage_id'])
+                    ? $this->checkForDuplicateBills($bills)
+                    : ['all_duplicates' => false, 'has_duplicates' => false];
                 if ($duplicateCheck['all_duplicates']) {
                     return ManifestParseResult::failure([
                         'Este archivo ya fue importado anteriormente. Todos los conocimientos de embarque ya existen en el sistema.'
@@ -254,6 +257,9 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                         
                         if ($existingBL) {
                             // Skip silenciosamente, ya fue reportado en el check inicial
+                            if ($targetVoyage) {
+                                $this->stats['warnings'][] = "Se omitió el conocimiento {$blNumber}: ya existe en otro viaje.";
+                            }
                             continue;
                         }
 
@@ -306,7 +312,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 }
 
                 // CORREGIDO: Verificar que se crearon objetos
-                if (empty($createdBills)) {
+                if (empty($createdBills) && !$targetVoyage) {
                     return ManifestParseResult::failure([
                         'No se pudo crear ningún Bill of Lading del archivo KLine'
                     ], $this->stats['warnings'], $this->stats);
