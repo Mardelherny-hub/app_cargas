@@ -19,7 +19,7 @@ class NavsurTextParserCompat extends NavsurTextParser
     ): ManifestParseResult {
         $this->importOptions = $options;
 
-        return parent::parse($filePath);
+        return parent::parse($filePath, $options);
     }
 
     protected function findOrCreateVoyage(array $data): Voyage
