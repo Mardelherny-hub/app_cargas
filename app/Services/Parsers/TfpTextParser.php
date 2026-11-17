@@ -23,6 +23,7 @@ use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
+use App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -43,6 +44,7 @@ class TfpTextParser implements ManifestParserInterface
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
+    use ResolvesTargetVoyage;
 
     protected array $stats = [
         'processed_bls' => 0,
@@ -92,12 +94,27 @@ class TfpTextParser implements ManifestParserInterface
 
             // Transacción para persistir todo
             $result = DB::transaction(function () use ($blBlocks, $importRecord, $startTime, $filePath, $options) {
-                // Crear voyage único
-                $voyageData = $this->extractVoyageData($blBlocks[0], $filePath);
-                $voyage = $this->findOrCreateVoyage($voyageData, $options);
-                
-                // Crear shipment
-                $shipment = $this->findOrCreateShipment($voyage, $voyageData);
+                $targetVoyage = $this->resolveTargetVoyage($options);
+
+                if ($targetVoyage) {
+                    // Agregar a un viaje existente: sus datos no se tocan.
+                    $voyage = $targetVoyage;
+                    $vessel = Vessel::findOrFail((int) $options['vessel_id']);
+                    $shipment = $this->resolveTargetShipment($voyage, (int) $vessel->id, [
+                        'shipment_number' => 'TFP-' . $voyage->id . '-'
+                            . ((int) Shipment::where('voyage_id', $voyage->id)->max('sequence_in_voyage') + 1),
+                        'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
+                        'container_capacity' => $vessel->container_capacity ?? 0,
+                        'status' => 'planning',
+                    ]);
+                } else {
+                    // Crear voyage único
+                    $voyageData = $this->extractVoyageData($blBlocks[0], $filePath);
+                    $voyage = $this->findOrCreateVoyage($voyageData, $options);
+
+                    // Crear shipment
+                    $shipment = $this->findOrCreateShipment($voyage, $voyageData);
+                }
                 
                 $allBills = [];
                 $allContainers = [];
@@ -108,6 +125,10 @@ class TfpTextParser implements ManifestParserInterface
                     $header = $this->parseHeader($block);
                     $containers = $this->parseContainers($block);
                     $lines = $this->parseLines($block);
+
+                    if ($targetVoyage && $this->skipRepeatedBill($voyage, $header['bl_numero'])) {
+                        continue;
+                    }
 
                     // Validar BL duplicado
                     $existing = BillOfLading::where('bill_number', $header['bl_numero'])->first();
@@ -240,7 +261,18 @@ class TfpTextParser implements ManifestParserInterface
 
                 // Registrar objetos creados y completar el registro de importación.
                 // El revert reconstruye items/containers (incluido el pivote) desde el voyage_id.
-                if ($importRecord) {
+                if ($importRecord && $targetVoyage) {
+                    $this->recordTargetVoyageObjects($importRecord, $voyage, [
+                        'shipment' => [$shipment->id],
+                        'bill' => array_map(fn($b) => $b->id, $allBills),
+                        'item' => array_map(fn($i) => $i->id, $allItems),
+                        'container' => $createdContainerIds,
+                    ]);
+
+                    if ($warning = $this->repeatedBillsWarning()) {
+                        $this->stats['warnings'][] = $warning;
+                    }
+                } elseif ($importRecord) {
                     $importRecord->recordExplicitlyCreatedObjects([
                         'voyage' => [$voyage->id],
                         'shipment' => [$shipment->id],
@@ -248,6 +280,9 @@ class TfpTextParser implements ManifestParserInterface
                         'item' => array_map(fn($i) => $i->id, $allItems),
                         'container' => $createdContainerIds,
                     ]);
+                }
+
+                if ($importRecord) {
                     $this->stats['warnings'] = array_values(array_unique($this->stats['warnings']));
 
                     $completionData = [
@@ -316,6 +351,34 @@ class TfpTextParser implements ManifestParserInterface
                 $this->stats['warnings'],
                 $this->stats
             );
+        }
+    }
+
+    /**
+     * Embarcación que declara el archivo, para proponerla al importar.
+     */
+    public function detectVesselName(string $filePath): ?string
+    {
+        try {
+            $content = @file_get_contents($filePath);
+            if ($content === false || $content === '') {
+                return null;
+            }
+
+            if (!mb_check_encoding($content, 'UTF-8')) {
+                $content = mb_convert_encoding($content, 'UTF-8', 'ISO-8859-1');
+            }
+
+            $blocks = $this->extractBlBlocks(str_replace(["\r\n", "\r"], "\n", $content));
+            if ($blocks === []) {
+                return null;
+            }
+
+            $name = trim((string) ($this->parseHeader($blocks[0])['buque'] ?? ''));
+
+            return $name !== '' ? $name : null;
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 

@@ -62,11 +62,140 @@ class ManifestImportController extends Controller
             ->orderBy('name')
             ->get();
 
+        // Viajes a los que se puede agregar un archivo: solo en planificación.
+        $planningVoyages = Voyage::where('company_id', $company->id)
+            ->where('status', 'planning')
+            ->with(['leadVessel:id,name', 'shipments:id,voyage_id,vessel_id'])
+            ->orderByDesc('id')
+            ->get(['id', 'voyage_number', 'lead_vessel_id', 'is_convoy', 'departure_date']);
+
         return view('company.manifests.import', [
             'supportedFormats' => $supportedFormats,
             'formatStats' => $formatStats,
-            'vessels' => $vessels
+            'vessels' => $vessels,
+            'planningVoyages' => $planningVoyages,
         ]);
+    }
+
+    /**
+     * Propone la embarcación según el archivo, antes de importar.
+     */
+    public function detectVessel(Request $request)
+    {
+        $request->validate(['manifest_file' => 'required|file|max:10240']);
+
+        $company = auth()->user()->company;
+        $uploadedFile = $request->file('manifest_file');
+        $path = $uploadedFile->storeAs(
+            'imports/manifests/preview',
+            $this->generateUniqueFileName($uploadedFile->getClientOriginalName(), $uploadedFile->getClientOriginalExtension()),
+            'local'
+        );
+
+        try {
+            $parser = $this->parserFactory->getParser(Storage::path($path));
+            $vesselName = method_exists($parser, 'detectVesselName')
+                ? $parser->detectVesselName(Storage::path($path))
+                : null;
+        } catch (Exception $e) {
+            return response()->json(['message' => 'No se reconoce el formato del archivo.'], 422);
+        } finally {
+            Storage::disk('local')->delete($path);
+        }
+
+        $vesselName = $vesselName !== null ? trim($vesselName) : null;
+        $vessel = $vesselName
+            ? Vessel::where('company_id', $company->id)
+                ->where('active', true)
+                ->where('operational_status', 'active')
+                ->whereRaw('UPPER(TRIM(name)) = ?', [mb_strtoupper($vesselName)])
+                ->first(['id', 'name'])
+            : null;
+
+        return response()->json([
+            'supports_target' => \App\Jobs\ProcessManifestImportJob::parserSupportsTargetVoyage($parser),
+            'vessel_name' => $vesselName,
+            'vessel_id' => $vessel?->id,
+        ]);
+    }
+
+    /**
+     * Verifica en pantalla si el archivo se puede agregar al viaje elegido.
+     */
+    public function checkTarget(Request $request)
+    {
+        $data = $request->validate([
+            'target_voyage_id' => 'required|integer',
+            'vessel_id' => 'required|integer',
+            'convoy_leader_vessel_id' => 'nullable|integer',
+        ]);
+
+        $check = $this->inspectTargetVoyage(
+            auth()->user()->company->id,
+            (int) $data['target_voyage_id'],
+            (int) $data['vessel_id'],
+            isset($data['convoy_leader_vessel_id']) ? (int) $data['convoy_leader_vessel_id'] : null
+        );
+
+        return response()->json($check);
+    }
+
+    /**
+     * Reglas para agregar un archivo a un viaje existente.
+     *
+     * @return array{allowed: bool, needs_convoy: bool, error: ?string}
+     */
+    protected function inspectTargetVoyage(int $companyId, int $voyageId, int $vesselId, ?int $leaderId): array
+    {
+        $deny = fn (string $error, bool $needsConvoy = false) => [
+            'allowed' => false, 'needs_convoy' => $needsConvoy, 'error' => $error,
+        ];
+
+        $voyage = Voyage::where('id', $voyageId)
+            ->where('company_id', $companyId)
+            ->where('status', 'planning')
+            ->first();
+
+        if (!$voyage) {
+            return $deny('El viaje elegido no existe, no pertenece a su empresa o no está en planificación.');
+        }
+
+        $voyageVesselIds = Shipment::where('voyage_id', $voyage->id)->pluck('vessel_id')
+            ->push($voyage->lead_vessel_id)->filter()->map(fn ($id) => (int) $id)->unique()->values();
+        $needsConvoy = !$voyage->is_convoy && !$voyageVesselIds->contains($vesselId);
+
+        if (!$needsConvoy) {
+            $leaderId = null;
+        } elseif ($leaderId === null) {
+            return $deny(
+                "El viaje {$voyage->voyage_number} no es un convoy. Para agregar otra embarcación, conviértalo en convoy y elija el líder.",
+                true
+            );
+        } elseif (!Vessel::where('id', $leaderId)->where('company_id', $companyId)
+            ->where('active', true)->where('operational_status', 'active')->exists()) {
+            return $deny('La embarcación líder elegida no es válida o no pertenece a su empresa.', true);
+        }
+
+        // La conversión cambia el rol de todas las embarcaciones del viaje.
+        $checked = $leaderId !== null
+            ? $voyageVesselIds->push($vesselId)->push($leaderId)->unique()
+            : collect([$vesselId]);
+
+        $lock = app(\App\Services\Simple\AfipVesselLock::class);
+        foreach ($checked as $checkedVesselId) {
+            $result = $lock->inspectAfipVesselLock($companyId, $voyage->id, (int) $checkedVesselId);
+            if ($result['locked']) {
+                $name = Vessel::whereKey($checkedVesselId)->value('name') ?? "#{$checkedVesselId}";
+
+                return $deny(
+                    "La embarcación {$name} tiene registros vigentes en AFIP para este viaje: "
+                        . implode(' ', array_column($result['reasons'], 'message')),
+                    $needsConvoy
+                );
+            }
+        }
+
+        return ['allowed' => true, 'needs_convoy' => $needsConvoy, 'error' => null];
     }
 
     /**
@@ -82,6 +211,8 @@ class ManifestImportController extends Controller
             'discharge_date' => 'nullable|date',
             'voyage_number' => 'nullable|string|max:100',
             'operation_type' => 'nullable|in:import,export',
+            'target_voyage_id' => 'nullable|integer',
+            'convoy_leader_vessel_id' => 'nullable|integer',
         ], [
             'manifest_file.required' => 'Debe seleccionar un archivo para importar.',
             'manifest_file.file' => 'El archivo seleccionado no es válido.',
@@ -119,6 +250,33 @@ class ManifestImportController extends Controller
 
         if (!$vessel) {
             return back()->with('error', 'La embarcación seleccionada no es válida o no pertenece a su empresa.');
+        }
+
+        /*
+         * Agregar a un viaje existente: se valida antes de encolar para dar
+         * el motivo en pantalla. El parser vuelve a validarlo al procesar.
+         */
+        $targetVoyageId = $request->filled('target_voyage_id')
+            ? (int) $request->input('target_voyage_id')
+            : null;
+
+        $convoyLeaderVesselId = null;
+
+        if ($targetVoyageId !== null) {
+            $check = $this->inspectTargetVoyage(
+                $company->id,
+                $targetVoyageId,
+                $vessel->id,
+                $request->filled('convoy_leader_vessel_id') ? (int) $request->input('convoy_leader_vessel_id') : null
+            );
+
+            if (!$check['allowed']) {
+                return back()->withInput()->withErrors(['target_voyage_id' => $check['error']]);
+            }
+
+            $convoyLeaderVesselId = $check['needs_convoy']
+                ? (int) $request->input('convoy_leader_vessel_id')
+                : null;
         }
 
         $uploadedFile = $request->file('manifest_file');
@@ -168,6 +326,17 @@ class ManifestImportController extends Controller
                     ]);
             }
 
+            if (
+                $targetVoyageId !== null
+                && !\App\Jobs\ProcessManifestImportJob::parserSupportsTargetVoyage($detectedParser)
+            ) {
+                Storage::disk('local')->delete($path);
+
+                return back()->withInput()->withErrors([
+                    'target_voyage_id' => 'Este formato todavía no admite agregar archivos a un viaje existente.',
+                ]);
+            }
+
             // Registro de seguimiento: existe desde el encolado, lo sigue el spinner.
             // Independiente de si el parser llega a crear su ManifestImport.
             $tracking = \App\Models\ImportTracking::create([
@@ -193,7 +362,9 @@ class ManifestImportController extends Controller
                 $request->input('voyage_number'),
                 $request->input('loading_date'),
                 $request->input('discharge_date'),
-                $request->input('operation_type')
+                $request->input('operation_type'),
+                $targetVoyageId,
+                $convoyLeaderVesselId
             );
 
             Log::info('Manifest import encolado', [
@@ -205,6 +376,8 @@ class ManifestImportController extends Controller
                 'user_id'       => auth()->id(),
                 'company_id'    => $company->id,
                 'operation_type' => $request->input('operation_type'),
+                'target_voyage_id' => $targetVoyageId,
+                'convoy_leader_vessel_id' => $convoyLeaderVesselId,
             ]);
 
             // Pantalla de espera con spinner (polling por uuid hasta que el worker termine).
@@ -312,9 +485,20 @@ class ManifestImportController extends Controller
             ->latest()
             ->paginate(20);
 
+        // Viajes de la página con archivos agregados vigentes: se ofrece revertir el viaje completo.
+        $voyagesWithAddedImports = ManifestImport::forCompany($company->id)
+            ->whereIn('voyage_id', $imports->pluck('voyage_id')->filter()->unique())
+            ->whereNull('reverted_at')
+            ->whereIn('status', ['completed', 'completed_with_warnings'])
+            ->whereNotNull('parser_config->target_voyage')
+            ->pluck('voyage_id')
+            ->unique()
+            ->all();
+
         return view('company.manifests.import-history', [
             'imports' => $imports,
-            'company' => $company
+            'company' => $company,
+            'voyagesWithAddedImports' => $voyagesWithAddedImports,
         ]);
     }
 
@@ -335,7 +519,8 @@ class ManifestImportController extends Controller
 
         return view('company.manifests.import-details', [
             'import' => $import,
-            'company' => $company
+            'company' => $company,
+            'targetVoyage' => $this->targetVoyageReport($import),
         ]);
     }
 
@@ -671,6 +856,7 @@ public function showReport(Request $request)
             ],
             'warnings' => $import->warnings ?? [],
             'errors'   => $import->errors ?? [],
+            'targetVoyage' => $this->targetVoyageReport($import),
         ];
 
         if ($import->voyage) {
@@ -690,160 +876,103 @@ public function showReport(Request $request)
     }
 
     /**
-     * Revertir una importación específica
-     * Solo permite revertir si el Viaje está en estado 'planning'
+     * Informe de una importación agregada a un viaje existente: conocimientos
+     * salteados por repetidos y conversión a convoy. null si creó su viaje.
      */
+    protected function targetVoyageReport(ManifestImport $import): ?array
+    {
+        $target = $import->parser_config['target_voyage'] ?? null;
+
+        if (!is_array($target)) {
+            return null;
+        }
+
+        return [
+            'skipped_bills' => array_values((array) ($target['skipped_bills'] ?? [])),
+            'shipment_created' => (bool) ($target['shipment_created'] ?? false),
+            'converted_to_convoy' => isset($import->parser_config['convoy_conversion']),
+        ];
+    }
+
     /**
      * Revertir una importación específica
      * Solo permite revertir si el Viaje está en estado 'planning'
      */
     public function revert(Request $request, ManifestImport $import)
     {
-
         $company = auth()->user()->company;
 
-        
         if (!$company || $import->company_id !== $company->id) {
             abort(403, 'No tiene permisos para revertir esta importación.');
         }
 
-        // Verificar que puede ser revertida
-        if (!$import->can_be_reverted) {
-            return back()->with('error', 'Esta importación no puede ser revertida: ' . $import->revert_blocked_reason);
-        }
-
-        // Verificar que el Viaje esté en planning
-        if ($import->voyage && $import->voyage->status !== 'planning') {
-            return back()->with('error', 'Solo se pueden revertir importaciones con viajes en estado de planificación.');
-        }
-        
-
         try {
-        
-            DB::beginTransaction();
-
-            // Obtener todos los objetos creados
-            $createdObjects = $import->getAllCreatedObjectIds();
-            //dd($createdObjects);
-            Log::info('REVERT - Objetos a eliminar:', [
-                'import_id' => $import->id,
-                'created_objects' => $createdObjects
-            ]);
-            
-            $deletedSummary = [];
-
-            // Eliminar en orden correcto (dependencias primero)
-            // 0) Eliminar filas de PIVOTE contenedores⇆ítems (si la tabla existe).
-            // Solo las de los ítems de esta importación: un contenedor reutilizado
-            // conserva sus vínculos con ítems de otros viajes.
-            $pivotMeta = $import->detectContainerPivot();
-            if ($pivotMeta) {
-                $deletedPivot = 0;
-
-                if (!empty($createdObjects['items'])) {
-                    $deletedPivot += DB::table($pivotMeta['table'])
-                        ->whereIn($pivotMeta['item_fk'], $createdObjects['items'])
-                        ->delete();
-                }
-
-                Log::info('REVERT - Pivote contenedor⇆ítem eliminada', [
-                    'table' => $pivotMeta['table'],
-                    'count' => $deletedPivot,
-                ]);
-            }
-
-            
-            // 1. Eliminar bills of lading
-            if (!empty($createdObjects['bills'])) {
-                Log::info('REVERT - Eliminando bills of lading', ['ids' => $createdObjects['bills']]);
-                $deletedCount = \App\Models\BillOfLading::whereIn('id', $createdObjects['bills'])->delete();
-                Log::info('REVERT - Bills eliminados', ['count' => $deletedCount]);
-                if ($deletedCount > 0) {
-                    $deletedSummary[] = "{$deletedCount} conocimientos de embarque";
-                }
-            }
-
-            // 2. Eliminar shipment items  
-            if (!empty($createdObjects['items'])) {
-                Log::info('REVERT - Eliminando shipment items', ['ids' => $createdObjects['items']]);
-                $deletedCount = \App\Models\ShipmentItem::whereIn('id', $createdObjects['items'])->delete();
-                Log::info('REVERT - Items eliminados', ['count' => $deletedCount]);
-                if ($deletedCount > 0) {
-                    $deletedSummary[] = "{$deletedCount} items de carga";
-                }
-            }
-
-            // 3. Eliminar contenedores
-            // Un contenedor que sigue vinculado a ítems de otro viaje ya existía:
-            // los parsers lo reutilizan por número. Solo se borra si quedó sin vínculos.
-            $containerIds = collect($createdObjects['containers'] ?? []);
-            if ($pivotMeta && $containerIds->isNotEmpty()) {
-                $stillLinked = DB::table($pivotMeta['table'])
-                    ->whereIn($pivotMeta['container_fk'], $containerIds)
-                    ->pluck($pivotMeta['container_fk']);
-                $containerIds = $containerIds->diff($stillLinked)->values();
-            }
-
-            if ($containerIds->isNotEmpty()) {
-                Log::info('REVERT - Eliminando contenedores', ['ids' => $containerIds->all()]);
-                $deletedCount = \App\Models\Container::whereIn('id', $containerIds)->delete();
-                Log::info('REVERT - Contenedores eliminados', ['count' => $deletedCount]);
-                if ($deletedCount > 0) {
-                    $deletedSummary[] = "{$deletedCount} contenedores";
-                }
-            }
-
-            // 4. Eliminar shipments
-            if (!empty($createdObjects['shipments'])) {
-                Log::info('REVERT - Eliminando shipments', ['ids' => $createdObjects['shipments']]);
-                $deletedCount = \App\Models\Shipment::whereIn('id', $createdObjects['shipments'])->delete();
-                Log::info('REVERT - Shipments eliminados', ['count' => $deletedCount]);
-                if ($deletedCount > 0) {
-                    $deletedSummary[] = "{$deletedCount} envíos";
-                }
-            }
-
-            // 5. Eliminar Viaje principal
-            if (!empty($createdObjects['voyages'])) {
-                Log::info('REVERT - Eliminando voyages', ['ids' => $createdObjects['voyages']]);
-                $deletedCount = \App\Models\Voyage::whereIn('id', $createdObjects['voyages'])->delete();
-                Log::info('REVERT - Voyages eliminados', ['count' => $deletedCount]);
-                if ($deletedCount > 0) {
-                    $deletedSummary[] = "{$deletedCount} viajes";
-                }
-            }
-
-            // Marcar importación como revertida
-            $import->markAsReverted(auth()->id(), [
-                'reverted_objects' => $deletedSummary,
-                'reverted_by' => auth()->user()->name,
-                'reverted_reason' => $request->input('reason', 'Reversión manual')
-            ]);
-
-            DB::commit();
-
-            $message = empty($deletedSummary) 
-                ? 'Reversión completada - No había objetos para eliminar'
-                : 'Importación revertida exitosamente. Se eliminaron: ' . implode(', ', $deletedSummary);
-            
-            Log::info('REVERT - Completado exitosamente', [
-                'import_id' => $import->id,
-                'deleted_summary' => $deletedSummary
-            ]);
-            
-            return redirect()->route('company.manifests.import.history')
-                ->with('success', $message);
-
+            $summary = app(\App\Services\ManifestImportRevertService::class)->revertImport(
+                $import,
+                auth()->id(),
+                auth()->user()->name,
+                $request->input('reason', 'Reversión manual')
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', 'Esta importación no puede ser revertida: ' . $e->getMessage());
         } catch (\Exception $e) {
-            DB::rollBack();
-            
             Log::error('Error al revertir importación', [
                 'import_id' => $import->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
-            
+
             return back()->with('error', 'Error al revertir la importación: ' . $e->getMessage());
         }
+
+        $message = empty($summary)
+            ? 'Reversión completada - No había objetos para eliminar'
+            : 'Importación revertida exitosamente. Se eliminaron: ' . implode(', ', $summary);
+
+        return redirect()->route('company.manifests.import.history')->with('success', $message);
+    }
+
+    /**
+     * Revierte el viaje completo de la importación: primero los archivos
+     * agregados, del más nuevo al más viejo, y al final el que lo creó.
+     */
+    public function revertVoyage(Request $request, ManifestImport $import)
+    {
+        $company = auth()->user()->company;
+
+        if (!$company || $import->company_id !== $company->id) {
+            abort(403, 'No tiene permisos para revertir este viaje.');
+        }
+
+        $voyage = Voyage::where('id', $import->voyage_id)->where('company_id', $company->id)->first();
+
+        if (!$voyage) {
+            return back()->with('error', 'El viaje de esta importación ya no existe.');
+        }
+
+        try {
+            $summaries = app(\App\Services\ManifestImportRevertService::class)->revertVoyage(
+                $voyage,
+                auth()->id(),
+                auth()->user()->name,
+                $request->input('reason', 'Reversión del viaje completo')
+            );
+        } catch (\DomainException $e) {
+            return back()->with('error', "El viaje {$voyage->voyage_number} no puede ser revertido: " . $e->getMessage());
+        } catch (\Exception $e) {
+            Log::error('Error al revertir viaje completo', [
+                'import_id' => $import->id,
+                'voyage_id' => $voyage->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return back()->with('error', 'Error al revertir el viaje: ' . $e->getMessage());
+        }
+
+        return redirect()->route('company.manifests.import.history')->with(
+            'success',
+            "Viaje {$voyage->voyage_number} revertido: " . count($summaries) . ' importaciones revertidas.'
+        );
     }
 }

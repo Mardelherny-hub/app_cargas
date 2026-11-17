@@ -42,7 +42,7 @@ class ManifestImportRevertSharedContainerTest extends TestCase
             $t->string('status')->default('planning'); $t->timestamps();
         });
         Schema::create('shipments', function (Blueprint $t) {
-            $t->id(); $t->unsignedBigInteger('voyage_id'); $t->timestamps();
+            $t->id(); $t->unsignedBigInteger('voyage_id'); $t->unsignedBigInteger('vessel_id')->nullable(); $t->timestamps();
         });
         Schema::create('bills_of_lading', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('shipment_id'); $t->string('bill_number');
@@ -56,6 +56,14 @@ class ManifestImportRevertSharedContainerTest extends TestCase
         });
         Schema::create('container_shipment_item', function (Blueprint $t) {
             $t->unsignedBigInteger('container_id'); $t->unsignedBigInteger('shipment_item_id');
+        });
+        Schema::create('webservice_transactions', function (Blueprint $t) {
+            $t->id(); $t->unsignedBigInteger('company_id');
+            $t->unsignedBigInteger('voyage_id')->nullable(); $t->unsignedBigInteger('shipment_id')->nullable();
+            $t->string('soap_action')->nullable(); $t->string('country', 2)->default('AR');
+            $t->string('environment')->default('testing'); $t->string('status')->default('pending');
+            $t->string('external_reference')->nullable(); $t->longText('request_xml')->nullable();
+            $t->longText('response_xml')->nullable(); $t->json('success_data')->nullable(); $t->json('additional_metadata')->nullable();
         });
         Schema::create('manifest_imports', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('voyage_id')->nullable();

@@ -9,6 +9,7 @@ use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesExistingClient;
+use App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 use App\Models\Shipment;
 use App\Models\BillOfLading;
 use App\Models\Container;
@@ -50,6 +51,7 @@ class CmspEdiParser implements ManifestParserInterface
     use ExtractsEmbeddedTaxId;
     use ResolvesClientAddresses;
     use ResolvesExistingClient;
+    use ResolvesTargetVoyage;
 
     /**
      * Rol de la ultima parte leida, para asociarle el RFF+ADZ que viene
@@ -227,6 +229,23 @@ class CmspEdiParser implements ManifestParserInterface
                 'stats' => $this->stats
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * Embarcación que declara el archivo (TDT), para proponerla al importar.
+     */
+    public function detectVesselName(string $filePath): ?string
+    {
+        try {
+            $this->parseEdiFile($filePath);
+            $this->extractStructuredData();
+
+            $name = trim((string) ($this->parsedData['vessel']['vessel_name'] ?? ''));
+
+            return $name !== '' ? $name : null;
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 
@@ -1435,8 +1454,29 @@ class CmspEdiParser implements ManifestParserInterface
     ): ManifestParseResult
     {
         return DB::transaction(function () use ($data, $importRecord, $startTime, $options) {
-            $voyage = $this->createVoyage($data, $options);
-            $shipment = $this->createShipment($voyage, $data);
+            $targetVoyage = $this->resolveTargetVoyage($options);
+
+            if ($targetVoyage) {
+                // Agregar a un viaje existente: sus datos no se tocan.
+                $documentNumber = trim((string) ($data['message']['document_number'] ?? ''));
+
+                if ($documentNumber === '') {
+                    throw new Exception('CMSP EDI: BGM sin número de documento.');
+                }
+
+                $voyage = $targetVoyage;
+                $vessel = Vessel::findOrFail((int) $options['vessel_id']);
+                $shipment = $this->resolveTargetShipment($voyage, (int) $vessel->id, [
+                    'shipment_number' => 'CMSP-' . $documentNumber,
+                    'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
+                    'status' => 'planning',
+                    'active' => true,
+                    'created_by_user_id' => auth()->id(),
+                ]);
+            } else {
+                $voyage = $this->createVoyage($data, $options);
+                $shipment = $this->createShipment($voyage, $data);
+            }
             
             $billsOfLading = [];
             
@@ -1449,6 +1489,10 @@ class CmspEdiParser implements ManifestParserInterface
                     throw new Exception(
                         "CMSP EDI: CNI '{$containerGroup['sequence']}' sin número de conocimiento RFF+BM."
                     );
+                }
+
+                if ($targetVoyage && $this->skipRepeatedBill($voyage, $billNumber)) {
+                    continue;
                 }
                 
                 // Crear BL para este grupo
@@ -1493,13 +1537,26 @@ class CmspEdiParser implements ManifestParserInterface
                     $this->createdContainerIds
                 ));
 
-                $importRecord->recordExplicitlyCreatedObjects([
-                    'voyage'    => [$voyage->id],
-                    'shipment'  => [$shipment->id],
-                    'bill'      => $billIds,
-                    'item'      => $itemIds,
-                    'container' => $createdContainerIds,
-                ]);
+                if ($targetVoyage) {
+                    $this->recordTargetVoyageObjects($importRecord, $voyage, [
+                        'shipment'  => [$shipment->id],
+                        'bill'      => $billIds,
+                        'item'      => $itemIds,
+                        'container' => $createdContainerIds,
+                    ]);
+
+                    if ($warning = $this->repeatedBillsWarning()) {
+                        $this->stats['warnings'][] = $warning;
+                    }
+                } else {
+                    $importRecord->recordExplicitlyCreatedObjects([
+                        'voyage'    => [$voyage->id],
+                        'shipment'  => [$shipment->id],
+                        'bill'      => $billIds,
+                        'item'      => $itemIds,
+                        'container' => $createdContainerIds,
+                    ]);
+                }
 
                 $completionData = [
                     'voyage_id' => $voyage->id,

@@ -301,13 +301,25 @@
 
                                                         @if($import->can_be_reverted && $import->voyage && $import->voyage->status === 'planning' && !$import->reverted_at)
                                                             <div class="border-t border-gray-100"></div>
+                                                            @php($isAddedImport = isset($import->parser_config['target_voyage']))
                                                             <button type="button" 
-                                                                    onclick="openRevertModal({{ $import->id }}, '{{ $import->file_name }}')"
+                                                                    onclick="openRevertModal({{ $import->id }}, @js($import->file_name), '{{ $isAddedImport ? 'added' : 'import' }}')"
                                                                     class="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50" role="menuitem">
                                                                 <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                                                                     <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
                                                                 </svg>
-                                                                Revertir importación
+                                                                {{ $isAddedImport ? 'Revertir lo agregado' : 'Revertir importación' }}
+                                                            </button>
+                                                        @endif
+
+                                                        @if(!$import->reverted_at && $import->voyage && $import->voyage->status === 'planning' && in_array($import->voyage_id, $voyagesWithAddedImports ?? []))
+                                                            <button type="button"
+                                                                    onclick="openRevertModal({{ $import->id }}, @js('viaje ' . $import->voyage->voyage_number), 'voyage')"
+                                                                    class="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50" role="menuitem">
+                                                                <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                                                                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+                                                                </svg>
+                                                                Revertir viaje completo
                                                             </button>
                                                         @endif
 
@@ -399,11 +411,22 @@
                             </div>
                         </div>
                         <p class="text-sm text-gray-700 mb-2">Se eliminarán:</p>
-                        <ul class="text-sm text-gray-600 list-disc list-inside space-y-1 mb-4">
+                        <ul class="text-sm text-gray-600 list-disc list-inside space-y-1 mb-4" data-revert-mode="import">
                             <li>Conocimientos de embarque (Bills of Lading)</li>
                             <li>Items de carga (Shipment Items)</li>
                             <li>Contenedores (si aplica)</li>
                             <li>El viaje creado</li>
+                        </ul>
+                        <ul class="text-sm text-gray-600 list-disc list-inside space-y-1 mb-4 hidden" data-revert-mode="added">
+                            <li>Los conocimientos, ítems y contenedores que agregó este archivo</li>
+                            <li>La carga de la embarcación, si la creó este archivo</li>
+                            <li>Si este archivo convirtió el viaje en convoy, el viaje vuelve a ser como estaba</li>
+                            <li>El resto del viaje no cambia</li>
+                        </ul>
+                        <ul class="text-sm text-gray-600 list-disc list-inside space-y-1 mb-4 hidden" data-revert-mode="voyage">
+                            <li>Primero, los archivos agregados al viaje, del más nuevo al más viejo</li>
+                            <li>Después, la importación que creó el viaje, con el viaje</li>
+                            <li>Si algún paso no se puede revertir, no se revierte nada</li>
                         </ul>
                         <p class="text-xs text-gray-500">
                             <strong>Nota:</strong> Los clientes y puertos se mantendrán ya que pueden estar siendo utilizados por otras importaciones.
@@ -539,7 +562,7 @@
         let currentImportId = null;
 
         // Abrir modal de reversión
-        function openRevertModal(importId, fileName) {
+        function openRevertModal(importId, fileName, mode = 'import') {
             currentImportId = importId;
             
             // Actualizar el título del modal con el nombre del archivo
@@ -547,11 +570,15 @@
             if (modalTitle) {
                 modalTitle.textContent = `Revertir: ${fileName}`;
             }
+
+            document.querySelectorAll('#revertModal [data-revert-mode]').forEach(function (list) {
+                list.classList.toggle('hidden', list.dataset.revertMode !== mode);
+            });
             
             // Configurar la acción del formulario
             const form = document.getElementById('revertForm');
             if (form) {
-                form.action = `/company/manifests/import/${importId}/revert`;
+                form.action = `/company/manifests/import/${importId}/` + (mode === 'voyage' ? 'revert-voyage' : 'revert');
             }
             
             // Mostrar modal
