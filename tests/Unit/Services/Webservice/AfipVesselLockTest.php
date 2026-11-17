@@ -47,6 +47,7 @@ class AfipVesselLockTest extends TestCase
             $t->string('soap_action')->nullable(); $t->string('country', 2)->default('AR');
             $t->string('environment')->default('testing'); $t->string('status')->default('pending');
             $t->string('external_reference')->nullable(); $t->longText('request_xml')->nullable();
+            $t->longText('response_xml')->nullable();
             $t->json('success_data')->nullable(); $t->json('additional_metadata')->nullable();
         });
 
@@ -153,6 +154,17 @@ class AfipVesselLockTest extends TestCase
         DB::table('webservice_transactions')->delete();
         $this->tx('RegistrarMicDta', ['status' => 'cancelled', 'success_data' => ['idMicDta' => 'X']]);
         $this->assertTrue($this->inspect()['locked']);
+
+        // Reset local que solo conserva la respuesta de AFIP.
+        DB::table('webservice_transactions')->delete();
+        $this->tx('RegistrarTitEnvios', ['status' => 'cancelled', 'request_xml' => $this->titles('BL-3'),
+            'response_xml' => '<soap:Envelope><soap:Body><RegistrarTitEnviosResponse/></soap:Body></soap:Envelope>']);
+        $this->assertTrue($this->inspect()['locked']);
+
+        DB::table('webservice_transactions')->delete();
+        $this->tx('RegistrarTitEnvios', ['status' => 'cancelled', 'request_xml' => $this->titles('BL-4'),
+            'response_xml' => '   ']);
+        $this->assertFalse($this->inspect()['locked']);
     }
 
     public function test_scope_by_vessel_environment_company_and_country(): void
