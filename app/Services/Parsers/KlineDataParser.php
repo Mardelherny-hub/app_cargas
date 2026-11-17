@@ -18,6 +18,7 @@ use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
+use App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -46,6 +47,7 @@ class KlineDataParser implements ManifestParserInterface
     use ResolvesClientAddresses;
     use ResolvesExistingClient;
     use ResolvesVoyageCargoType;
+    use ResolvesTargetVoyage;
 
     protected array $lines;
     protected array $stats = [
@@ -203,20 +205,37 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 $originPort      = $this->findOrCreatePort($portInfo['origin']);
                 $destinationPort = $this->findOrCreatePort($portInfo['destination']);
 
-                $dates      = $this->extractDates($firstBL['data']);
-                $voyageInfo = $this->extractVoyageInfo($firstBL['data']);
+                $targetVoyage = $this->resolveTargetVoyage($options);
 
-                // CORREGIDO: Crear voyage usando $options
-                $voyage = $this->createVoyage(
-                    $voyageInfo,
-                    $originPort,
-                    $destinationPort,
-                    $options,
-                    $dates
-                );
-                
-                // CORREGIDO: Crear shipment usando $options
-                $shipment = $this->createShipment($voyage, $options);
+                if ($targetVoyage) {
+                    // Agregar a un viaje existente: sus datos no se tocan.
+                    $voyage = $targetVoyage;
+                    $vessel = Vessel::findOrFail((int) $options['vessel_id']);
+                    $shipment = $this->resolveTargetShipment($voyage, (int) $vessel->id, [
+                        'shipment_number' => 'KLINE-SHIP-' . preg_replace('/^KLINE-/i', '', $voyage->voyage_number)
+                            . '-' . ((int) Shipment::where('voyage_id', $voyage->id)->max('sequence_in_voyage') + 1),
+                        'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
+                        'container_capacity' => $vessel->container_capacity ?? 0,
+                        'status' => 'planning',
+                        'active' => true,
+                        'created_by_user_id' => auth()->id(),
+                    ]);
+                } else {
+                    $dates      = $this->extractDates($firstBL['data']);
+                    $voyageInfo = $this->extractVoyageInfo($firstBL['data']);
+
+                    // CORREGIDO: Crear voyage usando $options
+                    $voyage = $this->createVoyage(
+                        $voyageInfo,
+                        $originPort,
+                        $destinationPort,
+                        $options,
+                        $dates
+                    );
+
+                    // CORREGIDO: Crear shipment usando $options
+                    $shipment = $this->createShipment($voyage, $options);
+                }
 
                 // Procesar cada BL
                 $createdBills = [];
@@ -226,6 +245,11 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     try {
                         // CORREGIDO: Verificar duplicado BL (ya verificado en batch, pero por seguridad)
                         $blNumber = $this->cleanBillNumber($blData['bl']);
+
+                        if ($targetVoyage && $this->skipRepeatedBill($voyage, $blNumber)) {
+                            continue;
+                        }
+
                         $existingBL = BillOfLading::where('bill_number', $blNumber)->first();
                         
                         if ($existingBL) {
@@ -294,8 +318,15 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                     'items_created' => count($allItems)
                 ]);
 
+                if ($targetVoyage && ($warning = $this->repeatedBillsWarning())) {
+                    $this->stats['warnings'][] = $warning;
+                }
+
                 // NUEVO: Registrar objetos creados y completar importación
-                $this->completeImportRecord($importRecord, $voyage, $createdBills, $allItems, [], $startTime);
+                $this->completeImportRecord(
+                    $importRecord, $voyage, $createdBills, $allItems, [], $startTime,
+                    $targetVoyage ? $shipment : null
+                );
 
                 return ManifestParseResult::success(
                     voyage: $voyage,
@@ -343,6 +374,29 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             return ManifestParseResult::failure([
                 'Error al procesar archivo KLine: ' . $e->getMessage()
             ], [], $this->stats);
+        }
+    }
+
+    /**
+     * Embarcación que declara el archivo, para proponerla al importar.
+     */
+    public function detectVesselName(string $filePath): ?string
+    {
+        try {
+            $lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (!$lines) {
+                return null;
+            }
+
+            $this->lines = $lines;
+            $bills = $this->groupByBillOfLading();
+            $first = reset($bills);
+
+            $name = $first ? trim((string) ($this->extractVoyageInfo($first['data'] ?? [])['vessel_name'] ?? '')) : '';
+
+            return $name !== '' ? $name : null;
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 
@@ -1081,10 +1135,21 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         array $bills, 
         array $items,
         array $containers,
-        float $startTime
+        float $startTime,
+        ?Shipment $targetShipment = null
     ): void {
         $processingTime = microtime(true) - $startTime;
-        
+
+        if ($targetShipment) {
+            // Viaje existente: nunca se registran el viaje ni una carga previa.
+            $this->recordTargetVoyageObjects($importRecord, $voyage, [
+                'shipment' => [$targetShipment->id],
+                'bill' => array_map(fn($bill) => $bill->id, $bills),
+                'item' => array_map(fn($item) => $item->id, $items),
+                'container' => array_map(fn($container) => $container->id, $containers),
+            ]);
+        }
+
         // Registrar IDs de objetos creados
         $createdObjects = [
             'voyages' => [$voyage->id],
@@ -1097,7 +1162,9 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         // Filtrar nulls
         $createdObjects = array_map(fn($ids) => array_filter($ids), $createdObjects);
         
-        $importRecord->recordCreatedObjects($createdObjects);
+        if (!$targetShipment) {
+            $importRecord->recordCreatedObjects($createdObjects);
+        }
         $importRecord->markAsCompleted([
             'voyage_id' => $voyage->id,
             'processing_time_seconds' => round($processingTime, 2),
