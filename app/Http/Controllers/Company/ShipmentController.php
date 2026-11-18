@@ -580,7 +580,7 @@ class ShipmentController extends Controller
             $loadedKg = (float) $shipment->cargo_weight_loaded;
             $capacityTons = (float) $shipment->cargo_capacity_tons;
             if ($capacityTons > 0) {
-                $cargoUtilization = min(100, ($loadedKg / ($capacityTons * 1000)) * 100);
+                $cargoUtilization = ($loadedKg / ($capacityTons * 1000)) * 100;
             }
         }
         
