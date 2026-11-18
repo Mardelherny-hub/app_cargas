@@ -117,20 +117,17 @@ class LoginXmlParserStage1IntegrityTest extends TestCase
 
         $source = file_get_contents($file);
 
-        $this->assertStringContainsString(
-            '"({$cleanName})',
-            $source
+        // Las advertencias de la resolución compartida de clientes llegan al
+        // reporte sin duplicarse.
+        $this->assertStringContainsString('$this->resolveExistingClient(', $source);
+        $this->assertStringContainsString('$this->addWarningOnce($warning);', $source);
+
+        $shared = file_get_contents(
+            base_path('app/Services/Parsers/Concerns/ResolvesExistingClient.php')
         );
 
-        $this->assertStringContainsString(
-            '"#{$client->id} compatible con "',
-            $source
-        );
-
-        $this->assertStringContainsString(
-            '$this->addWarningOnce(',
-            $source
-        );
+        $this->assertStringContainsString('({$name})', $shared);
+        $this->assertStringContainsString('#{$client->id}', $shared);
     }
 
     public function test_optional_weight_preserves_explicit_zero_and_absence(): void

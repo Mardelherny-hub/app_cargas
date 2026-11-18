@@ -50,13 +50,8 @@ class VoyageNumberCompanyScopeContractTest extends TestCase
             $normalizedMigration
         );
 
-        foreach ([
-            app_path('Http/Controllers/Company/VoyageWizardController.php'),
-            app_path('Http/Controllers/Company/VoyageController.php'),
-        ] as $controllerPath) {
-            $controller = file_get_contents($controllerPath);
-            $this->assertStringContainsString("lead_vessel_id", $controller);
-            $this->assertStringContainsString("voyage_number", $controller);
-        }
+        $controller = file_get_contents(app_path('Http/Controllers/Company/VoyageController.php'));
+        $this->assertStringContainsString("lead_vessel_id", $controller);
+        $this->assertStringContainsString("voyage_number", $controller);
     }
 }

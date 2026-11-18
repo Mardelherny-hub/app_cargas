@@ -258,19 +258,19 @@ class TfpTextParserCoreIntegrityTest extends TestCase
             base_path('app/Services/Parsers/TfpTextParser.php')
         );
 
-        $this->assertStringContainsString(
-            'findUnidentifiedClientByNameIdentity',
-            $source
+        // La ficha sin identificación fiscal se completa en la resolución
+        // compartida de clientes, que el parser usa antes de crear uno nuevo.
+        $this->assertStringContainsString('use ResolvesExistingClient;', $source);
+        $this->assertStringContainsString('$this->resolveExistingClient(', $source);
+
+        $shared = file_get_contents(
+            base_path('app/Services/Parsers/Concerns/ResolvesExistingClient.php')
         );
 
+        $this->assertStringContainsString("'tax_id' => \$taxId", $shared);
         $this->assertStringContainsString(
-            "'tax_id' => \$normTaxId",
-            $source
-        );
-
-        $this->assertStringContainsString(
-            'ficha histórica enriquecida con identidad fiscal',
-            $source
+            'Ficha de cliente sin identificación fiscal completada desde importación',
+            $shared
         );
     }
 
