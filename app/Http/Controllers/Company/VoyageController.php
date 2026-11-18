@@ -362,7 +362,7 @@ class VoyageController extends Controller
             'destinationPort',
             'transshipmentPort',
             'shipments',
-            //'createdByUser'
+            'createdByUser:id,name',
         ]);
 
         $transferService = app(VoyageTransferService::class);

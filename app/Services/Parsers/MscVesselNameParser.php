@@ -359,6 +359,7 @@ class MscVesselNameParser implements ManifestParserInterface
                             throw new DomainException('El viaje ya existe para esta embarcación y empresa. Revise el historial antes de volver a importar.');
                         }
                         $voyage = Voyage::create([
+                            'created_by_user_id' => auth()->id(),
                             'company_id' => $companyId, 'lead_vessel_id' => $vessel->id, 'voyage_number' => $voyageNumber,
                             'origin_port_id' => $origin->id, 'destination_port_id' => $destination->id,
                             'origin_country_id' => $origin->country_id, 'destination_country_id' => $destination->country_id,
@@ -369,6 +370,7 @@ class MscVesselNameParser implements ManifestParserInterface
                             'total_container_capacity' => $vessel->container_capacity ?? 0,
                         ]);
                         $shipment = Shipment::create([
+                            'created_by_user_id' => auth()->id(),
                             'voyage_id' => $voyage->id, 'vessel_id' => $vessel->id,
                             'shipment_number' => 'MSC-' . $voyage->id, 'sequence_in_voyage' => 1,
                             'vessel_role' => 'single', 'is_lead_vessel' => true, 'status' => 'planning',

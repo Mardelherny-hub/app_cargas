@@ -434,9 +434,6 @@
                         </p>
                     </div>
                     <div class="flex items-center justify-end space-x-3">
-                        <button type="button" onclick="closeRevertModal()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300">
-                            Cancelar
-                        </button>
                         <form id="revertForm" method="POST" action="">
                             @csrf
                             <input type="hidden" name="reason" value="Reversión manual desde historial">
