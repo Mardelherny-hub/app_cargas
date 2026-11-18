@@ -4,18 +4,20 @@ tema: viajes-y-cargas
 orden: 30
 roles: [company-admin, user]
 roles_empresa: [Cargas]
-palabras_clave: [convoy, remolcador, empujador, autopropulsado, líder, barcaza, embarcación, carga, conocimiento, MIC/DTA]
-relacionados: [viajes-y-cargas/crear-un-viaje-a-mano, afip-argentina/registrar-micdta-convoy]
+palabras_clave: [convoy, remolcador, empujador, autopropulsado, líder, barcaza, embarcación, carga, conocimiento, MIC/DTA, convertir en convoy, agregar archivo]
+relacionados: [viajes-y-cargas/crear-un-viaje-a-mano, afip-argentina/registrar-micdta-convoy, importar-manifiestos/agregar-un-archivo-a-un-viaje-existente]
 estado: publicado
 verificado:
-  version: dbd4721
-  fecha: 2026-11-04
-  entorno: stage
+  version: 390826a
+  fecha: 2026-11-17
+  entorno: codigo
 ---
 
 ## Para qué sirve
 
 Permite reunir en un mismo viaje la embarcación que conduce el convoy (un remolcador, un empujador o un buque autopropulsado) y sus barcazas, con una carga por embarcación y los conocimientos correspondientes, para continuar con el MIC/DTA del convoy.
+
+Si la mercadería de cada embarcación llega en un archivo, también puede armar el convoy al importar. Importe el primer archivo creando el viaje y [agregue los demás a ese viaje](manual:importar-manifiestos/agregar-un-archivo-a-un-viaje-existente). Al agregar el archivo de una embarcación que no está en un viaje de una sola embarcación, el sistema pide elegir la **Embarcación líder del convoy** y convierte el viaje en convoy. La líder puede ser una embarcación sin carga, y las demás quedan como remolcadas. Si revierte esa importación, el viaje vuelve a ser como estaba. Después revise las cargas como indica el paso 8.
 
 ## Antes de empezar
 
