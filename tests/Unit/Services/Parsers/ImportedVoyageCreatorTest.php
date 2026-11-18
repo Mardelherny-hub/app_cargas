@@ -7,7 +7,9 @@ use App\Models\User;
 use App\Models\Vessel;
 use App\Models\Voyage;
 use App\Services\Parsers\NavsurTextParser;
+use App\Services\Parsers\NavsurTextParserCompat;
 use App\Services\Parsers\TfpTextParser;
+use App\Services\Parsers\TfpTextParserCompat;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -62,6 +64,10 @@ class ImportedVoyageCreatorTest extends TestCase
             $t->timestamps();
         });
 
+        if (!Schema::hasColumn('vessels', 'operational_status')) {
+            Schema::table('vessels', fn (Blueprint $t) => $t->text('operational_status')->nullable());
+        }
+
         DB::table('users')->insert([
             'id' => self::USER, 'name' => 'Usuario de prueba', 'email' => 'usuario@example.test',
             'password' => 'x', 'userable_type' => 'App\Models\Company', 'userable_id' => self::COMPANY,
@@ -69,6 +75,7 @@ class ImportedVoyageCreatorTest extends TestCase
         DB::table('vessels')->insert([
             'id' => 1, 'company_id' => self::COMPANY, 'name' => self::VESSEL_NAME,
             'cargo_capacity_tons' => 1000, 'container_capacity' => 50, 'active' => 1,
+            'operational_status' => 'active',
         ]);
 
         Auth::login(User::findOrFail(self::USER));
@@ -122,6 +129,58 @@ class ImportedVoyageCreatorTest extends TestCase
             ['voyage_number' => 'NAV-0001', 'vessel_name' => self::VESSEL_NAME, 'pol' => 'ARBUE', 'pod' => 'PYASU', 'flag' => null],
         ]);
 
+        $this->assertSame(self::USER, (int) $voyage->fresh()->created_by_user_id);
+    }
+
+    public function test_tfp_compat_records_the_importing_user_as_voyage_creator(): void
+    {
+        $parser = new class extends TfpTextParserCompat {
+            protected function findOrCreatePort(string $code): Port
+            {
+                return ImportedVoyageCreatorTest::fakePort($code);
+            }
+
+            protected function resolveTfpVoyageCargoType(int $companyId, Port $origin, Port $destination): string
+            {
+                return 'export';
+            }
+        };
+
+        $voyage = $this->createVoyage($parser, [
+            ['voyage_number' => 'TFP-0000000000000002', 'vessel_name' => self::VESSEL_NAME, 'pol' => 'ARBUE', 'pod' => 'PYASU'],
+            ['vessel_id' => 1, 'voyage_number' => 'V-REAL-01'],
+        ]);
+
+        $this->assertSame('V-REAL-01', $voyage->voyage_number);
+        $this->assertSame(self::USER, (int) $voyage->fresh()->created_by_user_id);
+    }
+
+    public function test_navsur_compat_records_the_importing_user_as_voyage_creator(): void
+    {
+        $parser = new class extends NavsurTextParserCompat {
+            public function useOptions(array $options): static
+            {
+                $this->importOptions = $options;
+
+                return $this;
+            }
+
+            protected function resolvePortStrict(?string $code): Port
+            {
+                return ImportedVoyageCreatorTest::fakePort((string) $code);
+            }
+
+            protected function resolveVoyageCargoTypeForCompany(int $companyId, Port $originPort, Port $destinationPort): string
+            {
+                return 'export';
+            }
+        };
+
+        $voyage = $this->createVoyage($parser->useOptions(['vessel_id' => 1]), [
+            ['voyage_number' => 'NAV-0002', 'vessel_name' => self::VESSEL_NAME, 'pol' => 'ARBUE', 'pod' => 'PYASU', 'flag' => null],
+        ]);
+
+        $this->assertSame(1, (int) $voyage->lead_vessel_id);
         $this->assertSame(self::USER, (int) $voyage->fresh()->created_by_user_id);
     }
 
