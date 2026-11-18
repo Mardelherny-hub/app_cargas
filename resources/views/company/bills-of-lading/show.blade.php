@@ -71,8 +71,19 @@ if ($user) {
 </x-slot>
 
 <div class="py-6">
-    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        
+    <div class="w-full min-w-0 max-w-7xl mx-auto sm:px-6 lg:px-8">
+        @if(session('success'))
+            <div class="bg-green-50 border border-green-200 text-green-800 rounded-md p-4 mb-6 break-words" role="alert">
+                {{ session('success') }}
+            </div>
+        @endif
+
+        @if(session('error'))
+            <div class="bg-red-50 border border-red-200 text-red-800 rounded-md p-4 mb-6 break-words" role="alert">
+                {{ session('error') }}
+            </div>
+        @endif
+
         {{-- NAVEGACIÓN CONTEXTUAL --}}
         <div class="mb-6">
             <nav class="flex items-center space-x-2 text-sm text-gray-500 mb-4">
