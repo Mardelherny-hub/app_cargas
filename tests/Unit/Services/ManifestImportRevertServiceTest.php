@@ -343,6 +343,43 @@ class ManifestImportRevertServiceTest extends TestCase
         $this->assertSame(0, DB::table('containers')->count());
     }
 
+    public function test_origin_import_with_active_added_imports_is_rejected_without_changes(): void
+    {
+        // Como en CARE I: el CUSCAR crea el viaje y después se agrega el TXT.
+        $origin = $this->originImport();
+        $added = $this->addedImport(self::BARGE, 'BL-TXT');
+        $before = $this->state();
+
+        try {
+            $this->revert($origin);
+            $this->fail('Se esperaba DomainException');
+        } catch (DomainException $e) {
+            $this->assertSame(
+                'Este viaje tiene archivos agregados. Use “Revertir viaje completo” o revierta primero lo agregado.',
+                $e->getMessage()
+            );
+        }
+
+        $this->assertSame($before, $this->state());
+        $this->assertSame(0, ManifestImport::whereNotNull('reverted_at')->count());
+        $this->assertSame('completed', $origin->fresh()->status);
+        $this->assertSame('completed', $added->fresh()->status);
+    }
+
+    public function test_origin_import_can_be_reverted_after_its_added_imports(): void
+    {
+        $origin = $this->originImport();
+        $added = $this->addedImport(self::BARGE, 'BL-TXT');
+
+        $this->revert($added);
+        $this->revert($origin);
+
+        $this->assertSame(0, DB::table('voyages')->count());
+        $this->assertSame(0, DB::table('shipments')->count());
+        $this->assertSame(0, DB::table('bills_of_lading')->whereNull('deleted_at')->count());
+        $this->assertSame(2, ManifestImport::whereNotNull('reverted_at')->count());
+    }
+
     public function test_added_import_without_explicit_tracking_is_rejected(): void
     {
         $this->originImport();
