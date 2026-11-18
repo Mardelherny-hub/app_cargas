@@ -150,6 +150,7 @@ class NavsurTextParser implements ManifestParserInterface
                         'cargo_capacity_tons' => null,
                         'container_capacity' => 0,
                         'status' => 'planning',
+                        'created_by_user_id' => auth()->id(),
                     ]);
                 } else {
                     // Crear voyage único para todos los BLs
@@ -744,6 +745,7 @@ class NavsurTextParser implements ManifestParserInterface
             'total_cargo_weight_loaded' => 0,
             'total_containers_loaded' => 0,
             'capacity_utilization_percentage' => 0,
+            'created_by_user_id' => $user->id,
         ]);
     }
 
@@ -799,6 +801,7 @@ class NavsurTextParser implements ManifestParserInterface
             'container_capacity' => 0,
 
             'status' => 'planning',
+            'created_by_user_id' => auth()->id(),
         ]);
     }
 

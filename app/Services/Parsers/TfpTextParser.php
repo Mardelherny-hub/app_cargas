@@ -106,6 +106,7 @@ class TfpTextParser implements ManifestParserInterface
                         'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
                         'container_capacity' => $vessel->container_capacity ?? 0,
                         'status' => 'planning',
+                        'created_by_user_id' => auth()->id(),
                     ]);
                 } else {
                     // Crear voyage único
@@ -669,6 +670,7 @@ protected function extractValue(string $scope, string $label): ?string
             'total_cargo_weight_loaded' => 0,
             'total_containers_loaded' => 0,
             'capacity_utilization_percentage' => 0,
+            'created_by_user_id' => $user->id,
         ]);
     }
 
@@ -688,6 +690,7 @@ protected function extractValue(string $scope, string $label): ?string
             'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
             'container_capacity' => $vessel->container_capacity ?? 0,
             'status' => 'planning',
+            'created_by_user_id' => auth()->id(),
         ]);
     }
 
