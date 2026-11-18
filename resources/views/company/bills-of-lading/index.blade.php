@@ -46,7 +46,18 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
 
 <div class="py-6">
     <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        
+        @if(session('success'))
+            <div class="bg-green-50 border border-green-200 text-green-800 rounded-md p-4 mb-6" role="alert">
+                {{ session('success') }}
+            </div>
+        @endif
+
+        @if(session('error'))
+            <div class="bg-red-50 border border-red-200 text-red-800 rounded-md p-4 mb-6" role="alert">
+                {{ session('error') }}
+            </div>
+        @endif
+
         {{-- ESTADÍSTICAS RÁPIDAS --}}
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
             <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-500">
