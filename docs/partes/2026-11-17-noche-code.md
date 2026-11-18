@@ -47,3 +47,68 @@ A cada carga le asigné un capitán existente; a uno le cambié el estado de la 
 - El porcentaje de contenedores también sigue en formato inglés (`163.6% utilizado`).
 
 Evidencia: `/var/www/html/pruebas_importacion/UI-20261117-code/9294ece-*`.
+
+## 3. Manual de la etapa 2 — HECHO en `manual/etapa-2` (`f8fb503`), con 2 bugs encontrados al verificar
+
+**Rama.** `manual/etapa-2`, creada desde `origin/release/etapa-2` @ `390826a` y publicada. Un commit por archivo:
+
+| Commit | Archivo | Cambio |
+|---|---|---|
+| `7f4167d` | `importar-manifiestos/agregar-un-archivo-a-un-viaje-existente.md` | nuevo |
+| `a22f944` | `viajes-y-cargas/eliminar-conocimientos.md` | nuevo |
+| `4e02515` | `importar-manifiestos/revertir-una-importacion.md` | revertir importación, lo agregado o el viaje completo |
+| `10da53d` | `viajes-y-cargas/armar-un-convoy.md` | conversión a convoy al agregar otra embarcación |
+| `944e4b6` | `preguntas-frecuentes/varios-archivos-en-un-viaje.md` | ahora responde que sí |
+| `37886a4` | `preguntas-frecuentes/el-viaje-ya-existe.md` | regla del archivo único y opción de agregar |
+| `f8fb503` | `_sinonimos.yml` | 4 grupos nuevos: revertir, agregar, repetido/salteado, eliminar |
+
+**Verificación en la instancia B @ `390826a`, con el navegador y datos reales.** Todos los textos de pantalla citados en los artículos se copiaron de lo que se vio. Lo que se probó:
+- **Importar archivos:**
+  - CUSCAR CARE I crea el viaje y el TXT de MSC se agrega al mismo viaje;
+  - el mismo TXT con otro contenido saltea los 39 BL con aviso;
+  - G2Ocean crea un segundo viaje y TFP de otra embarcación se le agrega, convirtiéndolo en convoy (líder `lead`, la otra `towed`).
+- **Formulario de importación:**
+  - con **Agregar a un viaje existente** se ocultan el número de viaje y la fecha de salida;
+  - la lista de viajes muestra si es convoy y cuántas embarcaciones tiene;
+  - el recuadro de convoy aparece solo con otra embarcación en un viaje de una sola embarcación, y el botón queda deshabilitado hasta elegir el líder;
+  - con una transacción `RegistrarMicDta` en `success` insertada solo en B, aparece el aviso de AFIP con su motivo y el botón queda deshabilitado, también en el caso de conversión.
+- **Embarcación propuesta:** probada con 4 archivos. Hay 3 casos: la propone, avisa que no está registrada o no propone nada. Los 10 formatos admiten agregar.
+- **Historial:**
+  - aparecen **Revertir lo agregado** y **Revertir viaje completo**, y se comprobó el texto de las 3 ventanas;
+  - revertir lo agregado del TFP devuelve el viaje a `single_vessel`;
+  - revertir el viaje completo revierte las 3 importaciones restantes.
+- **Eliminación de conocimientos:**
+  - **Eliminar** en el detalle y en el listado, con su aviso;
+  - un BL verificado no muestra el botón;
+  - **📋 Ver BLs** de la carga lleva al listado filtrado, donde aparece **Eliminar todos los conocimientos de esta embarcación** solo si todos se pueden eliminar;
+  - borrar los 11 de una embarcación funciona.
+- **Tests y control:**
+  - `ManualTest`: 10 tests y 69 aserciones, pasan, con los artículos copiados sobre `390826a`;
+  - los 6 artículos cargan con borradores visibles y no quedan enlaces `manual:` ni `ruta:` sin resolver;
+  - el control de referencias internas no tiene coincidencias.
+- B quedó restaurada a la base limpia.
+
+**Cabecera de los artículos: `verificado.entorno: codigo`.**
+- Se verificaron en local (instancia B), no en stage, y la regla del manual reserva `stage` para lo recorrido en stage.
+- Consecuencia: con `codigo`, el manual los trata como borradores y no los muestra. Eso incluye los 4 artículos existentes que se actualizaron, que hoy son visibles.
+- Antes de publicar la etapa 2, alguien tiene que recorrerlos en stage y pasar la cabecera a `stage`. Si no, esos 4 artículos desaparecen del manual. **Decisión tuya.**
+
+**Bugs encontrados al verificar.** No se tocó código.
+1. **Bug confirmado: revertir la importación que creó un viaje con archivos agregados borra también lo agregado y deja esas importaciones como «completadas».**
+   - Escenario: viaje creado por CUSCAR y TXT de MSC agregado. En el historial, en la fila del CUSCAR, se usa **Revertir importación**, que sigue ofrecida.
+   - Esperado: que se bloquee o que se pida **Revertir viaje completo**.
+   - Obtenido (probado en una transacción revertida):
+     - «Importación revertida exitosamente. Se eliminaron: 31 conocimientos…, 1 envíos, 1 viajes»;
+     - los 39 BL y 72 ítems del MSC también desaparecen, por el borrado en cascada de la carga;
+     - la importación del MSC sigue `completed`, así que su archivo queda bloqueado para reimportar sin datos detrás.
+   - Dónde:
+     - `import-history.blade.php` muestra **Revertir importación** aunque haya agregadas;
+     - `ManifestImportRevertService::revertImport()` no verifica que el viaje tenga importaciones agregadas vigentes cuando revierte la importación que lo creó.
+   - En el manual se indica usar **Revertir viaje completo** o revertir primero lo agregado.
+2. **Bug confirmado, ya existente (también en `main`): el historial de importaciones no muestra los mensajes de resultado.**
+   - El controlador devuelve los avisos de éxito y de error (`with('success'|'error')`), pero ni `import-history.blade.php` ni el layout los muestran.
+   - Si una reversión se bloquea por AFIP, la fila queda igual, sin ningún motivo; el motivo existe y lo confirmé por consola.
+   - Lo mismo pasa con la eliminación de conocimientos: el listado no muestra los mensajes.
+   - En el manual se explica cómo ver el motivo de AFIP desde la pantalla de importación.
+
+**Observación.** En esta rama la ventana de revertir todavía tiene los dos botones **Cancelar**: la corrección de `fix/ui-shipment-page` no está en `release/etapa-2`. Los artículos solo mencionan **Confirmar Reversión**.
