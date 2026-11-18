@@ -35,7 +35,7 @@
                     <x-company-sidebar />
 
                     {{-- Contenido principal con sidebar --}}
-                    <div class="flex-1 lg:ml-64">
+                    <div class="flex-1 min-w-0 lg:ml-64">
                         {{-- Page Heading --}}
                         @if (isset($header))
                             <header class="bg-white shadow">

@@ -170,8 +170,8 @@
             {{-- Filtros y Búsqueda --}}
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
                 <div class="p-6">
-                    <form method="GET" action="{{ route('company.shipments.index') }}" class="flex gap-4 items-end">
-                        <div class="flex-1">
+                    <form method="GET" action="{{ route('company.shipments.index') }}" class="flex flex-wrap gap-4 items-end">
+                        <div class="flex-1 min-w-56">
                             <label for="search" class="block text-sm font-medium text-gray-700">Buscar</label>
                             <input type="text" name="search" id="search" value="{{ request('search') }}" 
                                    placeholder="Número de carga, embarcación..." 
