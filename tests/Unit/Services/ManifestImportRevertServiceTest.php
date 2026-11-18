@@ -64,7 +64,7 @@ class ManifestImportRevertServiceTest extends TestCase
             $t->decimal('cargo_weight_loaded', 12, 2)->default(0); $t->integer('containers_loaded')->default(0);
             $t->decimal('utilization_percentage', 5, 2)->default(0);
             $t->boolean('has_dangerous_cargo')->default(false);
-            $t->timestamps();
+            $t->unsignedBigInteger('created_by_user_id')->nullable(); $t->timestamps();
             $t->unique(['voyage_id', 'vessel_id']); $t->unique(['voyage_id', 'sequence_in_voyage']);
         });
         Schema::create('bills_of_lading', function (Blueprint $t) {
