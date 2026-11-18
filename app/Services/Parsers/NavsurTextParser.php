@@ -16,6 +16,7 @@ use App\Models\ContainerType;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\RecalculatesNewVoyageTotals;
 use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
@@ -38,6 +39,7 @@ class NavsurTextParser implements ManifestParserInterface
 {
     use EnsuresUniqueVoyageNumber;
     use ExtractsEmbeddedTaxId;
+    use RecalculatesNewVoyageTotals;
     use ResolvesExistingClient;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
@@ -205,6 +207,10 @@ class NavsurTextParser implements ManifestParserInterface
                             }
                         }
                     }
+                }
+
+                if (!$targetVoyage) {
+                    $this->recalculateNewVoyageTotals($voyage);
                 }
 
                 // Registrar objetos creados y completar el registro de importación.

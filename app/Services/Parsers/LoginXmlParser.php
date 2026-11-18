@@ -22,6 +22,7 @@ use App\Models\Company;
 use App\Models\User;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
+use App\Services\Parsers\Concerns\RecalculatesNewVoyageTotals;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
@@ -53,6 +54,7 @@ class LoginXmlParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
     use EnsuresUniqueVoyageNumber;
+    use RecalculatesNewVoyageTotals;
     use ResolvesClientAddresses;
     use ResolvesExistingClient;
     use ResolvesVoyageCargoType;
@@ -395,6 +397,10 @@ class LoginXmlParser implements ManifestParserInterface
             $statisticsContainers = $this->importingToTargetVoyage
                 ? $importedContainers
                 : $transformedData['containers'];
+
+            if (!$this->importingToTargetVoyage) {
+                $this->recalculateNewVoyageTotals($voyage);
+            }
 
             // Completar el tracking dentro de la misma transacción.
             // Si esto falla, también deben revertirse voyage, shipment,

@@ -4,7 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, CargoType, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, Port, Shipment, ShipmentItem, Vessel, Voyage};
-use App\Services\Parsers\Concerns\{ExtractsEmbeddedTaxId, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType};
+use App\Services\Parsers\Concerns\{ExtractsEmbeddedTaxId, RecalculatesNewVoyageTotals, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use DomainException;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +15,7 @@ use Throwable;
 class MscVesselNameParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use RecalculatesNewVoyageTotals;
     use ResolvesClientAddresses;
     use ResolvesExistingClient;
     use ResolvesPorts;
@@ -508,6 +509,7 @@ class MscVesselNameParser implements ManifestParserInterface
                     } else {
                         $shipment->update(['cargo_weight_loaded' => $totalWeight, 'containers_loaded' => count($containers)]);
                         $voyage->update(['total_cargo_weight_loaded' => $totalWeight, 'total_containers_loaded' => count($containers)]);
+                        $this->recalculateNewVoyageTotals($voyage);
                         $import->recordExplicitlyCreatedObjects([
                             'voyage' => [$voyage->id], 'shipment' => [$shipment->id],
                             'bill' => array_map(fn ($b) => $b->id, $bills), 'item' => array_map(fn ($i) => $i->id, $items),

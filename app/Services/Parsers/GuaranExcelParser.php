@@ -18,6 +18,7 @@ use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
+use App\Services\Parsers\Concerns\RecalculatesNewVoyageTotals;
 use App\Models\User;
 use App\Models\ManifestImport;
 use App\Services\Parsers\Concerns\ResolvesPorts;
@@ -56,6 +57,7 @@ class GuaranExcelParser implements ManifestParserInterface
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
+    use RecalculatesNewVoyageTotals;
     use ResolvesPorts;
     use \App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 
@@ -281,6 +283,10 @@ class GuaranExcelParser implements ManifestParserInterface
                 } else {
                     $bill->recalculateItemStats();
                 }
+            }
+
+            if (!$targetVoyage) {
+                $this->recalculateNewVoyageTotals($voyage);
             }
 
             if ($targetVoyage && ($warning = $this->repeatedBillsWarning()) !== null) {

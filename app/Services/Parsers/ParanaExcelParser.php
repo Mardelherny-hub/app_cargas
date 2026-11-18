@@ -19,6 +19,7 @@ use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
+use App\Services\Parsers\Concerns\RecalculatesNewVoyageTotals;
 use App\Models\ContainerType;
 use App\Services\Parsers\Concerns\ResolvesPorts;
 use Carbon\Carbon;
@@ -45,6 +46,7 @@ class ParanaExcelParser implements ManifestParserInterface
     use EnsuresUniqueVoyageNumber;
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
+    use RecalculatesNewVoyageTotals;
     use ResolvesPorts;
     use \App\Services\Parsers\Concerns\ResolvesTargetVoyage;
 
@@ -320,6 +322,10 @@ class ParanaExcelParser implements ManifestParserInterface
 
             if ($targetVoyage && ($warning = $this->repeatedBillsWarning())) {
                 $this->warnings[] = $warning;
+            }
+
+            if (!$targetVoyage) {
+                $this->recalculateNewVoyageTotals($voyage);
             }
 
             // NUEVO: Registrar objetos creados y completar importación
