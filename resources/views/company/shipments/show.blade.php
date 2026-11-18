@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <div class="flex justify-between items-center">
+        <div class="flex flex-wrap justify-between items-center gap-3">
             <div>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                     Carga #{{ $shipment->shipment_number }}
@@ -11,7 +11,7 @@
                     Secuencia: {{ $shipment->sequence_in_voyage }}
                 </p>
             </div>
-            <div class="flex space-x-3">
+            <div class="flex flex-wrap gap-3">
                 @if($userPermissions['can_edit'])
                     <a href="{{ route('company.shipments.edit', $shipment) }}" 
                        class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded">
@@ -59,8 +59,8 @@
             {{-- Planificación con Estado y Botones --}}
             <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
                 <div class="px-6 py-4">
-                    <div class="flex justify-between items-center">
-                        <div class="flex items-center space-x-4">
+                    <div class="flex flex-wrap justify-between items-center gap-3">
+                        <div class="flex flex-wrap items-center gap-4">
                             <h3 class="text-lg font-medium text-gray-900">Planificación</h3>
                             <span class="inline-flex px-3 py-1 text-sm font-semibold rounded-full 
                                 @switch($shipment->status)
@@ -89,7 +89,7 @@
                             @endif
                         </div>
 
-                        <div class="flex space-x-3">
+                        <div class="flex flex-wrap gap-3">
                             <a href="{{ route('company.shipment-items.create', ['shipment' => $shipment->id]) }}" 
                                class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm">
                                 Iniciar Carga
