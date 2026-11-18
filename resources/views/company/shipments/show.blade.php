@@ -330,7 +330,7 @@
                     {{-- Conocimientos de Embarque - Compacta --}}
                     <div class="bg-white shadow rounded-lg">
                         <div class="px-6 py-4">
-                            <div class="flex justify-between items-center mb-4">
+                            <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
                                 <h3 class="text-lg font-medium text-gray-900">Conocimientos de Embarque</h3>
                                 <div class="flex space-x-2">
                                     <a href="{{ route('company.bills-of-lading.create', ['shipment_id' => $shipment->id]) }}" 
@@ -341,7 +341,7 @@
                                         Nuevo Conocimiento
                                     </a>
                                 </div>
-                                <div class="text-sm text-gray-500 ml-2">
+                                <div class="text-sm text-gray-500">
                                     Gestione los conocimientos de embarque de esta carga
                                 </div>
                             </div>
