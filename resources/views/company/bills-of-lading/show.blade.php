@@ -15,11 +15,11 @@ if ($user) {
 @endphp
 
 <x-slot name="header">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-center justify-between gap-3">
         <h2 class="font-semibold text-xl text-gray-800 leading-tight">
             {{ __('Conocimiento de Embarque') }} - {{ $billOfLading->bill_number }}
         </h2>
-        <div class="flex space-x-2">
+        <div class="flex flex-wrap gap-2">
                 <a href="{{ route('company.bills-of-lading.edit', $billOfLading) }}" 
                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                     Editar
