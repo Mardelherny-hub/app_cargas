@@ -15,11 +15,11 @@ if ($user) {
 @endphp
 
 <x-slot name="header">
-    <div class="flex items-center justify-between">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight break-all">
             {{ __('Conocimiento de Embarque') }} - {{ $billOfLading->bill_number }}
         </h2>
-        <div class="flex space-x-2">
+        <div class="flex flex-wrap gap-2">
                 <a href="{{ route('company.bills-of-lading.edit', $billOfLading) }}" 
                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                     Editar
@@ -56,8 +56,19 @@ if ($user) {
 </x-slot>
 
 <div class="py-6">
-    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        
+    <div class="w-full min-w-0 max-w-7xl mx-auto sm:px-6 lg:px-8">
+        @if(session('success'))
+            <div class="bg-green-50 border border-green-200 text-green-800 rounded-md p-4 mb-6 break-words" role="alert">
+                {{ session('success') }}
+            </div>
+        @endif
+
+        @if(session('error'))
+            <div class="bg-red-50 border border-red-200 text-red-800 rounded-md p-4 mb-6 break-words" role="alert">
+                {{ session('error') }}
+            </div>
+        @endif
+
         {{-- NAVEGACIÓN CONTEXTUAL --}}
         <div class="mb-6">
             <nav class="flex items-center space-x-2 text-sm text-gray-500 mb-4">
