@@ -4,36 +4,42 @@ tema: preguntas-frecuentes
 orden: 20
 roles: [company-admin, user]
 roles_empresa: [Cargas]
-palabras_clave: [importar, archivo, varios archivos, mismo viaje, convoy, remolcador, barcaza, agregar]
+palabras_clave: [importar, archivo, varios archivos, mismo viaje, convoy, remolcador, barcaza, agregar, viaje existente]
 relacionados:
+  - importar-manifiestos/agregar-un-archivo-a-un-viaje-existente
   - viajes-y-cargas/armar-un-convoy
   - preguntas-frecuentes/el-viaje-ya-existe
 estado: publicado
 verificado:
-  version: 9d7ce2e
-  fecha: 2026-11-03
-  entorno: stage
+  version: 390826a
+  fecha: 2026-11-17
+  entorno: codigo
 ---
 
 ## Para qué sirve
 
-Responde si varios archivos (por ejemplo, uno por cada embarcación de un convoy) pueden quedar en un mismo viaje. **Hoy no:** cada archivo que se importa crea su propio viaje, y la importación no agrega datos a un viaje que ya existe.
+Responde si varios archivos (por ejemplo, uno por cada embarcación de un convoy, o varios de una misma embarcación) pueden quedar en un mismo viaje. **Sí:** al importar puede elegir **Agregar a un viaje existente** en lugar de crear un viaje nuevo.
 
 ## Antes de empezar
 
-- Tenga en cuenta qué necesita presentar: un viaje de una sola embarcación o un convoy.
-- Para un convoy, las embarcaciones y sus cargas tienen que estar en un mismo viaje: vea [Cómo armar un viaje de convoy](manual:viajes-y-cargas/armar-un-convoy).
+- El viaje tiene que estar en planificación.
+- La embarcación no puede tener registros vigentes en AFIP para ese viaje.
+- Cada archivo se puede importar una sola vez. Un archivo con otro contenido, aunque repita conocimientos que ya están en el viaje, sí se puede agregar.
 
 ## Pasos
 
-1. Si el archivo corresponde a un viaje de una sola embarcación, impórtelo desde [Importar manifiestos](ruta:company.manifests.import.index): se crea un viaje con sus conocimientos.
-2. Si necesita reunir varias embarcaciones en un convoy, arme el viaje de convoy y cargue en él las cargas de cada embarcación, como indica [Cómo armar un viaje de convoy](manual:viajes-y-cargas/armar-un-convoy).
-3. Si importó un archivo por error o quiere rehacer la importación, reviértala desde [Historial de importaciones](ruta:company.manifests.import.history) antes de volver a importar.
+1. Importe el primer archivo creando el viaje, como indica [Cómo importar un manifiesto](manual:importar-manifiestos/importar-un-manifiesto).
+2. Para cada archivo siguiente, siga [Cómo agregar un archivo a un viaje existente](manual:importar-manifiestos/agregar-un-archivo-a-un-viaje-existente) y elija ese viaje.
+3. Si el archivo es de la misma embarcación, sus conocimientos se suman a la carga que ya tiene.
+4. Si el archivo es de otra embarcación y el viaje es de una sola embarcación, elija la **Embarcación líder del convoy**: el viaje se convierte en convoy. Vea [Cómo armar un viaje de convoy](manual:viajes-y-cargas/armar-un-convoy).
+5. Si agregó un archivo por error, revierta solo ese archivo con **Revertir lo agregado** desde el [Historial de importaciones](ruta:company.manifests.import.history).
 
 ## Cómo saber que salió bien
 
-Cada importación aparece en el historial con su propio viaje. Un viaje de convoy muestra en **Cargas Asociadas** una carga por cada embarcación.
+El reporte de cada archivo agregado muestra **Archivo agregado a un viaje existente** y la lista de los conocimientos salteados por repetidos, si los hubo. En el viaje, **Cargas Asociadas** muestra una carga por cada embarcación.
 
 ## Si algo falla
 
 - **El mensaje dice que el archivo ya fue importado o que el viaje ya existe:** vea [¿Qué hago si al importar dice que el viaje ya existe?](manual:preguntas-frecuentes/el-viaje-ya-existe).
+- **La embarcación … tiene registros vigentes en AFIP para este viaje: …**: el viaje ya tiene registros en AFIP para esa embarcación. El mensaje indica el motivo. No se pueden agregar archivos hasta anular ese registro.
+- **La opción Agregar a un viaje existente está deshabilitada:** no hay viajes en planificación. Cree el viaje importando el primer archivo.
