@@ -4,7 +4,9 @@ namespace Tests\Unit\Services\Parsers;
 
 use App\Models\ManifestImport;
 use App\Services\Parsers\MscVesselNameParser;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 use Tests\Unit\Services\Parsers\Concerns\BuildsManifestImportSchema;
 
@@ -25,6 +27,8 @@ class MscVesselNameParserTest extends TestCase
     {
         parent::setUp();
         $this->useIsolatedDatabase();
+        Schema::table('voyages', fn (Blueprint $table) => $table->boolean('active')->default(true)->change());
+        Schema::table('shipments', fn (Blueprint $table) => $table->boolean('active')->default(true)->change());
         $this->addVessel(self::VESSEL_NAME);
         $this->addContainerTypes(['20GP', '40HC']);
         $this->addClient('EXPORTADORA DEMO SA', '99999999991', self::AR);
@@ -154,6 +158,22 @@ class MscVesselNameParserTest extends TestCase
                 ->where('container_shipment_item.container_id', $shared)
                 ->orderBy('bills_of_lading.bill_number')->pluck('bills_of_lading.bill_number')->all()
         );
+
+        $shipment = DB::table('shipments')->first();
+        $voyage = DB::table('voyages')->where('id', $shipment->voyage_id)->first();
+        $containerCount = DB::table('bills_of_lading')
+            ->join('shipment_items', 'shipment_items.bill_of_lading_id', '=', 'bills_of_lading.id')
+            ->join('container_shipment_item', 'container_shipment_item.shipment_item_id', '=', 'shipment_items.id')
+            ->where('bills_of_lading.shipment_id', $shipment->id)
+            ->distinct()->count('container_shipment_item.container_id');
+
+        $this->assertSame(2, $containerCount);
+        $this->assertSame($containerCount, (int) $shipment->containers_loaded);
+        $this->assertSame($containerCount, (int) $voyage->total_containers);
+        $this->assertSame($containerCount, (int) $voyage->total_containers_loaded);
+        $this->assertEquals(17500.5, (float) $voyage->total_cargo_weight);
+        $this->assertEquals((float) $shipment->cargo_weight_loaded, (float) $voyage->total_cargo_weight);
+        $this->assertEquals((float) $shipment->cargo_weight_loaded, (float) $voyage->total_cargo_weight_loaded);
 
         $this->assertEquals(17500.5, (float) DB::table('voyages')->value('total_cargo_weight_loaded'));
         $this->assertEquals(17500.5, (float) DB::table('shipments')->value('cargo_weight_loaded'));
