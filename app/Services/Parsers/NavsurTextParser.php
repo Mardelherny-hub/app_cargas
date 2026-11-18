@@ -744,6 +744,7 @@ class NavsurTextParser implements ManifestParserInterface
             'total_cargo_weight_loaded' => 0,
             'total_containers_loaded' => 0,
             'capacity_utilization_percentage' => 0,
+            'created_by_user_id' => $user->id,
         ]);
     }
 
