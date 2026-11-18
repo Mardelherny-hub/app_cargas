@@ -184,8 +184,33 @@
                         </h3>
                     </div>
                     <div class="p-6">
+                        @php
+                            $weightWarnings = [];
+                            $otherWarnings = [];
+                            foreach ($import->warnings as $warning) {
+                                if (is_string($warning) && preg_match('/^\s*(?:BL|Conocimiento)\s+([^:]+?)\s*:\s*.*\bpeso\b/i', $warning, $matches)) {
+                                    $weightWarnings[$matches[1]][] = $warning;
+                                } else {
+                                    $otherWarnings[] = $warning;
+                                }
+                            }
+                        @endphp
                         <ul class="space-y-2">
-                            @foreach($import->warnings as $warning)
+                            @if($weightWarnings)
+                                <li class="text-sm text-gray-700">
+                                    <details>
+                                        <summary>Advertencias de peso por BL ({{ count($weightWarnings) }} conocimientos)</summary>
+                                        <ul class="space-y-2">
+                                            @foreach($weightWarnings as $warningsByBl)
+                                                @foreach($warningsByBl as $warning)
+                                                    <li><span class="text-yellow-700">⚠</span> {{ $warning }}</li>
+                                                @endforeach
+                                            @endforeach
+                                        </ul>
+                                    </details>
+                                </li>
+                            @endif
+                            @foreach($otherWarnings as $warning)
                                 <li class="text-sm text-gray-700">
                                     @if(is_string($warning))
                                         <span class="text-yellow-700">⚠</span> {{ $warning }}

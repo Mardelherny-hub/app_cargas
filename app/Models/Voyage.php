@@ -417,6 +417,14 @@ class Voyage extends Model
     }
 
     /**
+     * Usuario que creó el viaje.
+     */
+    public function createdByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /**
      * Embarcación líder/principal del viaje.
      */
     public function leadVessel(): BelongsTo
