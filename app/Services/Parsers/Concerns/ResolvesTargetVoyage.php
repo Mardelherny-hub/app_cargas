@@ -83,7 +83,8 @@ trait ResolvesTargetVoyage
     /**
      * Devuelve la carga de la embarcación en el viaje o crea una nueva.
      * $attributes son los datos que el parser usaría para crear su carga;
-     * el viaje, la embarcación, la secuencia y el rol los define este método.
+     * el viaje, la embarcación, la secuencia, el rol y el usuario creador
+     * los define este método.
      */
     protected function resolveTargetShipment(Voyage $voyage, int $vesselId, array $attributes): Shipment
     {
@@ -106,6 +107,7 @@ trait ResolvesTargetVoyage
             'sequence_in_voyage' => $sequence,
             'vessel_role' => $isLead ? ($voyage->is_convoy ? 'lead' : 'single') : 'towed',
             'is_lead_vessel' => $isLead,
+            'created_by_user_id' => auth()->id() ?? ($attributes['created_by_user_id'] ?? null),
         ]));
 
         $this->targetShipmentCreated = true;
