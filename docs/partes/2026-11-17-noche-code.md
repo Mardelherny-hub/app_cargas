@@ -112,3 +112,43 @@ Evidencia: `/var/www/html/pruebas_importacion/UI-20261117-code/9294ece-*`.
    - En el manual se explica cómo ver el motivo de AFIP desde la pantalla de importación.
 
 **Observación.** En esta rama la ventana de revertir todavía tiene los dos botones **Cancelar**: la corrección de `fix/ui-shipment-page` no está en `release/etapa-2`. Los artículos solo mencionan **Confirmar Reversión**.
+
+## 4. Tests que fallaban en `main`, carpeta Parsers — CORREGIDOS en `fix/stale-parser-tests` (`eb84038`)
+
+**Rama.** `fix/stale-parser-tests`, creada desde `origin/main` @ `3992e16` y publicada. No se tocó código de la app: los 4 tests habían quedado viejos respecto del código.
+
+**Diagnóstico** (en la instancia B, checkout de `3992e16`: 274 tests, 1 error y 3 fallas):
+
+| Test | Causa | Clasificación |
+|---|---|---|
+| `VoyageNumberCompanyScopeContractTest` | Lee `VoyageWizardController.php`, eliminado a propósito en `0749ff3` (eliminación del wizard incompleto). | test viejo |
+| `G2OceanXmlParserCoreIntegrityTest::test_g2ocean_enriches_unique_unidentified_client…` | Desde `a2683a3`, completar la ficha sin identificación fiscal se hace en el trait compartido `ResolvesExistingClient` (regla 3). El test buscaba el mensaje y la asignación viejos dentro del parser. | test viejo |
+| `TfpTextParserCoreIntegrityTest::test_tfp_enriches_unique_unidentified_client…` | Lo mismo, desde `d7ddb26`. | test viejo |
+| `LoginXmlParserStage1IntegrityTest::test_duplicate_warning_identifies_client_name_and_record_id` | Desde `196a287`, Login usa el trait: las advertencias con nombre y número de ficha salen de `ResolvesExistingClient` y el parser las agrega con `addWarningOnce($warning)`. | test viejo |
+
+**Corrección: un commit por archivo, solo en tests.** Se conserva la intención de cada test y se apunta al código vigente.
+- `fd92e54`: el contrato del número de viaje revisa solo `VoyageController`.
+- `9e97994` y `19b8bb3`: G2Ocean y TFP usan `ResolvesExistingClient` y llaman a `resolveExistingClient(`. En el trait se verifica que se complete `tax_id` y que se registre el mensaje de ficha completada.
+- `eb84038`: Login llama a `resolveExistingClient(` y agrega las advertencias con `addWarningOnce($warning)`. En el trait se verifica que las advertencias incluyan el nombre `({$name})` y la ficha `#{$client->id}`.
+
+**Pruebas.**
+- `php -l`: limpio.
+- Carpeta `tests/Unit/Services/Parsers` sobre `3992e16`: 274 tests y 809 aserciones, cero fallas.
+- B quedó restaurada a la base limpia.
+
+**Hallazgo, sin tocar.** Código muerto en los parsers:
+- `G2OceanXmlParser`: `findClientByNameIdentity()` (línea 1362) y `findUnidentifiedClientByNameIdentity()` (línea 1440);
+- `TfpTextParser`: `findClientByNameIdentity()` (línea 1272) y `findUnidentifiedClientByNameIdentity()` (línea 1355).
+
+Ninguno de estos métodos se llama desde `app/` ni desde `tests/`, porque los reemplazó el trait. Se pueden borrar en una tarea aparte.
+
+## Cierre de la noche
+
+| # | Tarea | Estado | SHA |
+|---|---|---|---|
+| 1 | Usuario creador en las cargas de TFP y Navsur (T4) | hecho; integrado por Claudia en `release/etapa-2` (`390826a`) | `2c906e7` |
+| 2 | QA de la ficha de carga @ `9294ece` | licencia y barra OK; la tarjeta del 272,5% no se ve en rojo | — |
+| 3 | Manual de la etapa 2 | hecho en `manual/etapa-2`; quedan 2 bugs y una decisión sobre `verificado.entorno` | `f8fb503` |
+| 4 | Tests viejos de la carpeta Parsers en `main` | hecho en `fix/stale-parser-tests` | `eb84038` |
+
+Nada se mergeó a `main` ni se publicó en servidores. La instancia B quedó en la base limpia y los servidores locales, detenidos.
