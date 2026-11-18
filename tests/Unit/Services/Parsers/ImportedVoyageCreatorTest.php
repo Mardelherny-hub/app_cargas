@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Parsers;
 
 use App\Models\Port;
+use App\Models\Shipment;
 use App\Models\User;
 use App\Models\Vessel;
 use App\Models\Voyage;
@@ -18,8 +19,8 @@ use ReflectionMethod;
 use Tests\TestCase;
 
 /**
- * El viaje creado por TFP y Navsur registra al usuario que importó el
- * archivo, como en el resto de los formatos. Base SQLite en memoria con
+ * El viaje y la carga creados por TFP y Navsur registran al usuario que
+ * importó el archivo, como en el resto de los formatos. Base SQLite en memoria con
  * datos ficticios; puertos y tipo de carga se resuelven fuera del alcance.
  */
 class ImportedVoyageCreatorTest extends TestCase
@@ -42,7 +43,7 @@ class ImportedVoyageCreatorTest extends TestCase
         DB::purge('sqlite');
         $this->assertSame(':memory:', DB::connection()->getDatabaseName());
 
-        foreach ([Voyage::class, Vessel::class] as $model) {
+        foreach ([Voyage::class, Vessel::class, Shipment::class] as $model) {
             $instance = new $model();
             Schema::create($instance->getTable(), function (Blueprint $t) use ($instance) {
                 $t->id();
@@ -182,6 +183,33 @@ class ImportedVoyageCreatorTest extends TestCase
 
         $this->assertSame(1, (int) $voyage->lead_vessel_id);
         $this->assertSame(self::USER, (int) $voyage->fresh()->created_by_user_id);
+    }
+
+    private function createShipment(object $parser): Shipment
+    {
+        $voyage = Voyage::create([
+            'voyage_number' => 'V-CARGA-01', 'company_id' => self::COMPANY, 'lead_vessel_id' => 1, 'status' => 'planning',
+        ]);
+        $method = new ReflectionMethod($parser, 'findOrCreateShipment');
+        $method->setAccessible(true);
+
+        return $method->invokeArgs($parser, [$voyage, []]);
+    }
+
+    public function test_tfp_compat_records_the_importing_user_as_shipment_creator(): void
+    {
+        $shipment = $this->createShipment(new TfpTextParserCompat());
+
+        $this->assertSame(1, (int) $shipment->vessel_id);
+        $this->assertSame(self::USER, (int) $shipment->fresh()->created_by_user_id);
+    }
+
+    public function test_navsur_compat_records_the_importing_user_as_shipment_creator(): void
+    {
+        $shipment = $this->createShipment(new NavsurTextParserCompat());
+
+        $this->assertSame(1, (int) $shipment->vessel_id);
+        $this->assertSame(self::USER, (int) $shipment->fresh()->created_by_user_id);
     }
 
     public static function fakePort(string $code): Port
