@@ -7,6 +7,7 @@ use App\ValueObjects\ManifestParseResult;
 use App\Models\Voyage;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
+use App\Services\Parsers\Concerns\RecalculatesNewVoyageTotals;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesExistingClient;
 use App\Services\Parsers\Concerns\ResolvesTargetVoyage;
@@ -49,6 +50,7 @@ class CmspEdiParser implements ManifestParserInterface
 {
     use EnsuresUniqueVoyageNumber;
     use ExtractsEmbeddedTaxId;
+    use RecalculatesNewVoyageTotals;
     use ResolvesClientAddresses;
     use ResolvesExistingClient;
     use ResolvesTargetVoyage;
@@ -1514,6 +1516,10 @@ class CmspEdiParser implements ManifestParserInterface
                 $this->finalizeBillOfLadingForGroup($billOfLading, $containerGroup);
                 
                 $this->stats['processed_bls']++;
+            }
+
+            if (!$targetVoyage) {
+                $this->recalculateNewVoyageTotals($voyage);
             }
 
             Log::info('CMSP EDI parsing completed successfully', [
