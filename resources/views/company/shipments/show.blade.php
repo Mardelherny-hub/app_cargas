@@ -119,7 +119,7 @@
                 <div class="bg-green-500 rounded-lg p-4 text-white">
                     <div class="flex items-center justify-between">
                         <div>
-                            <div class="text-2xl font-bold">{{ number_format($stats['total_packages']) }}</div>
+                            <div class="text-2xl font-bold">{{ number_format($stats['total_packages'], 0, ',', '.') }}</div>
                             <div class="text-sm opacity-90">Total Bultos</div>
                         </div>
                         <svg class="w-8 h-8 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -131,7 +131,7 @@
                 <div class="bg-purple-500 rounded-lg p-4 text-white">
                     <div class="flex items-center justify-between">
                         <div>
-                            <div class="text-2xl font-bold">{{ number_format($stats['total_gross_weight_kg'] / 1000, 1) }}t</div>
+                            <div class="text-2xl font-bold">{{ number_format($stats['total_gross_weight_kg'] / 1000, 1, ',', '.') }} t</div>
                             <div class="text-sm opacity-90">Peso Bruto</div>
                         </div>
                         <svg class="w-8 h-8 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -143,7 +143,10 @@
                 <div class="bg-indigo-500 rounded-lg p-4 text-white">
                     <div class="flex items-center justify-between">
                         <div>
-                            <div class="text-2xl font-bold {{ ($stats['cargo_utilization_percentage'] ?? null) > 100 ? 'text-red-200' : '' }}">{{ ($stats['cargo_utilization_percentage'] ?? null) !== null ? number_format($stats['cargo_utilization_percentage'], 1, ',', '.') . '%' : '—' }}</div>
+                            <div class="text-2xl font-bold">{{ ($stats['cargo_utilization_percentage'] ?? null) !== null ? ($stats['cargo_utilization_percentage'] == 0 ? '0%' : number_format($stats['cargo_utilization_percentage'], 1, ',', '.') . '%') : '—' }}</div>
+                            @if(($stats['cargo_utilization_percentage'] ?? null) > 100)
+                                <span class="bg-red-600 text-white rounded px-2 py-1 text-xs">Excede capacidad</span>
+                            @endif
                             <div class="text-sm opacity-90">Utilización</div>
                         </div>
                         <svg class="w-8 h-8 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -270,7 +273,7 @@
                                     <div class="w-full bg-gray-200 rounded-full h-3">
                                         <div class="bg-green-600 h-3 rounded-full" style="width: {{ min(100, ($shipment->containers_loaded !== null && $shipment->container_capacity !== null) ? ($stats['container_utilization_percentage'] ?? 0) : 0) }}%"></div>
                                     </div>
-                                    <div class="text-xs text-gray-500 mt-1">{{ $shipment->containers_loaded !== null && $shipment->container_capacity !== null && ($stats['container_utilization_percentage'] ?? null) !== null ? number_format($stats['container_utilization_percentage'], 1) . '% utilizado' : '—' }}</div>
+                                    <div class="text-xs text-gray-500 mt-1">{{ $shipment->containers_loaded !== null && $shipment->container_capacity !== null && ($stats['container_utilization_percentage'] ?? null) !== null ? number_format($stats['container_utilization_percentage'], 1, ',', '.') . '% utilizado' : '—' }}</div>
                                 </div>
                             </div>
                         </div>
