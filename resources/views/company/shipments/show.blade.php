@@ -103,7 +103,7 @@
             </div>
 
             {{-- Estadísticas Compactas --}}
-            <div class="grid grid-cols-4 gap-4 mb-6">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <div class="bg-blue-500 rounded-lg p-4 text-white">
                     <div class="flex items-center justify-between">
                         <div>
@@ -131,7 +131,7 @@
                 <div class="bg-purple-500 rounded-lg p-4 text-white">
                     <div class="flex items-center justify-between">
                         <div>
-                            <div class="text-2xl font-bold">{{ number_format($stats['total_gross_weight_kg'] / 1000, 1, ',', '.') }} t</div>
+                            <div class="text-2xl font-bold">{{ number_format($stats['total_gross_weight_kg'] / 1000, 1, ',', '.') }} t</div>
                             <div class="text-sm opacity-90">Peso Bruto</div>
                         </div>
                         <svg class="w-8 h-8 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,7 +145,7 @@
                         <div>
                             <div class="text-2xl font-bold">{{ ($stats['cargo_utilization_percentage'] ?? null) !== null ? ($stats['cargo_utilization_percentage'] == 0 ? '0%' : number_format($stats['cargo_utilization_percentage'], 1, ',', '.') . '%') : '—' }}</div>
                             @if(($stats['cargo_utilization_percentage'] ?? null) > 100)
-                                <span class="bg-red-600 text-white rounded px-2 py-1 text-xs">Excede capacidad</span>
+                                <span class="inline-block whitespace-nowrap bg-red-600 text-white rounded px-2 py-1 text-xs">Excede capacidad</span>
                             @endif
                             <div class="text-sm opacity-90">Utilización</div>
                         </div>
@@ -256,7 +256,7 @@
                                 <div>
                                     <div class="flex justify-between text-sm mb-2">
                                         <span>Cargado / Capacidad</span>
-                                        <span>{{ $shipment->cargo_weight_loaded !== null ? number_format($shipment->cargo_weight_loaded / 1000, 1, ',', '.') . ' t' : '—' }} / {{ $shipment->cargo_capacity_tons !== null ? number_format($shipment->cargo_capacity_tons, 1, ',', '.') . ' t' : '—' }}</span>
+                                        <span>{{ $shipment->cargo_weight_loaded !== null ? number_format($shipment->cargo_weight_loaded / 1000, 1, ',', '.') . ' t' : '—' }} / {{ $shipment->cargo_capacity_tons !== null ? number_format($shipment->cargo_capacity_tons, 1, ',', '.') . ' t' : '—' }}</span>
                                     </div>
                                     <div class="w-full bg-gray-200 rounded-full h-3">
                                         <div class="bg-blue-600 h-3 rounded-full" style="width: {{ max(0, min(100, $stats['cargo_utilization_percentage'] ?? 0)) }}%"></div>
