@@ -4,7 +4,9 @@ namespace Tests\Unit\Services\Parsers;
 
 use App\Models\ManifestImport;
 use App\Services\Parsers\DonToyoExcelParser;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use Tests\TestCase;
@@ -30,6 +32,8 @@ class DonToyoExcelParserTest extends TestCase
     {
         parent::setUp();
         $this->useIsolatedDatabase();
+        Schema::table('voyages', fn (Blueprint $table) => $table->boolean('active')->default(true)->change());
+        Schema::table('shipments', fn (Blueprint $table) => $table->boolean('active')->default(true)->change());
         $this->addVessel('BARCAZA DEMO');
         $this->addContainerTypes(['22G1', '45G0', '42U1', '42P1']);
         $this->addClient('EXPORTADORA DEMO SA', '9999991', self::PY);
@@ -126,6 +130,18 @@ class DonToyoExcelParserTest extends TestCase
             'voyages' => 1, 'shipments' => 1, 'bills_of_lading' => 2, 'shipment_items' => 2,
             'containers' => 4, 'container_shipment_item' => 4, 'clients' => 2,
         ], $this->operationalCounts());
+
+        $physicalContainers = DB::table('bills_of_lading')
+            ->join('shipment_items', 'shipment_items.bill_of_lading_id', '=', 'bills_of_lading.id')
+            ->join('container_shipment_item', 'container_shipment_item.shipment_item_id', '=', 'shipment_items.id')
+            ->distinct()->count('container_shipment_item.container_id');
+        $this->assertSame(4, $physicalContainers);
+        $this->assertSame(4, (int) DB::table('shipments')->value('containers_loaded'));
+        $this->assertSame(4, (int) DB::table('voyages')->value('total_containers'));
+        $this->assertSame(4, (int) DB::table('voyages')->value('total_containers_loaded'));
+        $this->assertEquals(42000.25, (float) DB::table('shipments')->value('cargo_weight_loaded'));
+        $this->assertEquals(42000.25, (float) DB::table('voyages')->value('total_cargo_weight'));
+        $this->assertEquals(42000.25, (float) DB::table('voyages')->value('total_cargo_weight_loaded'));
 
         $this->assertSame([
             'TSTU0000001' => '45G0', 'TSTU0000002' => '42U1', 'TSTU0000003' => '42P1', 'TSTU0000004' => '22G1',
