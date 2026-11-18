@@ -16,7 +16,7 @@ if ($user) {
 
 <x-slot name="header">
     <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+        <h2 class="font-semibold text-xl text-gray-800 leading-tight break-all">
             {{ __('Conocimiento de Embarque') }} - {{ $billOfLading->bill_number }}
         </h2>
         <div class="flex flex-wrap gap-2">
