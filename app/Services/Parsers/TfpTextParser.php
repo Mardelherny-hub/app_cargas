@@ -24,6 +24,7 @@ use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use App\Services\Parsers\Concerns\ResolvesVoyageCargoType;
 use App\Services\Parsers\Concerns\EnsuresUniqueVoyageNumber;
 use App\Services\Parsers\Concerns\ResolvesTargetVoyage;
+use App\Services\Parsers\Concerns\RecalculatesNewVoyageTotals;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Exception;
@@ -45,6 +46,7 @@ class TfpTextParser implements ManifestParserInterface
     use ResolvesClientAddresses;
     use ResolvesVoyageCargoType;
     use ResolvesTargetVoyage;
+    use RecalculatesNewVoyageTotals;
 
     protected array $stats = [
         'processed_bls' => 0,
@@ -258,6 +260,10 @@ class TfpTextParser implements ManifestParserInterface
                             'net_weight_kg' => null,
                         ]);
                     }
+                }
+
+                if (!$targetVoyage) {
+                    $this->recalculateNewVoyageTotals($voyage);
                 }
 
                 // Registrar objetos creados y completar el registro de importación.
