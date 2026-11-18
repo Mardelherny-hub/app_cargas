@@ -4,7 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, Shipment, ShipmentItem, Vessel, Voyage};
-use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType};
+use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, RecalculatesNewVoyageTotals, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use Carbon\Carbon;
 use DomainException;
@@ -16,7 +16,7 @@ use Throwable;
 
 class DonToyoExcelParser implements ManifestParserInterface
 {
-    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType;
+    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, RecalculatesNewVoyageTotals, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType;
 
     private bool $allowSharedContainers = false;
 
@@ -535,6 +535,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                             'total_cargo_weight' => $documentaryWeight,
                             'total_cargo_weight_loaded' => $documentaryWeight,
                         ]);
+                        $this->recalculateNewVoyageTotals($voyage);
                         $import->recordExplicitlyCreatedObjects($created);
                     }
                     $containers = array_values($containers);
