@@ -56,7 +56,8 @@ class ResolvesTargetVoyageTest extends TestCase
         Schema::create('shipments', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('voyage_id'); $t->unsignedBigInteger('vessel_id');
             $t->string('shipment_number'); $t->integer('sequence_in_voyage');
-            $t->string('vessel_role'); $t->boolean('is_lead_vessel')->default(false); $t->timestamps();
+            $t->string('vessel_role'); $t->boolean('is_lead_vessel')->default(false);
+            $t->unsignedBigInteger('created_by_user_id')->nullable(); $t->timestamps();
             $t->unique(['voyage_id', 'vessel_id']); $t->unique(['voyage_id', 'sequence_in_voyage']);
         });
         Schema::create('bills_of_lading', function (Blueprint $t) {
@@ -195,6 +196,39 @@ class ResolvesTargetVoyageTest extends TestCase
 
         $other = $this->shipmentFor($voyage, self::OTHER_BARGE);
         $this->assertSame(3, $other->sequence_in_voyage);
+    }
+
+    public function test_new_shipment_records_the_importing_user_even_if_the_parser_omits_it(): void
+    {
+        $this->convoy();
+        $barge = $this->shipmentFor(Voyage::findOrFail(self::VOYAGE), self::BARGE);
+
+        $this->assertSame(auth()->id(), (int) $barge->fresh()->created_by_user_id);
+    }
+
+    public function test_importing_user_prevails_over_the_creator_sent_by_the_parser(): void
+    {
+        $this->convoy();
+        $voyage = Voyage::findOrFail(self::VOYAGE);
+
+        // Los parsers que ya lo envían mandan el mismo usuario: no hay conflicto.
+        $same = Shipment::withoutEvents(fn () => $this->parser->resolveTargetShipment(
+            $voyage, self::BARGE, ['shipment_number' => 'S-NUEVA', 'created_by_user_id' => auth()->id()]
+        ));
+        $this->assertSame(auth()->id(), (int) $same->fresh()->created_by_user_id);
+
+        $other = Shipment::withoutEvents(fn () => $this->parser->resolveTargetShipment(
+            $voyage, self::OTHER_BARGE, ['shipment_number' => 'S-OTRA', 'created_by_user_id' => 999]
+        ));
+        $this->assertSame(auth()->id(), (int) $other->fresh()->created_by_user_id);
+    }
+
+    public function test_reused_shipment_keeps_its_original_creator(): void
+    {
+        $shipment = $this->shipmentFor(Voyage::findOrFail(self::VOYAGE), self::LEAD);
+
+        $this->assertSame(1, $shipment->id);
+        $this->assertNull($shipment->fresh()->created_by_user_id);
     }
 
     public function test_lead_without_shipment_is_created_as_lead(): void
