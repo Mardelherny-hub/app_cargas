@@ -299,9 +299,10 @@
                                                             </a>
                                                         @endif
 
-                                                        @if($import->can_be_reverted && $import->voyage && $import->voyage->status === 'planning' && !$import->reverted_at)
+                                                        @php($isAddedImport = isset($import->parser_config['target_voyage']))
+                                                        {{-- La importación que creó el viaje no se revierte sola mientras haya archivos agregados vigentes. --}}
+                                                        @if($import->can_be_reverted && $import->voyage && $import->voyage->status === 'planning' && !$import->reverted_at && ($isAddedImport || !in_array($import->voyage_id, $voyagesWithAddedImports ?? [])))
                                                             <div class="border-t border-gray-100"></div>
-                                                            @php($isAddedImport = isset($import->parser_config['target_voyage']))
                                                             <button type="button" 
                                                                     onclick="openRevertModal({{ $import->id }}, @js($import->file_name), '{{ $isAddedImport ? 'added' : 'import' }}')"
                                                                     class="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50" role="menuitem">
