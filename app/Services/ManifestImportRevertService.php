@@ -45,6 +45,8 @@ class ManifestImportRevertService
 
             if ($this->isTargeted($import)) {
                 $this->guardTargetedImport($import);
+            } else {
+                $this->guardNoActiveAddedImports($import);
             }
 
             $summary = $this->deleteCreatedObjects($import);
@@ -170,6 +172,26 @@ class ManifestImportRevertService
                     . 'Revierta primero las importaciones más nuevas.'
                 );
             }
+        }
+    }
+
+    /**
+     * La importación que creó el viaje no se revierte mientras el viaje
+     * tenga archivos agregados vigentes: borraría también lo agregado.
+     */
+    private function guardNoActiveAddedImports(ManifestImport $import): void
+    {
+        if (!$import->voyage_id) {
+            return;
+        }
+
+        $hasAdded = $this->activeImports($import->voyage_id)
+            ->contains(fn (ManifestImport $other) => $other->id !== $import->id && $this->isTargeted($other));
+
+        if ($hasAdded) {
+            throw new DomainException(
+                'Este viaje tiene archivos agregados. Use “Revertir viaje completo” o revierta primero lo agregado.'
+            );
         }
     }
 
