@@ -90,6 +90,7 @@ class VoyageConvoyConversionService
                     'cargo_capacity_tons' => null,
                     'container_capacity' => 0,
                     'status' => 'planning',
+                    'created_by_user_id' => auth()->id(),
                 ]);
 
                 $snapshot['created_shipment_id'] = (int) $leader->id;

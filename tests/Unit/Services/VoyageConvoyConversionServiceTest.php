@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Models\ManifestImport;
+use App\Models\User;
 use App\Models\Voyage;
 use App\Services\VoyageConvoyConversionService;
 use DomainException;
@@ -56,7 +57,7 @@ class VoyageConvoyConversionServiceTest extends TestCase
             $t->string('vessel_role'); $t->boolean('is_lead_vessel')->default(false);
             $t->integer('convoy_position')->nullable(); $t->decimal('cargo_capacity_tons', 10, 2)->nullable();
             $t->integer('container_capacity')->default(0); $t->string('status')->default('planning');
-            $t->timestamps();
+            $t->unsignedBigInteger('created_by_user_id')->nullable(); $t->timestamps();
             $t->unique(['voyage_id', 'vessel_id']); $t->unique(['voyage_id', 'sequence_in_voyage']);
         });
         Schema::create('bills_of_lading', function (Blueprint $t) {
@@ -175,6 +176,19 @@ class VoyageConvoyConversionServiceTest extends TestCase
         $this->assertSame([5, $snapshot['created_shipment_id']], $import->created_shipment_ids);
         $this->assertSame(['voyage_id' => self::VOYAGE], $import->parser_config['target_voyage']);
         $this->assertSame($snapshot['voyage'], $import->parser_config['convoy_conversion']['voyage']);
+    }
+
+    public function test_leader_shipment_records_the_user_who_converts(): void
+    {
+        $user = new User();
+        $user->id = 77;
+        $this->actingAs($user);
+
+        $snapshot = $this->service->convert($this->voyage(), self::TUG, self::NEW_BARGE);
+
+        $this->assertSame(77, (int) DB::table('shipments')
+            ->where('id', $snapshot['created_shipment_id'])->value('created_by_user_id'));
+        $this->assertNull(DB::table('shipments')->where('id', 1)->value('created_by_user_id'));
     }
 
     public function test_convoy_cannot_be_converted_again(): void
