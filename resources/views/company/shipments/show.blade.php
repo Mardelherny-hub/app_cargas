@@ -143,7 +143,7 @@
                 <div class="bg-indigo-500 rounded-lg p-4 text-white">
                     <div class="flex items-center justify-between">
                         <div>
-                            <div class="text-2xl font-bold">{{ ($stats['cargo_utilization_percentage'] ?? null) !== null ? number_format($stats['cargo_utilization_percentage'], 1) . '%' : '—' }}</div>
+                            <div class="text-2xl font-bold {{ ($stats['cargo_utilization_percentage'] ?? null) > 100 ? 'text-red-200' : '' }}">{{ ($stats['cargo_utilization_percentage'] ?? null) !== null ? number_format($stats['cargo_utilization_percentage'], 1, ',', '.') . '%' : '—' }}</div>
                             <div class="text-sm opacity-90">Utilización</div>
                         </div>
                         <svg class="w-8 h-8 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -226,7 +226,7 @@
                                             <span class="text-xs text-gray-500">Licencia:</span>
                                             <span class="text-xs text-gray-900">
                                                 {{ $shipment->captain->license_number ?? '—' }}
-                                                @if($shipment->captain->license_status !== null)<span class="ml-1 text-xs">{{ $shipment->captain->license_status }}</span>@endif
+                                                <span class="ml-1 text-xs">{{ ['valid' => 'Vigente', 'expired' => 'Vencida', 'suspended' => 'Suspendida', 'revoked' => 'Revocada', 'pending_renewal' => 'Renovación pendiente'][$shipment->captain->license_status] ?? '—' }}</span>
                                             </span>
                                         </div>
                                         <div class="flex justify-between">
@@ -253,12 +253,12 @@
                                 <div>
                                     <div class="flex justify-between text-sm mb-2">
                                         <span>Cargado / Capacidad</span>
-                                        <span>{{ $shipment->cargo_weight_loaded !== null ? number_format($shipment->cargo_weight_loaded / 1000, 1) . 't' : '—' }} / {{ $shipment->cargo_capacity_tons !== null ? number_format($shipment->cargo_capacity_tons, 1) . 't' : '—' }}</span>
+                                        <span>{{ $shipment->cargo_weight_loaded !== null ? number_format($shipment->cargo_weight_loaded / 1000, 1, ',', '.') . ' t' : '—' }} / {{ $shipment->cargo_capacity_tons !== null ? number_format($shipment->cargo_capacity_tons, 1, ',', '.') . ' t' : '—' }}</span>
                                     </div>
                                     <div class="w-full bg-gray-200 rounded-full h-3">
-                                        <div class="bg-blue-600 h-3 rounded-full" style="width: {{ min(100, $stats['cargo_utilization_percentage'] ?? 0) }}%"></div>
+                                        <div class="bg-blue-600 h-3 rounded-full" style="width: {{ max(0, min(100, $stats['cargo_utilization_percentage'] ?? 0)) }}%"></div>
                                     </div>
-                                    <div class="text-xs text-gray-500 mt-1">{{ ($stats['cargo_utilization_percentage'] ?? null) !== null ? number_format($stats['cargo_utilization_percentage'], 1) . '% utilizado' : '—' }}</div>
+                                    <div class="text-xs mt-1 {{ ($stats['cargo_utilization_percentage'] ?? null) > 100 ? 'text-red-600' : 'text-gray-500' }}">{{ ($stats['cargo_utilization_percentage'] ?? null) !== null ? number_format($stats['cargo_utilization_percentage'], 1, ',', '.') . '% utilizado' : '—' }}</div>
                                 </div>
 
                                 {{-- Contenedores --}}
