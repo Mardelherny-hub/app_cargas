@@ -491,7 +491,7 @@ class MscVesselNameParser implements ManifestParserInterface
 
     public function getFormatInfo(): array
     {
-        return ['name' => 'MSC VESSEL NAME', 'description' => 'Manifiesto TXT con cierre ###FIN BL###', 'extensions' => ['txt']];
+        return ['name' => 'MSC Vessel Name', 'description' => 'Manifiesto TXT con cierre ###FIN BL###', 'extensions' => ['txt']];
     }
 
     public function getDefaultConfig(): array
