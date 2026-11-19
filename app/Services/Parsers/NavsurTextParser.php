@@ -2006,7 +2006,7 @@ protected function findOrCreateContainerType(
     {
         return [
             'name' => 'Navsur Text Format',
-            'description' => 'Formato de texto jerárquico utilizado por Navsur con marcadores **BL**, **CONTENEDORES**, **MERCADERIAS**',
+            'description' => 'Archivo de texto Navsur con conocimientos y mercadería',
             'extensions' => ['txt'],
             'mime_types' => ['text/plain'],
             'characteristics' => [
