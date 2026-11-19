@@ -265,7 +265,6 @@ class ParanaExcelParser implements ManifestParserInterface
                                 'container_capacity' => $vessel->container_capacity ?? 0,
                                 'status' => 'planning',
                                 'active' => true,
-                                'created_by_user_id' => auth()->id(),
                             ]
                         ));
                     }
