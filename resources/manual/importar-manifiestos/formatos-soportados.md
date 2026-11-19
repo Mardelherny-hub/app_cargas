@@ -13,8 +13,6 @@ verificado:
   entorno: stage
 ---
 
-<!-- QA formulario Stage 18/11/2026: docs/partes/2026-11-18-work.md, apartado «QA del formulario en Stage»; sin importar archivos. -->
-
 ## Para qué sirve
 
 Indica qué archivos de manifiesto reconoce el sistema y qué necesita cada uno. No hace falta elegir el formato al importar: el sistema lo detecta por el contenido del archivo.
