@@ -9,9 +9,11 @@ relacionados: [importar-manifiestos/importar-un-manifiesto]
 estado: publicado
 verificado:
   version: d08c3f2
-  fecha: 2026-11-17
-  entorno: local
+  fecha: 2026-11-18
+  entorno: stage
 ---
+
+<!-- QA formulario Stage 18/11/2026: docs/partes/2026-11-18-work.md, apartado «QA del formulario en Stage»; sin importar archivos. -->
 
 ## Para qué sirve
 
