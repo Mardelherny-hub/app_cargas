@@ -43,7 +43,7 @@
                         </h3>
                         <div class="mt-2 text-sm text-blue-700">
                             <p>
-                                El sistema detectará automáticamente el formato del archivo y usará el parser apropiado.
+                                El sistema detectará automáticamente el formato del archivo.
                             </p>
                         </div>
                     </div>
@@ -122,7 +122,7 @@
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                         <p class="mt-1 text-xs text-gray-500">
-                            Seleccione una embarcación. En MSC, el nombre que informa el archivo debe coincidir con la seleccionada. En CUSCAR y Login se usa la embarcación que informa el archivo.
+                            Seleccione la embarcación del viaje: se usa siempre la que elija aquí. En MSC, su nombre debe coincidir con VESSEL NAME del archivo o la importación se rechaza. En los demás formatos no se compara con el nombre que informe el archivo.
                         </p>
                     </div>
 
