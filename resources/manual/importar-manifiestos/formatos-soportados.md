@@ -4,12 +4,12 @@ tema: importar-manifiestos
 orden: 20
 roles: [company-admin, user]
 roles_empresa: [Cargas]
-palabras_clave: [formato, archivo, Excel, XML, EDI, CUSCAR, KLine, PARANA, Guaran, Login, TFP, Navsur, G2Ocean, CMSP]
+palabras_clave: [formato, archivo, Excel, XML, EDI, CUSCAR, KLine, PARANA, Guaran, Login, TFP, Navsur, G2Ocean, CMSP, MSC, Don Toyo]
 relacionados: [importar-manifiestos/importar-un-manifiesto]
 estado: publicado
 verificado:
-  version: 9d7ce2e
-  fecha: 2026-11-03
+  version: d08c3f2
+  fecha: 2026-11-18
   entorno: stage
 ---
 
@@ -33,14 +33,16 @@ Indica qué archivos de manifiesto reconoce el sistema y qué necesita cada uno.
     - **CMSP EDI CUSCAR** (`.edi` u otra extensión, por ejemplo `.1`): archivo CUSCAR de CMSP Paraguay o de otras líneas, como Hapag-Lloyd. Exige elegir **Importación** o **Exportación** al importar.
     - **Navsur Text Format** (`.txt`): archivo de texto de Navsur.
     - **G2Ocean XML Format** (`.xml`): archivo XML de StarPort.
+    - **MSC Vessel Name** (`.txt`): archivo de texto identificado por campos como VESSEL NAME, VOYAGE y BILL OF LADING. Contiene el número de viaje, los puertos, los datos de los conocimientos, bultos, pesos y contenedores. Elija una embarcación activa de su empresa cuyo nombre coincida con **VESSEL NAME dentro del archivo**; no se compara con el nombre del archivo. Los puertos deben estar registrados y los números y tipos de contenedor deben ser compatibles.
+    - **Don Toyo Excel** (`.xls` antiguo o `.xlsx` con estructura equivalente): planilla identificada por las hojas BUQUE, BLS y CONTENEDORES y sus encabezados. La hoja RECARGOS no se importa. La hoja BUQUE indica la identificación del buque (IMO) y el número de viaje, pero no el nombre de la embarcación: elija una embarcación activa de su empresa en el formulario. El sistema no la determina por el nombre del archivo ni exige que el IMO coincida; si difiere, muestra una advertencia. Los puertos y tipos de contenedor indicados deben estar en los catálogos. Los conocimientos deben identificar al remitente y al destinatario. El archivo no trae fechas documentales: complételas después, antes de presentar en Aduana.
 2. Revise de dónde sale el número de viaje:
-    - En CMSP EDI CUSCAR y TFP, si escribe un número al importar, ese reemplaza al del archivo.
+    - En CMSP EDI CUSCAR, TFP y Don Toyo Excel, si escribe un número al importar, ese tiene prioridad sobre el del archivo. En Don Toyo puede usar **Número de viaje** si falta VIAJE en la hoja BUQUE.
     - En los demás formatos se usa el número del archivo; el que escriba se usa solo si el archivo no trae uno.
 3. Importe el archivo como se explica en [Cómo importar un manifiesto](manual:importar-manifiestos/importar-un-manifiesto).
 
 ## Cómo saber que salió bien
 
-Al terminar la importación se abre el reporte. La columna **Formato** del historial muestra el formato que reconoció el sistema: KLINE, PARANA, GUARAN_EXCEL, LOGIN_XML, TFP, CMSP, NAVSUR o G2OCEAN_XML.
+Al terminar la importación se abre el reporte. La columna **Formato** del historial muestra el formato que reconoció el sistema: KLINE, PARANA, GUARAN_EXCEL, LOGIN_XML, TFP, CMSP, NAVSUR, G2OCEAN_XML, MSC_VESSEL_NAME o DON_TOYO_EXCEL.
 
 ## Si algo falla
 
