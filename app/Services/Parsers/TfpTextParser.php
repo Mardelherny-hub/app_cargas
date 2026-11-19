@@ -1588,6 +1588,8 @@ protected function extractValue(string $scope, string $label): ?string
     public function getFormatInfo(): array
     {
         return [
+            'name' => 'TFP',
+            'description' => 'Archivo de texto TFP con conocimientos, contenedores y mercadería',
             'markers' => ['**BL**', '**FIN BL**', '**CONTENEDORES**', '**LINEAS**'],
             'notes' => 'Valores entre /* ... */'
         ];
