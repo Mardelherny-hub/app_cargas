@@ -122,7 +122,7 @@
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                         <p class="mt-1 text-xs text-gray-500">
-                            Seleccione una embarcación. Si el archivo informa su nombre, como en MSC, debe coincidir con la seleccionada.
+                            Seleccione una embarcación. En MSC, el nombre que informa el archivo debe coincidir con la seleccionada. En CUSCAR y Login se usa la embarcación que informa el archivo.
                         </p>
                     </div>
 
@@ -298,7 +298,7 @@
                         {{ $info['description'] ?? 'Formato de manifiesto' }}
                     </p>
                     <div class="text-xs text-green-600">
-                        ✅ Parser disponible
+                        ✅ Formato disponible
                     </div>
                 </div>
                 @endforeach
@@ -312,7 +312,7 @@
                     <p class="text-sm text-gray-600 mb-2">
                         Archivos de datos de K-Line en formato DAT
                     </p>
-                    <div class="text-xs text-green-600">✅ Parser disponible</div>
+                    <div class="text-xs text-green-600">✅ Formato disponible</div>
                 </div>
 
                 <!-- PARANA Excel -->
@@ -321,7 +321,7 @@
                     <p class="text-sm text-gray-600 mb-2">
                         Formato Excel MAERSK con 73 columnas
                     </p>
-                    <div class="text-xs text-green-600">✅ Parser disponible</div>
+                    <div class="text-xs text-green-600">✅ Formato disponible</div>
                 </div>
 
                 <!-- Guaran CSV -->
@@ -330,7 +330,7 @@
                     <p class="text-sm text-gray-600 mb-2">
                         CSV consolidado multi-línea
                     </p>
-                    <div class="text-xs text-green-600">✅ Parser disponible</div>
+                    <div class="text-xs text-green-600">✅ Formato disponible</div>
                 </div>
             </div>
             @endif
