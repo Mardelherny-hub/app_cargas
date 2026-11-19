@@ -1588,6 +1588,7 @@ protected function extractValue(string $scope, string $label): ?string
     public function getFormatInfo(): array
     {
         return [
+            'name' => 'TFP',
             'markers' => ['**BL**', '**FIN BL**', '**CONTENEDORES**', '**LINEAS**'],
             'notes' => 'Valores entre /* ... */'
         ];
