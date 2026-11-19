@@ -221,7 +221,6 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                         'container_capacity' => $vessel->container_capacity ?? 0,
                         'status' => 'planning',
                         'active' => true,
-                        'created_by_user_id' => auth()->id(),
                     ]);
                 } else {
                     $dates      = $this->extractDates($firstBL['data']);
