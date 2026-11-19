@@ -2134,7 +2134,7 @@ class GuaranExcelParser implements ManifestParserInterface
     {
         return [
             'name' => 'Guaran Excel',
-            'description' => 'Parser para manifiestos consolidados de Guaran Feeder S.A. - Solo datos reales del archivo',
+            'description' => 'Planilla Excel de manifiestos de Guaran Feeder',
             'extensions' => ['xlsx', 'xls'],
             'version' => '1.0-real-data-only',
             'parser_class' => self::class,
