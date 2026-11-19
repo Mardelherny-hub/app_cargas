@@ -9,9 +9,11 @@ relacionados: [importar-manifiestos/formatos-soportados, importar-manifiestos/hi
 estado: publicado
 verificado:
   version: d08c3f2
-  fecha: 2026-11-17
-  entorno: local
+  fecha: 2026-11-18
+  entorno: stage
 ---
+
+<!-- QA formulario Stage 18/11/2026: docs/partes/2026-11-18-work.md, apartado «QA del formulario en Stage»; sin importar archivos. -->
 
 ## Para qué sirve
 
@@ -38,9 +40,9 @@ Crea un viaje completo a partir del archivo de manifiesto que envía la línea o
     - **📅 Fecha de Carga (opcional)**.
     - **📅 Fecha de Descarga (opcional)**. Los archivos CUSCAR que no traen fecha estimada de llegada la necesitan.
 
-    En los demás formatos, las fechas ingresadas reemplazan las del archivo: la carga se aplica a los conocimientos y la descarga también a la llegada estimada del viaje.
+    Cuando el archivo trae fechas, las que ingrese en el formulario tienen prioridad: la carga se aplica a los conocimientos y la descarga también a la llegada estimada del viaje.
 
-    En MSC y Don Toyo, revise las fechas del viaje y de los conocimientos después de importar. Complete las que falten en los documentos antes de presentarlos. No invente fechas.
+    En MSC y Don Toyo, revise las fechas del viaje y de los conocimientos después de importar. Complete las que falten en los documentos antes de presentarlos, utilizando las fechas reales que correspondan.
 7. Haga clic en **Importar Manifiesto**.
 8. Espere en la pantalla **📥 Procesando Importación**: el estado pasa de **En cola para procesamiento…** a **Procesando archivo y creando viaje, conocimientos y contenedores…**. Al terminar se abre el reporte.
 
