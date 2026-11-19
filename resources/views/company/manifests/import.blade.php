@@ -122,7 +122,7 @@
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                         <p class="mt-1 text-xs text-gray-500">
-                            Este dato es obligatorio en el flujo de importación. La embarcación seleccionada aquí tiene prioridad sobre la informada en el archivo.
+                            Seleccione una embarcación. Si el archivo informa su nombre, como en MSC, debe coincidir con la seleccionada.
                         </p>
                     </div>
 
@@ -289,10 +289,10 @@
             <!-- Información de parsers disponibles -->
             @if(isset($supportedFormats) && $supportedFormats)
             <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                @foreach($supportedFormats as $format => $info)
+                @foreach($supportedFormats as $info)
                 <div class="bg-white p-4 rounded-lg shadow border border-gray-200">
                     <h4 class="font-medium text-gray-900 mb-2">
-                        {{ $info['icon'] ?? '📄' }} {{ $format }}
+                        {{ $info['icon'] ?? '📄' }} {{ $info['name'] ?? 'Formato de manifiesto' }}
                     </h4>
                     <p class="text-sm text-gray-600 mb-2">
                         {{ $info['description'] ?? 'Formato de manifiesto' }}
