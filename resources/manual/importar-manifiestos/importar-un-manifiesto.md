@@ -13,8 +13,6 @@ verificado:
   entorno: stage
 ---
 
-<!-- QA formulario Stage 18/11/2026: docs/partes/2026-11-18-work.md, apartado «QA del formulario en Stage»; sin importar archivos. -->
-
 ## Para qué sirve
 
 Crea un viaje completo a partir del archivo de manifiesto que envía la línea o el agente: el viaje, sus conocimientos, las líneas de mercadería y los contenedores. Los clientes que no existen se dan de alta solos.
