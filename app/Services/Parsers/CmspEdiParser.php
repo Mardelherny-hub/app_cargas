@@ -1473,7 +1473,6 @@ class CmspEdiParser implements ManifestParserInterface
                     'cargo_capacity_tons' => $vessel->cargo_capacity_tons,
                     'status' => 'planning',
                     'active' => true,
-                    'created_by_user_id' => auth()->id(),
                 ]);
             } else {
                 $voyage = $this->createVoyage($data, $options);

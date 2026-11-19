@@ -320,7 +320,6 @@ class LoginXmlParser implements ManifestParserInterface
                         'status' => $transformedData['shipment']['status'],
                         'active' => true,
                         'created_date' => now(),
-                        'created_by_user_id' => $context['user_id'],
                     ]
                 ));
             } else {

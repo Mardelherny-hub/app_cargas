@@ -453,7 +453,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                         $shipment = $this->resolveTargetShipment($voyage, (int) $options['vessel_id'], [
                             'shipment_number' => $voyage->voyage_number . '-01',
                             'status' => 'planning', 'cargo_capacity_tons' => null,
-                            'departure_time' => null, 'created_by_user_id' => auth()->id(),
+                            'departure_time' => null,
                         ]);
                         if ($this->targetShipmentCreated) {
                             $created['shipment'][] = $shipment->id;
