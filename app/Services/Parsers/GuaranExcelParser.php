@@ -2133,7 +2133,7 @@ class GuaranExcelParser implements ManifestParserInterface
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'Guaran Excel Parser',
+            'name' => 'Guaran Excel',
             'description' => 'Parser para manifiestos consolidados de Guaran Feeder S.A. - Solo datos reales del archivo',
             'extensions' => ['xlsx', 'xls'],
             'version' => '1.0-real-data-only',
