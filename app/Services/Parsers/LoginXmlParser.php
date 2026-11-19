@@ -2118,7 +2118,7 @@ class LoginXmlParser implements ManifestParserInterface
     {
         return [
             'name' => 'Login XML',
-            'description' => 'Parser para manifiestos Login en formato XML con estructura anidada',
+            'description' => 'Archivo XML de manifiestos de Login',
             'extensions' => ['xml'],
             'version' => '1.0',
             'features' => [
