@@ -183,19 +183,24 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertSame($before, $this->operationalSnapshot());
     }
 
-    public function test_missing_packaging_stays_empty_but_explicit_cartons_map_when_catalogued(): void
+    public function test_container_packaging_keeps_mic_dta_compatibility_and_only_warns_for_cartons(): void
     {
         $sheets = $this->sheets();
         $sheets['BLS'][1][16] = '178 CARTONS FROZEN MERCHANDISE';
-        DB::table('packaging_types')->insert(['code' => 'CT', 'name' => 'CARTON', 'active' => true]);
 
         $result = $this->import($this->workbook($sheets));
 
         $this->assertTrue($result->success, implode(' | ', $result->errors));
-        $cartonId = DB::table('packaging_types')->where('name', 'CARTON')->value('id');
-        $this->assertEquals($cartonId, DB::table('shipment_items')->orderBy('id')->value('packaging_type_id'));
-        $this->assertNull(DB::table('shipment_items')->orderByDesc('id')->value('packaging_type_id'));
-        $this->assertContains('BL DEMOBL000002: tipo de embalaje no informado; queda vacío.', $result->warnings);
+        $containerId = DB::table('packaging_types')->where('name', 'CONTENEDOR')->value('id');
+        $this->assertSame([$containerId, $containerId], DB::table('shipment_items')
+            ->orderBy('id')->pluck('packaging_type_id')->all());
+        $this->assertContains(
+            'BL DEMOBL000001: embalaje CARTONS sin equivalencia en el catálogo; se conserva CONTENEDOR para MIC/DTA.',
+            $result->warnings
+        );
+        $this->assertFalse(collect($result->warnings)->contains(
+            fn ($warning) => str_contains($warning, 'tipo de embalaje no informado')
+        ));
     }
 
     public function test_ncm_uses_source_column_or_unambiguous_label_but_never_guesses_multiple_codes(): void
