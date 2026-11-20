@@ -351,12 +351,27 @@ class DonToyoExcelParser implements ManifestParserInterface
         return $declared !== '' ? $declared : ($found[0] ?? null);
     }
 
-    private function warnUnsupportedPackaging(string $number, string $description, array &$warnings): void
+    private function sourcePackagingCode(string $number, string $description, array &$warnings): ?string
     {
-        preg_match_all('/\b(?:CARTONS?|FARDOS?)\b/iu', $description, $matches);
-        foreach (array_unique(array_map('mb_strtoupper', $matches[0])) as $word) {
-            $warnings[] = "BL {$number}: embalaje {$word} sin equivalencia en el catálogo; se conserva CONTENEDOR para MIC/DTA.";
+        // Igual que CUSCAR GID/C213: guardar el código EDIFACT en packaging_code,
+        // independiente del packaging_type_id de CONTENEDOR.
+        preg_match_all('/\b(?:CARTONS?|FARDOS?|BAGS?|SACKS?|PALLETS?|BOXES?|PACKAGES?|DRUMS?|BALES?|BUNDLES?)\b/iu', $description, $matches);
+        $words = array_unique(array_map('mb_strtoupper', $matches[0]));
+        if (count($words) > 1) {
+            $warnings[] = "BL {$number}: varios tipos de embalaje en la descripción; se conserva CONTENEDOR sin código EDIFACT.";
+            return null;
         }
+        $word = reset($words) ?: null;
+        if (in_array($word, ['CARTON', 'CARTONS'], true)) {
+            return 'CT';
+        }
+        if (in_array($word, ['FARDO', 'FARDOS'], true)) {
+            return 'BL';
+        }
+        if ($word !== null) {
+            $warnings[] = "BL {$number}: embalaje {$word} sin equivalencia EDIFACT inequívoca; se conserva CONTENEDOR.";
+        }
+        return null;
     }
 
     public function parse(string $filePath, array $options = []): ManifestParseResult
@@ -373,7 +388,7 @@ class DonToyoExcelParser implements ManifestParserInterface
             $data = $this->transform($raw);
             $plan = $this->preflight($data, $options);
             foreach ($data['bills'] as $number => &$row) {
-                $this->warnUnsupportedPackaging($number, $row['DESCRIPCION MERCADERIA'], $warnings);
+                $row['resolved_packaging_code'] = $this->sourcePackagingCode($number, $row['DESCRIPCION MERCADERIA'], $warnings);
                 $row['resolved_ncm'] = $this->sourceNcm($number, $row, $warnings);
             }
             unset($row);
@@ -456,7 +471,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                             'total_packages' => $row['quantity'], 'gross_weight_kg' => $row['weight'], 'net_weight_kg' => null,
                             'volume_m3' => $row['volume'], 'container_count' => count($rows), 'cargo_description' => $row['DESCRIPCION MERCADERIA'],
                             'is_consolidated' => $row['Consolidado'] === 'S', 'status' => 'draft',
-                            'webservice_data' => ['don_toyo_source' => array_diff_key($row, array_flip(['quantity', 'weight', 'volume', '_row', 'resolved_ncm']))],
+                            'webservice_data' => ['don_toyo_source' => array_diff_key($row, array_flip(['quantity', 'weight', 'volume', '_row', 'resolved_ncm', 'resolved_packaging_code']))],
                             'created_by_user_id' => auth()->id(),
                         ]);
                         $bills[] = $bill;
@@ -465,6 +480,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                         $item = ShipmentItem::create([
                             'bill_of_lading_id' => $bill->id, 'line_number' => 1,
                             'cargo_type_id' => $plan['cargo']->id, 'packaging_type_id' => $plan['packaging']->id,
+                            'packaging_code' => $row['resolved_packaging_code'],
                             'package_quantity' => $row['quantity'], 'gross_weight_kg' => $row['weight'], 'net_weight_kg' => null,
                             'volume_m3' => $row['volume'], 'item_description' => $row['DESCRIPCION MERCADERIA'],
                             'commodity_code' => $row['resolved_ncm'], 'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
