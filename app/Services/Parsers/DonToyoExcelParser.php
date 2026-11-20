@@ -282,8 +282,9 @@ class DonToyoExcelParser implements ManifestParserInterface
         }
         // Same canonical classification used for containerized Excel manifests.
         $cargo = DB::table('cargo_types')->where('name', 'CONTENEDORES')->where('active', true)->first();
-        if (!$cargo) {
-            throw new DomainException('Falta clasificación activa CONTENEDORES en el catálogo.');
+        $packaging = DB::table('packaging_types')->where('name', 'CONTENEDOR')->where('active', true)->first();
+        if (!$cargo || !$packaging) {
+            throw new DomainException('Falta clasificación activa CONTENEDORES / CONTENEDOR en el catálogo.');
         }
         $existingContainers = Container::whereIn('container_number', array_merge(...array_map(fn ($rows) => array_column($rows, 'CONTENEDOR'), array_values($data['containers']))))->get()->keyBy('container_number');
         foreach ($data['containers'] as $rows) {
@@ -298,7 +299,7 @@ class DonToyoExcelParser implements ManifestParserInterface
         $origin = $ports[$first['Carga']];
         $destination = $ports[$first['Descarga']];
         $cargoType = $this->resolveVoyageCargoTypeForCompany((int) $companyId, $origin, $destination);
-        return compact('companyId', 'vessel', 'voyageNumber', 'types', 'ports', 'cargo', 'existingContainers', 'origin', 'destination', 'cargoType') + ['departure' => $this->dateOption($options['departure_date'] ?? null)];
+        return compact('companyId', 'vessel', 'voyageNumber', 'types', 'ports', 'cargo', 'packaging', 'existingContainers', 'origin', 'destination', 'cargoType') + ['departure' => $this->dateOption($options['departure_date'] ?? null)];
     }
 
     private function clientPlan(string $name, int $countryHint, array &$warnings): array
@@ -350,25 +351,12 @@ class DonToyoExcelParser implements ManifestParserInterface
         return $declared !== '' ? $declared : ($found[0] ?? null);
     }
 
-    private function sourcePackaging(string $number, string $description, $catalog, array &$warnings): ?int
+    private function warnUnsupportedPackaging(string $number, string $description, array &$warnings): void
     {
         preg_match_all('/\b(?:CARTONS?|FARDOS?)\b/iu', $description, $matches);
-        $words = array_unique(array_map('mb_strtoupper', $matches[0]));
-        if (count($words) > 1) {
-            $warnings[] = "BL {$number}: varios tipos de embalaje en la descripción; queda vacío.";
-            return null;
+        foreach (array_unique(array_map('mb_strtoupper', $matches[0])) as $word) {
+            $warnings[] = "BL {$number}: embalaje {$word} sin equivalencia en el catálogo; se conserva CONTENEDOR para MIC/DTA.";
         }
-        $word = reset($words) ?: null;
-        $name = match ($word) {
-            'CARTON', 'CARTONS' => 'CARTON',
-            'FARDO', 'FARDOS' => 'FARDO',
-            default => null,
-        };
-        $type = $name === null ? null : $catalog->first(fn ($item) => mb_strtoupper(trim($item->name)) === $name);
-        if (!$type) {
-            $warnings[] = "BL {$number}: " . ($word ? "embalaje {$word} sin equivalencia activa" : 'tipo de embalaje no informado') . '; queda vacío.';
-        }
-        return $type?->id;
     }
 
     public function parse(string $filePath, array $options = []): ManifestParseResult
@@ -384,9 +372,8 @@ class DonToyoExcelParser implements ManifestParserInterface
             }
             $data = $this->transform($raw);
             $plan = $this->preflight($data, $options);
-            $packagingCatalog = DB::table('packaging_types')->where('active', true)->get();
             foreach ($data['bills'] as $number => &$row) {
-                $row['resolved_packaging_id'] = $this->sourcePackaging($number, $row['DESCRIPCION MERCADERIA'], $packagingCatalog, $warnings);
+                $this->warnUnsupportedPackaging($number, $row['DESCRIPCION MERCADERIA'], $warnings);
                 $row['resolved_ncm'] = $this->sourceNcm($number, $row, $warnings);
             }
             unset($row);
@@ -464,12 +451,12 @@ class DonToyoExcelParser implements ManifestParserInterface
                             'notify_party_id' => $clients[$row['Cnee']]->id,
                             'loading_port_id' => $plan['ports'][$row['Carga']]->id, 'discharge_port_id' => $plan['ports'][$row['Descarga']]->id,
                             'final_destination_port_id' => $plan['ports'][$row['Destino Final']]->id,
-                            'primary_cargo_type_id' => $plan['cargo']->id, 'primary_packaging_type_id' => $row['resolved_packaging_id'],
+                            'primary_cargo_type_id' => $plan['cargo']->id, 'primary_packaging_type_id' => $plan['packaging']->id,
                             'bill_date' => null, 'loading_date' => null, 'freight_terms' => null,
                             'total_packages' => $row['quantity'], 'gross_weight_kg' => $row['weight'], 'net_weight_kg' => null,
                             'volume_m3' => $row['volume'], 'container_count' => count($rows), 'cargo_description' => $row['DESCRIPCION MERCADERIA'],
                             'is_consolidated' => $row['Consolidado'] === 'S', 'status' => 'draft',
-                            'webservice_data' => ['don_toyo_source' => array_diff_key($row, array_flip(['quantity', 'weight', 'volume', '_row', 'resolved_packaging_id', 'resolved_ncm']))],
+                            'webservice_data' => ['don_toyo_source' => array_diff_key($row, array_flip(['quantity', 'weight', 'volume', '_row', 'resolved_ncm']))],
                             'created_by_user_id' => auth()->id(),
                         ]);
                         $bills[] = $bill;
@@ -477,7 +464,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                         // One aggregate cargo item per source BL; package distribution is not supplied.
                         $item = ShipmentItem::create([
                             'bill_of_lading_id' => $bill->id, 'line_number' => 1,
-                            'cargo_type_id' => $plan['cargo']->id, 'packaging_type_id' => $row['resolved_packaging_id'],
+                            'cargo_type_id' => $plan['cargo']->id, 'packaging_type_id' => $plan['packaging']->id,
                             'package_quantity' => $row['quantity'], 'gross_weight_kg' => $row['weight'], 'net_weight_kg' => null,
                             'volume_m3' => $row['volume'], 'item_description' => $row['DESCRIPCION MERCADERIA'],
                             'commodity_code' => $row['resolved_ncm'], 'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
