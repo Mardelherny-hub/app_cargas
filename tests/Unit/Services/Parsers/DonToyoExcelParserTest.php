@@ -183,6 +183,64 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertSame($before, $this->operationalSnapshot());
     }
 
+    public function test_missing_packaging_stays_empty_but_explicit_cartons_map_when_catalogued(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][16] = '178 CARTONS FROZEN MERCHANDISE';
+        DB::table('packaging_types')->insert(['code' => 'CT', 'name' => 'CARTON', 'active' => true]);
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $cartonId = DB::table('packaging_types')->where('name', 'CARTON')->value('id');
+        $this->assertEquals($cartonId, DB::table('shipment_items')->orderBy('id')->value('packaging_type_id'));
+        $this->assertNull(DB::table('shipment_items')->orderByDesc('id')->value('packaging_type_id'));
+        $this->assertContains('BL DEMOBL000002: tipo de embalaje no informado; queda vacío.', $result->warnings);
+    }
+
+    public function test_ncm_uses_source_column_or_unambiguous_label_but_never_guesses_multiple_codes(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][6] = '0203.29';
+        $sheets['BLS'][1][16] = 'FROZEN BEEF NCM: 0203.29';
+        $sheets['BLS'][2][6] = '0000.000';
+        $sheets['BLS'][2][16] = 'TWO CODES NCM: 9506.99 NCM: 9506.98';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame('0203.29', DB::table('shipment_items')->orderBy('id')->value('commodity_code'));
+        $this->assertNull(DB::table('shipment_items')->orderByDesc('id')->value('commodity_code'));
+        $this->assertContains('BL DEMOBL000002: la descripción contiene varios códigos NCM/HS; el NCM queda vacío.', $result->warnings);
+    }
+
+    public function test_unambiguous_ncm_in_description_is_used_when_source_column_is_empty(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][16] = 'EQUIPMENT NCM: 9506.99';
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame('9506.99', DB::table('shipment_items')->orderBy('id')->value('commodity_code'));
+    }
+
+    public function test_empty_cargo_own_transport_keeps_all_three_parties_and_house_condition(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][10] = $sheets['BLS'][1][9];
+        $sheets['BLS'][1][16] = 'VACIOS MSC';
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $bill = DB::table('bills_of_lading')->where('bill_number', 'DEMOBL000001')->first();
+        $this->assertNotNull($bill->shipper_id);
+        $this->assertEquals($bill->shipper_id, $bill->consignee_id);
+        $this->assertEquals($bill->consignee_id, $bill->notify_party_id);
+        $this->assertSame('H', DB::table('shipment_items')->where('bill_of_lading_id', $bill->id)->value('container_condition'));
+        $this->assertEquals(2, DB::table('containers')->where('container_condition', 'H')->where('condition', 'V')->count());
+        $this->assertEquals(2, DB::table('container_shipment_item')->join('shipment_items', 'shipment_items.id', '=', 'container_shipment_item.shipment_item_id')->where('shipment_items.bill_of_lading_id', $bill->id)->where('container_shipment_item.container_condition', 'H')->count());
+    }
+
     public function test_reimport_of_the_same_file_is_rejected_without_changes(): void
     {
         $path = $this->workbook($this->sheets());
