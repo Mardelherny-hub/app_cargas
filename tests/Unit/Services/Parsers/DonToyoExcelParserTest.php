@@ -183,24 +183,76 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertSame($before, $this->operationalSnapshot());
     }
 
-    public function test_container_packaging_keeps_mic_dta_compatibility_and_only_warns_for_cartons(): void
+    public function test_explicit_cartons_and_fardos_use_edifact_codes_with_container_packaging(): void
     {
         $sheets = $this->sheets();
         $sheets['BLS'][1][16] = '178 CARTONS FROZEN MERCHANDISE';
+        $sheets['BLS'][2][16] = 'Fardos Hojas de cedron';
 
         $result = $this->import($this->workbook($sheets));
 
         $this->assertTrue($result->success, implode(' | ', $result->errors));
         $containerId = DB::table('packaging_types')->where('name', 'CONTENEDOR')->value('id');
-        $this->assertSame([$containerId, $containerId], DB::table('shipment_items')
-            ->orderBy('id')->pluck('packaging_type_id')->all());
-        $this->assertContains(
-            'BL DEMOBL000001: embalaje CARTONS sin equivalencia en el catálogo; se conserva CONTENEDOR para MIC/DTA.',
-            $result->warnings
-        );
+        $items = DB::table('shipment_items')->orderBy('id')->get();
+        $this->assertSame([$containerId, $containerId], $items->pluck('packaging_type_id')->all());
+        $this->assertSame(['CT', 'BL'], $items->pluck('packaging_code')->all());
+        $this->assertSame(['CT', 'BL'], $this->generatedMicDtaCodes());
         $this->assertFalse(collect($result->warnings)->contains(
             fn ($warning) => str_contains($warning, 'tipo de embalaje no informado')
         ));
+    }
+
+    public function test_no_explicit_packaging_falls_back_to_cn_and_unknown_text_warns(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][2][16] = '100 BAGS OF GOODS';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $items = DB::table('shipment_items')->orderBy('id')->get();
+        $this->assertSame([null, null], $items->pluck('packaging_code')->all());
+        $this->assertSame(['CN', 'CN'], $this->generatedMicDtaCodes());
+        $this->assertContains(
+            'BL DEMOBL000002: embalaje BAGS sin equivalencia EDIFACT inequívoca; se conserva CONTENEDOR.',
+            $result->warnings
+        );
+        $this->assertSame(
+            0,
+            collect($result->warnings)->filter(fn ($warning) => str_contains($warning, 'tipo de embalaje no informado'))->count()
+        );
+    }
+
+    public function test_ambiguous_package_terms_do_not_assign_edifact_code(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][16] = 'CARTONS AND FARDOS';
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertNull(DB::table('shipment_items')->orderBy('id')->value('packaging_code'));
+        $this->assertSame('CN', $this->generatedMicDtaCodes()[0]);
+        $this->assertContains(
+            'BL DEMOBL000001: varios tipos de embalaje en la descripción; se conserva CONTENEDOR sin código EDIFACT.',
+            $result->warnings
+        );
+    }
+
+    private function generatedMicDtaCodes(): array
+    {
+        // El catálogo real usa T; el fixture mínimo del test usa CON.
+        DB::table('packaging_types')->where('name', 'CONTENEDOR')->update(['code' => 'T']);
+        $generator = (new \ReflectionClass(\App\Services\Simple\SimpleXmlGenerator::class))
+            ->newInstanceWithoutConstructor();
+        $method = new \ReflectionMethod($generator, 'micDtaPackagingCode');
+        $method->setAccessible(true);
+        $codes = [];
+        foreach (\App\Models\ShipmentItem::with(['packagingType', 'billOfLading'])->orderBy('id')->get() as $item) {
+            $codes[] = $method->invoke(
+                $generator, $item, $item->billOfLading->bill_number, new \App\Models\Container()
+            );
+        }
+        return $codes;
     }
 
     public function test_ncm_uses_source_column_or_unambiguous_label_but_never_guesses_multiple_codes(): void
