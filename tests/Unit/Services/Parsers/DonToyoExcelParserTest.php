@@ -199,6 +199,121 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertSame($before, $this->operationalSnapshot());
     }
 
+    public function test_explicit_cartons_and_fardos_use_edifact_codes_with_container_packaging(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][16] = '178 CARTONS FROZEN MERCHANDISE';
+        $sheets['BLS'][2][16] = 'Fardos Hojas de cedron';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $containerId = DB::table('packaging_types')->where('name', 'CONTENEDOR')->value('id');
+        $items = DB::table('shipment_items')->orderBy('id')->get();
+        $this->assertSame([$containerId, $containerId], $items->pluck('packaging_type_id')->all());
+        $this->assertSame(['CT', 'BL'], $items->pluck('packaging_code')->all());
+        $this->assertSame(['CT', 'BL'], $this->generatedMicDtaCodes());
+        $this->assertFalse(collect($result->warnings)->contains(
+            fn ($warning) => str_contains($warning, 'tipo de embalaje no informado')
+        ));
+    }
+
+    public function test_no_explicit_packaging_falls_back_to_cn_and_unknown_text_warns(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][2][16] = '100 BAGS OF GOODS';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $items = DB::table('shipment_items')->orderBy('id')->get();
+        $this->assertSame([null, null], $items->pluck('packaging_code')->all());
+        $this->assertSame(['CN', 'CN'], $this->generatedMicDtaCodes());
+        $this->assertContains(
+            'BL DEMOBL000002: embalaje BAGS sin equivalencia EDIFACT inequívoca; se conserva CONTENEDOR.',
+            $result->warnings
+        );
+        $this->assertSame(
+            0,
+            collect($result->warnings)->filter(fn ($warning) => str_contains($warning, 'tipo de embalaje no informado'))->count()
+        );
+    }
+
+    public function test_ambiguous_package_terms_do_not_assign_edifact_code(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][16] = 'CARTONS AND FARDOS';
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertNull(DB::table('shipment_items')->orderBy('id')->value('packaging_code'));
+        $this->assertSame('CN', $this->generatedMicDtaCodes()[0]);
+        $this->assertContains(
+            'BL DEMOBL000001: varios tipos de embalaje en la descripción; se conserva CONTENEDOR sin código EDIFACT.',
+            $result->warnings
+        );
+    }
+
+    private function generatedMicDtaCodes(): array
+    {
+        // El catálogo real usa T; el fixture mínimo del test usa CON.
+        DB::table('packaging_types')->where('name', 'CONTENEDOR')->update(['code' => 'T']);
+        $generator = (new \ReflectionClass(\App\Services\Simple\SimpleXmlGenerator::class))
+            ->newInstanceWithoutConstructor();
+        $method = new \ReflectionMethod($generator, 'micDtaPackagingCode');
+        $method->setAccessible(true);
+        $codes = [];
+        foreach (\App\Models\ShipmentItem::with(['packagingType', 'billOfLading'])->orderBy('id')->get() as $item) {
+            $codes[] = $method->invoke(
+                $generator, $item, $item->billOfLading->bill_number, new \App\Models\Container()
+            );
+        }
+        return $codes;
+    }
+
+    public function test_ncm_uses_source_column_or_unambiguous_label_but_never_guesses_multiple_codes(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][6] = '0203.29';
+        $sheets['BLS'][1][16] = 'FROZEN BEEF NCM: 0203.29';
+        $sheets['BLS'][2][6] = '0000.000';
+        $sheets['BLS'][2][16] = 'TWO CODES NCM: 9506.99 NCM: 9506.98';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame('0203.29', DB::table('shipment_items')->orderBy('id')->value('commodity_code'));
+        $this->assertNull(DB::table('shipment_items')->orderByDesc('id')->value('commodity_code'));
+        $this->assertContains('BL DEMOBL000002: la descripción contiene varios códigos NCM/HS; el NCM queda vacío.', $result->warnings);
+    }
+
+    public function test_unambiguous_ncm_in_description_is_used_when_source_column_is_empty(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][16] = 'EQUIPMENT NCM: 9506.99';
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame('9506.99', DB::table('shipment_items')->orderBy('id')->value('commodity_code'));
+    }
+
+    public function test_empty_cargo_own_transport_keeps_all_three_parties_and_house_condition(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][10] = $sheets['BLS'][1][9];
+        $sheets['BLS'][1][16] = 'VACIOS MSC';
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $bill = DB::table('bills_of_lading')->where('bill_number', 'DEMOBL000001')->first();
+        $this->assertNotNull($bill->shipper_id);
+        $this->assertEquals($bill->shipper_id, $bill->consignee_id);
+        $this->assertEquals($bill->consignee_id, $bill->notify_party_id);
+        $this->assertSame('H', DB::table('shipment_items')->where('bill_of_lading_id', $bill->id)->value('container_condition'));
+        $this->assertEquals(2, DB::table('containers')->where('container_condition', 'H')->where('condition', 'V')->count());
+        $this->assertEquals(2, DB::table('container_shipment_item')->join('shipment_items', 'shipment_items.id', '=', 'container_shipment_item.shipment_item_id')->where('shipment_items.bill_of_lading_id', $bill->id)->where('container_shipment_item.container_condition', 'H')->count());
+    }
+
     public function test_reimport_of_the_same_file_is_rejected_without_changes(): void
     {
         $path = $this->workbook($this->sheets());
