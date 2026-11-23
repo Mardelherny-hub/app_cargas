@@ -337,9 +337,20 @@ class BillOfLadingEditForm extends Component
      */
     public function loadFormData()
 {
-    // --- CLIENTES (activos) - traer todos, es tabla manejable
-    $this->clients = Client::where('status', 'active')
-        ->select('id', 'legal_name')
+    // --- CLIENTES: activos, más las fichas ya asignadas al BL aunque estén
+    // inactivas, para que los selectores muestren la parte guardada.
+    $assignedClientIds = array_filter([
+        $this->billOfLading->shipper_id,
+        $this->billOfLading->consignee_id,
+        $this->billOfLading->notify_party_id,
+        $this->billOfLading->cargo_owner_id,
+    ]);
+
+    $this->clients = Client::where(function ($query) use ($assignedClientIds) {
+            $query->where('status', 'active')
+                ->orWhereIn('id', $assignedClientIds);
+        })
+        ->select('id', 'legal_name', 'status')
         ->orderBy('legal_name')
         ->get();
 

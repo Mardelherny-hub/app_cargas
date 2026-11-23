@@ -274,7 +274,7 @@
                             <option value="">Seleccionar cargador...</option>
                             @foreach($clients as $client)
                                 <option value="{{ $client->id }}">
-                                    {{ $client->legal_name }}
+                                    {{ $client->legal_name }}@if($client->status !== 'active') (inactiva)@endif
                                 </option>
                             @endforeach
                         </select>
@@ -342,7 +342,7 @@
                             <option value="">Seleccionar consignatario...</option>
                             @foreach($clients as $client)
                                 <option value="{{ $client->id }}">
-                                    {{ $client->legal_name }}
+                                    {{ $client->legal_name }}@if($client->status !== 'active') (inactiva)@endif
                                 </option>
                             @endforeach
                         </select>
@@ -410,7 +410,7 @@
                             <option value="">Seleccionar parte a notificar...</option>
                             @foreach($clients as $client)
                                 <option value="{{ $client->id }}">
-                                    {{ $client->legal_name }}
+                                    {{ $client->legal_name }}@if($client->status !== 'active') (inactiva)@endif
                                 </option>
                             @endforeach
                         </select>
@@ -486,7 +486,7 @@
                             <option value="">Seleccionar propietario...</option>
                             @foreach($clients as $client)
                                 <option value="{{ $client->id }}">
-                                    {{ $client->legal_name }}
+                                    {{ $client->legal_name }}@if($client->status !== 'active') (inactiva)@endif
                                 </option>
                             @endforeach
                         </select>
