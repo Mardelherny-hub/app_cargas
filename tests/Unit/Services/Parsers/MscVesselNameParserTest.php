@@ -2,9 +2,14 @@
 
 namespace Tests\Unit\Services\Parsers;
 
+use App\Models\Container;
 use App\Models\ManifestImport;
+use App\Models\ShipmentItem;
 use App\Services\Parsers\MscVesselNameParser;
+use App\Services\Simple\SimpleXmlGenerator;
 use Illuminate\Support\Facades\DB;
+use ReflectionClass;
+use ReflectionMethod;
 use Tests\TestCase;
 use Tests\Unit\Services\Parsers\Concerns\BuildsManifestImportSchema;
 
@@ -27,6 +32,7 @@ class MscVesselNameParserTest extends TestCase
         $this->useIsolatedDatabase();
         $this->addVessel(self::VESSEL_NAME);
         $this->addContainerTypes(['20GP', '40HC']);
+        DB::table('packaging_types')->where('name', 'CONTENEDOR')->update(['code' => 'T']);
         $this->addClient('EXPORTADORA DEMO SA', '99999999991', self::AR);
         $this->addClient('IMPORTADORA EJEMPLO SRL', '9999991', self::PY);
     }
@@ -162,6 +168,85 @@ class MscVesselNameParserTest extends TestCase
         $import = ManifestImport::sole();
         $this->assertSame('completed', $import->status);
         $this->assertCount(2, $import->created_container_ids);
+    }
+
+    public function test_import_resolves_condition_commodity_and_packaging_per_item(): void
+    {
+        $descriptions = [
+            'MERCADERIA NCM: 0801.11.00 HS CODE: 08011100',
+            'MERCADERIA HS CODES: 841810/841850',
+            'MERCADERIA NCM: 732111, 8414.60.00.000A',
+            'MERCADERIA REFERENCIA 841830',
+        ];
+        $items = [];
+        foreach ($descriptions as $index => $description) {
+            $items[] = str_replace(
+                ['MERCADERIA GENERAL DE PRUEBA', $this->line('CONDITION', 'Port to Port'), $this->line('KIND OUTER PACKAGES', 'PALLETS')],
+                [
+                    $description,
+                    [$this->line('CONDITION', 'H'), $this->line('CONDITION', 'P'), '', $this->line('CONDITION')][$index],
+                    [$this->line('KIND OUTER PACKAGES', 'Carton(s)'), $this->line('KIND OUTER PACKAGES', 'EMBALAJE ESPECIAL'), '', $this->line('KIND OUTER PACKAGES')][$index],
+                ],
+                $this->item('TSTU000000' . ($index + 1), '40', 'HC', '1', '1000,000', '3750,00')
+            );
+        }
+
+        $result = $this->import($this->file($this->bill('DEMO00000001', $items, '4000,000', '15000,00', '4')));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame([
+            'BL DEMO00000001, línea 2: varios códigos NCM/HS diferentes; el código queda vacío.',
+            'BL DEMO00000001, línea 3: identificación NCM/HS ambigua; el código queda vacío.',
+        ], $result->warnings);
+
+        $importedItems = ShipmentItem::with('packagingType')->orderBy('line_number')->get();
+        $this->assertSame($descriptions, $importedItems->pluck('item_description')->all());
+        $this->assertSame(['08011100', null, null, null], $importedItems->pluck('commodity_code')->all());
+        $this->assertSame(['CT', null, null, null], $importedItems->pluck('packaging_code')->all());
+
+        $generator = (new ReflectionClass(SimpleXmlGenerator::class))->newInstanceWithoutConstructor();
+        $packagingCode = new ReflectionMethod($generator, 'micDtaPackagingCode');
+        $conditions = ['H', 'P', 'H', 'H'];
+        foreach ($importedItems as $index => $item) {
+            $pivot = DB::table('container_shipment_item')->where('shipment_item_id', $item->id)->sole();
+            $container = Container::findOrFail($pivot->container_id);
+
+            $this->assertSame($conditions[$index], $item->container_condition);
+            $this->assertSame($conditions[$index], $container->container_condition);
+            $this->assertSame($conditions[$index], $pivot->container_condition);
+            $this->assertSame('L', $container->condition);
+            $this->assertSame('CONTENEDOR', $item->packagingType->name);
+            $this->assertSame($index === 0 ? 'CT' : 'CN', $packagingCode->invoke($generator, $item, 'DEMO00000001', $container));
+        }
+    }
+
+    public function test_import_uses_resolved_consignee_only_when_notify_is_absent(): void
+    {
+        $this->addClient('NOTIFICATARIO DEMO SRL', '9999992', self::PY);
+        $informed = str_replace(
+            $this->line('NOTIFY', 'IMPORTADORA EJEMPLO SRL'),
+            $this->line('NOTIFY', 'NOTIFICATARIO DEMO SRL'),
+            $this->bill('DEMO00000001', [
+                $this->item('TSTU0000001', '40', 'HC', '1', '1000,000', '3750,00'),
+            ], '1000,000', '3750,00', '1')
+        );
+        $absent = str_replace(
+            [$this->line('NOTIFY', 'IMPORTADORA EJEMPLO SRL'), $this->line('NOTIFY´S ADRESS', 'AVENIDA EJEMPLO 200, CIUDAD DEMO')],
+            '',
+            $this->bill('DEMO00000002', [
+                $this->item('TSTU0000002', '40', 'HC', '1', '1000,000', '3750,00'),
+            ], '1000,000', '3750,00', '1')
+        );
+
+        $result = $this->import($this->file($informed . $absent));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        [$first, $second] = DB::table('bills_of_lading')->orderBy('id')->get()->all();
+        $clients = DB::table('clients')->pluck('id', 'tax_id');
+        $this->assertSame($clients['9999992'], $first->notify_party_id);
+        $this->assertSame($clients['9999991'], $second->notify_party_id);
+        $this->assertSame($second->consignee_id, $second->notify_party_id);
+        $this->assertSame(3, DB::table('clients')->count());
     }
 
     public function test_unknown_loading_port_fails_with_clear_message_and_creates_nothing(): void
