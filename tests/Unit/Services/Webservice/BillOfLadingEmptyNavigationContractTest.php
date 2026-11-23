@@ -8,7 +8,9 @@ use App\Models\Container;
 use App\Models\ShipmentItem;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Mockery;
 use ReflectionMethod;
 use Tests\TestCase;
@@ -27,6 +29,13 @@ class BillOfLadingEmptyNavigationContractTest extends TestCase
             'logging.default' => 'null',
         ]);
         DB::purge('sqlite');
+
+        // Las partes se validan contra fichas: una activa alcanza.
+        Schema::create('clients', function (Blueprint $t) {
+            $t->id();
+            $t->string('status');
+        });
+        DB::table('clients')->insert(['id' => 1, 'status' => 'active']);
     }
 
     private function editForm(string $containerCondition): BillOfLadingEditForm
@@ -58,7 +67,12 @@ class BillOfLadingEmptyNavigationContractTest extends TestCase
         ]);
 
         $bill = Mockery::mock(BillOfLading::class)->makePartial();
-        $bill->forceFill(['id' => 13146, 'bill_number' => 'VACIOS']);
+        $bill->forceFill([
+            'id' => 13146,
+            'bill_number' => 'VACIOS',
+            'shipper_id' => 1,
+            'consignee_id' => 1,
+        ]);
         $bill->setRelation('shipmentItems', new Collection([$item]));
         $bill->shouldReceive('shipmentItems')->andReturn($existingItems);
         $bill->shouldReceive('fresh')->once()->andReturn($stored);
@@ -74,6 +88,8 @@ class BillOfLadingEmptyNavigationContractTest extends TestCase
         $form->billOfLading = $bill;
         $form->shipment_id = 393;
         $form->bill_number = 'VACIOS';
+        $form->shipper_id = 1;
+        $form->consignee_id = 1;
         $form->bill_date = '2026-10-08';
         $form->loading_date = '2026-10-08';
         $form->origin_loading_date = '2026-10-08';
