@@ -32,3 +32,7 @@ Transferencia **directa por red local cifrada HTTPS** de ASUS02 `192.168.100.201
 ## Pendiente de Code
 
 Los recursos están listos para reconstruir el entorno de QA en `victor-red-byte`. **No se creó ni restauró todavía `app_cargas_pruebas_b` en el destino**; Code puede hacerlo bajo su turno, comparar el dump actual contra la restauración de `base_limpia.sql` y verificar conteos. La transferencia no valida por sí misma la base restaurada ni garantiza sincronía de archivos generados después del snapshot. No se tocó Stage ni producción.
+
+### Salvedad del arnés T10
+
+Tras verificar los archivos recibidos en destino y buscar en ASUS02, **no se encontró `t10_regresion.php`** en `/var/www/html/pruebas_importacion`, en los worktrees de `/var/www/html/_worktrees/app_cargas`, ni en las rutas habituales consultadas de `/home/victor` y `/tmp`. El hecho de que la copia de los dos directorios sea completa no certifica la presencia de ese archivo expresamente solicitado. **Code debe localizar el arnés T10 por otra ruta o informar su ausencia; no se recreó ni se inventó un sustituto.** Los demás arneses y `base_limpia.sql` están recibidos y comparados por hash.
