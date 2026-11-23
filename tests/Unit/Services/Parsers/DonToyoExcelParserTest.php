@@ -298,6 +298,27 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertEquals(2, DB::table('container_shipment_item')->join('shipment_items', 'shipment_items.id', '=', 'container_shipment_item.shipment_item_id')->where('shipment_items.bill_of_lading_id', $bill->id)->where('container_shipment_item.container_condition', 'H')->count());
     }
 
+    public function test_inactive_existing_client_is_assigned_with_warning_without_rejecting(): void
+    {
+        DB::table('clients')->where('legal_name', 'EXPORTADORA DEMO SA')->update(['status' => 'inactive']);
+        $inactiveId = DB::table('clients')->where('legal_name', 'EXPORTADORA DEMO SA')->value('id');
+        $activeId = DB::table('clients')->where('legal_name', 'IMPORTADORA EJEMPLO SRL')->value('id');
+
+        $result = $this->import($this->workbook($this->sheets()));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame(2, DB::table('clients')->count());
+        $this->assertSame(2, DB::table('bills_of_lading')->where('shipper_id', $inactiveId)->count());
+        $this->assertSame(2, DB::table('bills_of_lading')->where('consignee_id', $activeId)->count());
+        $this->assertSame('inactive', DB::table('clients')->where('id', $inactiveId)->value('status'));
+
+        $inactiveWarnings = collect($result->warnings)->filter(fn ($warning) => str_contains($warning, 'que está inactiva'));
+        $this->assertSame([
+            "Cliente EXPORTADORA DEMO SA: se asignó la ficha #{$inactiveId}, que está inactiva. "
+            . 'Revisar la ficha o la parte del conocimiento.',
+        ], $inactiveWarnings->values()->all());
+    }
+
     public function test_reimport_of_the_same_file_is_rejected_without_changes(): void
     {
         $path = $this->workbook($this->sheets());

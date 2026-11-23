@@ -24,7 +24,8 @@ use Illuminate\Support\Facades\Log;
  *   advertencia, sin escribir nada.
  *
  * Sin coincidencias devuelve client = null y el parser crea como hoy.
- * No filtra por status: también se reutilizan clientes inactivos/suspendidos.
+ * No filtra por status: también se reutilizan clientes inactivos/suspendidos,
+ * con una advertencia para que el usuario revise la ficha asignada.
  *
  * El trait no escribe advertencias: las devuelve y cada parser las agrega a
  * su acumulador ($this->warnings o $this->stats['warnings']).
@@ -49,6 +50,44 @@ trait ResolvesExistingClient
      * @throws DomainException si la coincidencia es ambigua.
      */
     protected function resolveExistingClient(
+        ?string $taxId,
+        string $name,
+        int $countryId,
+        ?int $documentTypeId = null
+    ): array {
+        $resolved = $this->matchExistingClient($taxId, $name, $countryId, $documentTypeId);
+
+        if ($resolved['client'] !== null) {
+            $warning = $this->inactiveClientWarning($resolved['client'], $name);
+
+            if ($warning !== null) {
+                $resolved['warnings'][] = $warning;
+            }
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * La ficha se reutiliza igual, pero el usuario tiene que saber que está
+     * inactiva. null si la ficha está activa.
+     */
+    protected function inactiveClientWarning(Client $client, string $name): ?string
+    {
+        if ($client->status === 'active') {
+            return null;
+        }
+
+        return "Cliente {$name}: se asignó la ficha #{$client->id}, que está inactiva. "
+            . 'Revisar la ficha o la parte del conocimiento.';
+    }
+
+    /**
+     * @return array{client: ?Client, warnings: array<int, string>}
+     *
+     * @throws DomainException si la coincidencia es ambigua.
+     */
+    private function matchExistingClient(
         ?string $taxId,
         string $name,
         int $countryId,
