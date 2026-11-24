@@ -811,6 +811,24 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
     }
 
     /**
+     * Nombre en español de un estado de viaje, para mostrar en pantalla.
+     */
+    public static function statusLabel(?string $status): string
+    {
+        return match ($status) {
+            'planning' => 'Planificación',
+            'approved' => 'Aprobado',
+            'departed' => 'Partido',
+            'in_transit' => 'En Tránsito',
+            'arrived', 'at_destination' => 'En Destino',
+            'completed' => 'Completado',
+            'cancelled' => 'Cancelado',
+            'delayed' => 'Demorado',
+            default => 'Sin estado',
+        };
+    }
+
+    /**
      * Obtener color de estado para UI
      */
     public function getStatusColorAttribute(): string
