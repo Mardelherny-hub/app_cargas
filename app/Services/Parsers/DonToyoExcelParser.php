@@ -81,6 +81,18 @@ class DonToyoExcelParser implements ManifestParserInterface
         }
     }
 
+    /**
+     * La columna Seal puede traer varios precintos separados por «/». Quedan
+     * separados por espacio, como los lee el MIC/DTA, sin repetir.
+     */
+    private function sourceSeals($value): ?string
+    {
+        $seals = preg_split('/[\s\/]+/', trim((string) $value)) ?: [];
+        $seals = array_values(array_unique(array_filter($seals, static fn ($seal) => $seal !== '')));
+
+        return $seals === [] ? null : implode(' ', $seals);
+    }
+
     private function text($value): string
     {
         $text = (string) ($value ?? '');
@@ -548,7 +560,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                                 $container = Container::create([
                                     'container_number' => $containerRow['CONTENEDOR'], 'container_type_id' => $type->id,
                                     'tare_weight_kg' => $containerRow['Tara'], 'max_gross_weight_kg' => $type->max_gross_weight_kg,
-                                    'shipper_seal' => $containerRow['Seal'] ?: null,
+                                    'shipper_seal' => $this->sourceSeals($containerRow['Seal']),
                                     'condition' => $empty ? 'V' : 'L', 'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
                                     'operational_status' => $empty ? 'empty' : 'loaded',
                                     'temperature_controlled' => $containerRow['Temperatura'] !== null,

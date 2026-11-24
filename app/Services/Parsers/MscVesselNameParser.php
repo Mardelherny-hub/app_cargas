@@ -283,6 +283,54 @@ class MscVesselNameParser implements ManifestParserInterface
         return $codes[0];
     }
 
+    /**
+     * Lleva los precintos del archivo al campo que lee el MIC/DTA. MSC no
+     * indica el rol: van como precinto del cargador, separados por espacio y
+     * sin repetir. Un contenedor que existía antes de esta importación no se
+     * modifica. Los precintos de más de 15 caracteres se advierten, sin
+     * recortarlos.
+     */
+    private function storeFileSeals(Container $container, array $seals, bool $createdHere): void
+    {
+        $known = [];
+        foreach ([$container->shipper_seal, $container->carrier_seal, $container->customs_seal] as $field) {
+            foreach (preg_split('/\s+/', trim((string) $field)) ?: [] as $seal) {
+                if ($seal !== '') {
+                    $known[$seal] = true;
+                }
+            }
+        }
+
+        $missing = [];
+        foreach ($seals as $raw) {
+            foreach (preg_split('/\s+/', trim((string) $raw)) ?: [] as $seal) {
+                if ($seal === '' || isset($known[$seal])) {
+                    continue;
+                }
+                if (mb_strlen($seal) > 15) {
+                    $this->warnings[] = "Contenedor {$container->container_number}: el precinto {$seal} supera 15 caracteres.";
+                }
+                $known[$seal] = true;
+                $missing[] = $seal;
+            }
+        }
+
+        if ($missing === []) {
+            return;
+        }
+
+        if (!$createdHere) {
+            $this->warnings[] = "Contenedor {$container->container_number}: ya existía y no tiene el precinto "
+                . implode(' ', $missing) . ' del archivo; no se modificó.';
+
+            return;
+        }
+
+        $container->update([
+            'shipper_seal' => trim(trim((string) $container->shipper_seal) . ' ' . implode(' ', $missing)),
+        ]);
+    }
+
     private function sourcePackagingCode(string $description): ?string
     {
         // Equivalencias de la etiqueta de embalaje MSC con UN/ECE Rec. 21.
@@ -522,6 +570,7 @@ class MscVesselNameParser implements ManifestParserInterface
                                 $createdContainers[] = $container->id;
                             }
                             $containers[$number] = $container;
+                            $this->storeFileSeals($container, $seals, in_array($container->id, $createdContainers, true));
                             $billContainerIds[$container->id] = true;
                             $isDangerous = $this->value($row, 'IMO') !== '' && $this->value($row, 'IMO') !== 'N';
                             $dangerous = $dangerous || $isDangerous;

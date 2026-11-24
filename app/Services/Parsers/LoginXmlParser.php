@@ -94,6 +94,9 @@ class LoginXmlParser implements ManifestParserInterface
     // Contenedores creados durante la importación actual (evita duplicados)
     protected array $createdContainersInImport = [];
 
+    // Ids de los contenedores que esta importación dio de alta.
+    protected array $containerIdsCreatedInImport = [];
+
     // Cache de catálogos para evitar queries repetidas en el loop de BLs/contenedores.
     protected ?CargoType $cachedCargoType = null;
     protected ?PackagingType $cachedPackagingType = null;
@@ -112,6 +115,54 @@ class LoginXmlParser implements ManifestParserInterface
         ) {
             $this->warnings[] = $warning;
         }
+    }
+
+    /**
+     * Lleva los precintos del archivo al campo que lee el MIC/DTA. Login no
+     * indica el rol: van como precinto del cargador, separados por espacio y
+     * sin repetir. Un contenedor que existía antes de esta importación no se
+     * modifica. Los precintos de más de 15 caracteres se advierten, sin
+     * recortarlos.
+     */
+    protected function storeFileSeals(Container $container, array $seals, bool $createdHere): void
+    {
+        $known = [];
+        foreach ([$container->shipper_seal, $container->carrier_seal, $container->customs_seal] as $field) {
+            foreach (preg_split('/\s+/', trim((string) $field)) ?: [] as $seal) {
+                if ($seal !== '') {
+                    $known[$seal] = true;
+                }
+            }
+        }
+
+        $missing = [];
+        foreach ($seals as $raw) {
+            foreach (preg_split('/\s+/', trim((string) $raw)) ?: [] as $seal) {
+                if ($seal === '' || isset($known[$seal])) {
+                    continue;
+                }
+                if (mb_strlen($seal) > 15) {
+                    $this->addWarningOnce("Contenedor {$container->container_number}: el precinto {$seal} supera 15 caracteres.");
+                }
+                $known[$seal] = true;
+                $missing[] = $seal;
+            }
+        }
+
+        if ($missing === []) {
+            return;
+        }
+
+        if (!$createdHere) {
+            $this->addWarningOnce("Contenedor {$container->container_number}: ya existía y no tiene el precinto "
+                . implode(' ', $missing) . ' del archivo; no se modificó.');
+
+            return;
+        }
+
+        $container->update([
+            'shipper_seal' => trim(trim((string) $container->shipper_seal) . ' ' . implode(' ', $missing)),
+        ]);
     }
 
     /**
@@ -282,6 +333,7 @@ class LoginXmlParser implements ManifestParserInterface
 
              // Reset container tracking for this import
             $this->createdContainersInImport = [];
+            $this->containerIdsCreatedInImport = [];
             $this->cachedCargoType = null;
             $this->cachedPackagingType = null;
             $this->cachedContainerTypes = [];
@@ -1811,23 +1863,8 @@ class LoginXmlParser implements ManifestParserInterface
 
                         'operational_status' => 'loaded',
 
-                        /*
-                         * Login informa números de precinto pero no
-                         * quién los emitió. No inventar shipper/carrier/
-                         * customs. Preservarlos como adicionales sin issuer.
-                         */
-                        'additional_seals' =>
-                            array_map(
-                                static fn ($seal) => [
-                                    'seal_number' =>
-                                        $seal,
-                                    'issuer_code' =>
-                                        null,
-                                ],
-                                $containerData[
-                                    'seals'
-                                ] ?? []
-                            ),
+                        // Los precintos se cargan después con
+                        // storeFileSeals().
 
                         'active' => true,
                         'created_date' => now(),
@@ -1836,11 +1873,12 @@ class LoginXmlParser implements ManifestParserInterface
                     ]
                 );
 
-                if ($this->importingToTargetVoyage && $container->wasRecentlyCreated) {
-                    $this->newContainerIds[$container->id] = $container->id;
-                }
-
-                if (!$container->wasRecentlyCreated) {
+                if ($container->wasRecentlyCreated) {
+                    $this->containerIdsCreatedInImport[$container->id] = true;
+                    if ($this->importingToTargetVoyage) {
+                        $this->newContainerIds[$container->id] = $container->id;
+                    }
+                } else {
                     if (
                         (int) $container->container_type_id
                         !== (int) $containerType->id
@@ -1882,6 +1920,12 @@ class LoginXmlParser implements ManifestParserInterface
                     $containerNumber
                 ] = $container;
             }
+
+            $this->storeFileSeals(
+                $container,
+                $containerData['seals'] ?? [],
+                isset($this->containerIdsCreatedInImport[$container->id])
+            );
 
             /*
              * Login no informa bultos estructurados por contenedor.
