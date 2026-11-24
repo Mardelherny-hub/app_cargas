@@ -3,7 +3,7 @@
 namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
-use App\Models\{BillOfLading, CargoType, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, Port, Shipment, ShipmentItem, Vessel, Voyage};
+use App\Models\{BillOfLading, CargoType, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, PackagingType, Port, Shipment, ShipmentItem, Vessel, Voyage};
 use App\Services\Parsers\Concerns\{ExtractsEmbeddedTaxId, RecalculatesNewVoyageTotals, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use DomainException;
@@ -173,7 +173,7 @@ class MscVesselNameParser implements ManifestParserInterface
                 }
                 $packages = $weight = 0;
                 foreach ($bill['items'] as $item) {
-                    foreach (['DESCRIPTION', 'KIND OUTER PACKAGES', 'CONTAINER NR.', 'SIZE', 'TYPE CONTAINER'] as $label) {
+                    foreach (['DESCRIPTION', 'CONTAINER NR.', 'SIZE', 'TYPE CONTAINER'] as $label) {
                         if ($this->value($item, $label) === '') {
                             throw new DomainException("MSC: mercadería sin {$label}.");
                         }
@@ -185,7 +185,7 @@ class MscVesselNameParser implements ManifestParserInterface
                         throw new DomainException('MSC: bultos, peso o tara fuera de rango.');
                     }
                     if (strtolower($this->value($item, 'GROSS WEIGHT UNIT')) !== 'kgs'
-                        || $this->value($item, 'CONDITION') !== 'Port to Port'
+                        || $this->documentaryCondition($item) === null
                         || !preg_match('/^[A-Z]{4}\d{7}$/D', $this->value($item, 'CONTAINER NR.'))) {
                         throw new DomainException('MSC: unidad, condición o número de contenedor no soportado.');
                     }
@@ -233,6 +233,73 @@ class MscVesselNameParser implements ManifestParserInterface
         arsort($suggestions);
         throw new DomainException('MSC: puerto de carga inexistente o ambiguo. Revise el catálogo. Sugerencias: '
             . implode(', ', array_slice(array_keys($suggestions), 0, 3)) . '.');
+    }
+
+    private function documentaryCondition(array $item): ?string
+    {
+        return match (strtoupper($this->value($item, 'CONDITION'))) {
+            '', 'H', 'HOUSE TO HOUSE' => Container::CONDITION_HOUSE_TO_HOUSE,
+            'P', 'PORT TO PORT' => Container::CONDITION_PORT_TO_PORT,
+            default => null,
+        };
+    }
+
+    private function sourceCommodityCode(string $description, string $billNumber, int $line): ?string
+    {
+        $marker = '/(?<![\pL\pN_])(?:N\.?C\.?M\.?|H\.?S\.?)(?:[ \t]+(?:CODES?|NO\.?|OF THE GOODS SHIPPED))?(?![\pL\pN_])/iu';
+        $segments = preg_split($marker, $description);
+        array_shift($segments);
+        if ($segments === []) {
+            return null;
+        }
+
+        $code = '(\d{4}\.\d{2}(?:\.\d{2})?|\d{8}|\d{6})(?![\pL\pN_.]|,\d{1,5}\b)';
+        $separator = '(?:[ \t]*(?:[/,;+-]|\b(?:AND|OR|Y|O)\b|&)[ \t]*|[ \t]+)';
+        $codes = [];
+        $ambiguous = false;
+        foreach ($segments as $segment) {
+            if (!preg_match('/^[ \t]*[:#=]?[ \t]*' . $code . '/iu', $segment, $match)) {
+                $ambiguous = true;
+                continue;
+            }
+            do {
+                $codes[] = str_replace('.', '', $match[1]);
+                $segment = substr($segment, strlen($match[0]));
+            } while (preg_match('~^' . $separator . $code . '~iu', $segment, $match));
+
+            if (preg_match('~^' . $separator . '\d[\d.]{3,}~iu', $segment)) {
+                $ambiguous = true;
+            }
+        }
+
+        $codes = array_unique($codes);
+        if ($ambiguous || count($codes) !== 1) {
+            $reason = $ambiguous ? 'identificación NCM/HS ambigua' : 'varios códigos NCM/HS diferentes';
+            $this->warnings[] = "BL {$billNumber}, línea {$line}: {$reason}; el código queda vacío.";
+
+            return null;
+        }
+
+        return $codes[0];
+    }
+
+    private function sourcePackagingCode(string $description): ?string
+    {
+        // Equivalencias de la etiqueta de embalaje MSC con UN/ECE Rec. 21.
+        return match (strtoupper($description)) {
+            'BALE, COMPRESSED' => 'BL',
+            'BALE, NON-COMPRESSED' => 'BN',
+            'BAG', 'BAGS', 'BAG(S)' => 'BG',
+            'BUNDLE', 'BUNDLES', 'BUNDLE(S)' => 'BE',
+            'CARTON', 'CARTONS', 'CARTON(S)' => 'CT',
+            'COIL', 'COILS', 'COIL(S)' => 'CL',
+            'PACKAGE', 'PACKAGES', 'PACKAGE(S)' => 'PK',
+            'PALLET', 'PALLETS', 'PALLET(S)' => 'PX',
+            'ROLL', 'ROLLS', 'ROLL(S)' => 'RO',
+            'UNPACKED OR UNPACKAGED' => 'NE',
+            'UNPACKAGED MULTIPLE UNITS' => 'NG',
+            default => null,
+        };
     }
 
     protected function party(array $header, string $role, Port $port, int $companyId): ?Client
@@ -326,6 +393,10 @@ class MscVesselNameParser implements ManifestParserInterface
             if (!$cargoType) {
                 throw new DomainException('MSC: falta el tipo de carga CON001 activo en el catálogo.');
             }
+            $packagingTypeId = PackagingType::where('name', 'CONTENEDOR')->where('active', true)->value('id');
+            if ($packagingTypeId === null) {
+                throw new DomainException('MSC: falta el tipo de embalaje activo CONTENEDOR en el catálogo.');
+            }
             $types = [];
             foreach ($data as $bill) {
                 foreach ($bill['items'] as $item) {
@@ -348,8 +419,8 @@ class MscVesselNameParser implements ManifestParserInterface
                 'parser_config' => ['parser_class' => self::class, 'vessel_id' => $vessel->id],
             ]);
 
-            return DB::transaction(function () use ($data, $companyId, $vessel, $origin, $destination, $cargoType, $types, $voyageNumber, $import, $options) {
-                return Model::withoutEvents(function () use ($data, $companyId, $vessel, $origin, $destination, $cargoType, $types, $voyageNumber, $import, $options) {
+            return DB::transaction(function () use ($data, $companyId, $vessel, $origin, $destination, $cargoType, $packagingTypeId, $types, $voyageNumber, $import, $options) {
+                return Model::withoutEvents(function () use ($data, $companyId, $vessel, $origin, $destination, $cargoType, $packagingTypeId, $types, $voyageNumber, $import, $options) {
                     $targetVoyage = $this->resolveTargetVoyage($options);
                     $voyage = $targetVoyage;
                     $shipment = null;
@@ -397,7 +468,7 @@ class MscVesselNameParser implements ManifestParserInterface
                         $notify = $this->party($h, 'NOTIFY', $destination, $companyId);
                         $bill = BillOfLading::create([
                             'shipment_id' => $shipment->id, 'bill_number' => $this->value($h, 'BILL OF LADING'),
-                            'shipper_id' => $shipper->id, 'consignee_id' => $consignee->id, 'notify_party_id' => $notify?->id,
+                            'shipper_id' => $shipper->id, 'consignee_id' => $consignee->id, 'notify_party_id' => ($notify ?? $consignee)->id,
                             'loading_port_id' => $origin->id, 'discharge_port_id' => $destination->id,
                             'bill_date' => null, 'loading_date' => null, 'freight_terms' => null,
                             'primary_cargo_type_id' => $cargoType->id, 'primary_packaging_type_id' => null,
@@ -424,6 +495,9 @@ class MscVesselNameParser implements ManifestParserInterface
                         $dangerous = false;
                         foreach ($source['items'] as $line => $row) {
                             $number = $this->value($row, 'CONTAINER NR.');
+                            $documentaryCondition = $this->documentaryCondition($row);
+                            $description = $this->value($row, 'DESCRIPTION');
+                            $sourcePackaging = $this->value($row, 'KIND OUTER PACKAGES');
                             $gross = $this->decimal($this->value($row, 'GROSS WEIGHT'));
                             $quantity = (int) $this->decimal($this->value($row, 'NUMBER OUTER PACKAGES'));
                             $tare = $this->decimal($this->value($row, 'TARE'));
@@ -437,7 +511,7 @@ class MscVesselNameParser implements ManifestParserInterface
                                 $container = Container::create([
                                     'container_number' => $number, 'container_type_id' => $type->id,
                                     'tare_weight_kg' => $tare, 'max_gross_weight_kg' => null,
-                                    'condition' => 'L', 'container_condition' => 'P',
+                                    'condition' => 'L', 'container_condition' => $documentaryCondition,
                                     'operational_status' => 'loaded', 'active' => true,
                                 ]);
                                 $createdContainers[] = $container->id;
@@ -448,15 +522,17 @@ class MscVesselNameParser implements ManifestParserInterface
                             $dangerous = $dangerous || $isDangerous;
                             $item = ShipmentItem::create([
                                 'bill_of_lading_id' => $bill->id, 'line_number' => $line + 1,
-                                'cargo_type_id' => $cargoType->id, 'packaging_type_id' => null,
+                                'cargo_type_id' => $cargoType->id, 'packaging_type_id' => $packagingTypeId,
                                 'package_quantity' => $quantity, 'gross_weight_kg' => $gross, 'net_weight_kg' => null,
-                                'item_description' => $this->value($row, 'DESCRIPTION'),
-                                'package_type_description' => $this->value($row, 'KIND OUTER PACKAGES'),
+                                'item_description' => $description,
+                                'commodity_code' => $this->sourceCommodityCode($description, $bill->bill_number, $line + 1),
+                                'package_type_description' => $sourcePackaging,
+                                'packaging_code' => $this->sourcePackagingCode($sourcePackaging),
                                 'cargo_marks' => $this->value($row, 'MARCS & NUMBERS') ?: null,
                                 'is_dangerous_goods' => $isDangerous,
                                 'un_number' => $this->value($row, 'UNNO') ?: null,
                                 'imdg_class' => $this->value($row, 'DG CLASS') ?: ($isDangerous ? $this->value($row, 'IMO') : null),
-                                'container_condition' => 'P', 'created_by_user_id' => auth()->id(),
+                                'container_condition' => $documentaryCondition, 'created_by_user_id' => auth()->id(),
                                 'currency_code' => null, 'webservice_data' => ['msc' => $row],
                             ]);
                             $items[] = $item;
@@ -465,7 +541,7 @@ class MscVesselNameParser implements ManifestParserInterface
                                 'package_quantity' => $quantity, 'gross_weight_kg' => $gross,
                                 'source_seals' => json_encode($seals, JSON_THROW_ON_ERROR),
                                 'source_line_numbers' => json_encode([$line + 1], JSON_THROW_ON_ERROR),
-                                'container_condition' => 'P', 'status' => 'loaded',
+                                'container_condition' => $documentaryCondition, 'status' => 'loaded',
                                 'created_by_user_id' => auth()->id(), 'created_date' => now(),
                                 'created_at' => now(), 'updated_at' => now(),
                             ]);
