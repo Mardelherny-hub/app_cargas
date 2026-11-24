@@ -65,14 +65,18 @@
                         
                         {{-- Edit (Modal trigger) --}}
                         <button type="button" 
-                                onclick="editCustomsOffice({{ $office->id }}, '{{ $office->code }}', '{{ addslashes($office->name) }}')"
+                                data-office-id="{{ $office->id }}"
+                                data-code="{{ $office->code }}"
+                                data-name="{{ $office->name }}"
+                                onclick="editCustomsOffice(this.dataset)"
                                 class="text-sm text-blue-600 hover:text-blue-800" title="Editar">
                             ✏️
                         </button>
                         
                         {{-- Delete --}}
                         <form action="{{ route('admin.afip-config.customs-offices.destroy', $office) }}" method="POST" class="inline"
-                              onsubmit="return confirm('¿Eliminar aduana {{ $office->code }}?')">
+                              data-confirm="¿Eliminar aduana {{ $office->code }}?"
+                              onsubmit="return confirm(this.dataset.confirm)">
                             @csrf
                             @method('DELETE')
                             <button type="submit" class="text-sm text-red-600 hover:text-red-800" title="Eliminar">
@@ -122,10 +126,10 @@
 </div>
 
 <script>
-function editCustomsOffice(id, code, name) {
-    document.getElementById('editCustomsOfficeForm').action = '{{ route("admin.afip-config.index") }}/customs-offices/' + id;
-    document.getElementById('edit_code').value = code;
-    document.getElementById('edit_name').value = name;
+function editCustomsOffice(data) {
+    document.getElementById('editCustomsOfficeForm').action = @js(route('admin.afip-config.index')) + '/customs-offices/' + encodeURIComponent(data.officeId);
+    document.getElementById('edit_code').value = data.code;
+    document.getElementById('edit_name').value = data.name;
     document.getElementById('editCustomsOfficeModal').classList.remove('hidden');
     document.getElementById('editCustomsOfficeModal').classList.add('flex');
 }

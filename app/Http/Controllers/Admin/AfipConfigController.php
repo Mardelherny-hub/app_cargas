@@ -51,6 +51,14 @@ class AfipConfigController extends Controller
             ->whereHas('country', fn($q) => $q->where('alpha2_code', 'AR'))
             ->orderBy('name')
             ->get(['id', 'code', 'name', 'city']);
+
+        // Vincular Puerto: un lugar operativo se vincula a un puerto de su
+        // propio país, sea Argentina o el exterior.
+        $locationPorts = Port::where('active', true)
+            ->whereIn('country_id', $locations->pluck('country_id')->filter()->unique())
+            ->with('country:id,alpha2_code')
+            ->orderBy('name')
+            ->get(['id', 'code', 'name', 'city', 'country_id']);
         
         return view('admin.afip-config.index', compact(
             'tab',
@@ -58,7 +66,8 @@ class AfipConfigController extends Controller
             'locations',
             'portCustoms',
             'countries',
-            'ports'
+            'ports',
+            'locationPorts'
         ));
     }
 
@@ -198,6 +207,24 @@ class AfipConfigController extends Controller
             ->get(['id', 'location_code', 'description']);
 
         return response()->json($locations);
+    }
+
+    /**
+     * API: puertos activos de un país, para el alta de lugares operativos.
+     */
+    public function portsByCountry(Country $country)
+    {
+        $ports = Port::where('active', true)
+            ->where('country_id', $country->id)
+            ->orderBy('name')
+            ->get(['id', 'code', 'name', 'city'])
+            ->map(fn (Port $port) => [
+                'id' => $port->id,
+                'label' => "{$country->alpha2_code} · {$port->code} - {$port->name}"
+                    . ($port->city ? " ({$port->city})" : ''),
+            ]);
+
+        return response()->json($ports);
     }
 
     // =========================================================================
