@@ -22,6 +22,8 @@ class ProcessManifestImportJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    private const MIC_DTA_MARKS_MAX_LENGTH = 100;
+
     public int $tries = 1;
     public int $timeout = 600;
 
@@ -128,6 +130,7 @@ class ProcessManifestImportJob implements ShouldQueue
 
                 $voyageId = $result->voyage?->id;
                 $manifestImportId = $this->resolveManifestImportId($voyageId);
+                $longMarkWarnings = $this->warnLongCargoMarks($result, $manifestImportId);
 
                 if ($convoySnapshot !== null) {
                     app(\App\Services\VoyageConvoyConversionService::class)->attachToImport(
@@ -138,7 +141,7 @@ class ProcessManifestImportJob implements ShouldQueue
                 }
 
                 $tracking->markCompleted(
-                    $result->hasWarnings(),
+                    $result->hasWarnings() || $longMarkWarnings !== [],
                     $manifestImportId,
                     $voyageId
                 );
@@ -490,6 +493,72 @@ class ProcessManifestImportJob implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * El MIC/DTA admite hasta 100 caracteres en marcaNro. Se avisa al importar,
+     * para cualquier formato de origen, qué ítems lo superan; la marca se
+     * conserva completa, sin recorte.
+     *
+     * @return string[] advertencias agregadas a la importación
+     */
+    protected function warnLongCargoMarks(
+        ManifestParseResult $result,
+        ?int $manifestImportId
+    ): array {
+        $import = $manifestImportId
+            ? \App\Models\ManifestImport::find($manifestImportId)
+            : null;
+
+        $billIds = collect($result->billsOfLading)
+            ->map(fn ($bill) => is_object($bill) ? $bill->id : null)
+            ->filter()
+            ->values();
+
+        if ($billIds->isEmpty() && $import) {
+            $billIds = collect($import->created_bill_ids ?? [])->filter()->values();
+        }
+
+        if ($billIds->isEmpty()) {
+            return [];
+        }
+
+        $warnings = [];
+        $items = \App\Models\ShipmentItem::with('billOfLading')
+            ->whereIn('bill_of_lading_id', $billIds)
+            ->whereNotNull('cargo_marks')
+            ->orderBy('bill_of_lading_id')
+            ->orderBy('line_number')
+            ->get();
+
+        foreach ($items as $item) {
+            $length = mb_strlen(trim((string) $item->cargo_marks));
+
+            if ($length <= self::MIC_DTA_MARKS_MAX_LENGTH) {
+                continue;
+            }
+
+            $warnings[] = sprintf(
+                'BL %s, ítem %s: la marca tiene %d caracteres y el MIC/DTA admite %d (marcaNro). No se recortó.',
+                $item->billOfLading?->bill_number ?? $item->bill_of_lading_id,
+                $item->line_number,
+                $length,
+                self::MIC_DTA_MARKS_MAX_LENGTH
+            );
+        }
+
+        if ($warnings !== [] && $import) {
+            $allWarnings = array_merge($import->warnings ?? [], $warnings);
+            $import->update([
+                'warnings' => $allWarnings,
+                'warnings_count' => count($allWarnings),
+                'status' => $import->status === 'completed'
+                    ? 'completed_with_warnings'
+                    : $import->status,
+            ]);
+        }
+
+        return $warnings;
     }
 
     protected function resolveManifestImportId(?int $voyageId): ?int
