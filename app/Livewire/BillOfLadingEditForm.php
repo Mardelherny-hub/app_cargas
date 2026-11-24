@@ -337,9 +337,20 @@ class BillOfLadingEditForm extends Component
      */
     public function loadFormData()
 {
-    // --- CLIENTES (activos) - traer todos, es tabla manejable
-    $this->clients = Client::where('status', 'active')
-        ->select('id', 'legal_name')
+    // --- CLIENTES: activos, más las fichas ya asignadas al BL aunque estén
+    // inactivas, para que los selectores muestren la parte guardada.
+    $assignedClientIds = array_filter([
+        $this->billOfLading->shipper_id,
+        $this->billOfLading->consignee_id,
+        $this->billOfLading->notify_party_id,
+        $this->billOfLading->cargo_owner_id,
+    ]);
+
+    $this->clients = Client::where(function ($query) use ($assignedClientIds) {
+            $query->where('status', 'active')
+                ->orWhereIn('id', $assignedClientIds);
+        })
+        ->select('id', 'legal_name', 'status')
         ->orderBy('legal_name')
         ->get();
 
@@ -810,6 +821,8 @@ class BillOfLadingEditForm extends Component
 
             \Log::info('SUBMIT - about to validate');
 
+            $this->validateParties();
+
             if ($this->billHasEmptyContainer()) {
                 $this->origin_location = trim((string) $this->origin_location);
                 $this->origin_country_code = strtoupper(
@@ -976,6 +989,46 @@ class BillOfLadingEditForm extends Component
             
             session()->flash('error', 'Error al actualizar el conocimiento: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Cada parte acepta una ficha activa o la que el BL ya tiene guardada en
+     * ese mismo rol, aunque esté inactiva. Una ficha inactiva nueva o un
+     * obligatorio vacío quedan como error del campo, antes de tocar la base.
+     */
+    private function validateParties(): void
+    {
+        $parties = [
+            'shipper_id' => ['required' => true, 'label' => 'el cargador'],
+            'consignee_id' => ['required' => true, 'label' => 'el consignatario'],
+            'notify_party_id' => ['required' => false, 'label' => 'la parte a notificar'],
+            'cargo_owner_id' => ['required' => false, 'label' => 'el propietario de la carga'],
+        ];
+
+        $rules = [];
+        $messages = [];
+
+        foreach ($parties as $field => $party) {
+            $assignedId = $this->billOfLading->{$field};
+
+            $rules[$field] = [
+                $party['required'] ? 'required' : 'nullable',
+                Rule::exists('clients', 'id')->where(function ($query) use ($assignedId) {
+                    $query->where(function ($query) use ($assignedId) {
+                        $query->where('status', 'active');
+
+                        if ($assignedId) {
+                            $query->orWhere('id', $assignedId);
+                        }
+                    });
+                }),
+            ];
+            $messages["{$field}.required"] = "Seleccione {$party['label']}.";
+            $messages["{$field}.exists"] = "La ficha elegida para {$party['label']} no existe o está inactiva. "
+                . 'Elija una ficha activa.';
+        }
+
+        $this->validate($rules, $messages);
     }
 
     private function normalizeDate(?string $value): ?string
