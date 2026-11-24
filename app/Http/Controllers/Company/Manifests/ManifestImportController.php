@@ -481,7 +481,7 @@ class ManifestImportController extends Controller
 
         // Obtener importaciones de la empresa con relaciones
         $imports = ManifestImport::forCompany($company->id)
-            ->with(['user', 'voyage', 'voyage.originPort', 'voyage.destinationPort'])
+            ->with(['user', 'importTracking', 'voyage', 'voyage.originPort', 'voyage.destinationPort'])
             ->latest()
             ->paginate(20);
 
@@ -839,7 +839,7 @@ public function showReport(Request $request)
                 'hasWarnings' => $hasWarnings,
             ],
             'fileInfo' => [
-                'name'        => $import->file_name,
+                'name'        => $import->display_file_name,
                 'imported_at' => optional($import->created_at)->format('d/m/Y H:i:s'),
                 'imported_by' => $import->user->name ?? 'Usuario',
             ],

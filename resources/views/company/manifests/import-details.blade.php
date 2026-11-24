@@ -6,7 +6,7 @@
                     🔍 Detalle de Importación
                 </h2>
                 <p class="text-sm text-gray-600 mt-1">
-                    {{ $import->file_name }}
+                    {{ $import->display_file_name }}
                 </p>
             </div>
             <div>
@@ -47,7 +47,7 @@
                     <dl class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4">
                         <div>
                             <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Archivo</dt>
-                            <dd class="mt-1 text-sm text-gray-900 break-all">{{ $import->file_name }}</dd>
+                            <dd class="mt-1 text-sm text-gray-900 break-all">{{ $import->display_file_name }}</dd>
                         </div>
                         <div>
                             <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Formato</dt>
