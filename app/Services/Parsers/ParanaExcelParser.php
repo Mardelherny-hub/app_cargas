@@ -1567,6 +1567,37 @@ class ParanaExcelParser implements ManifestParserInterface
 
 
 
+    private function sourcePackagingCode(string $label, string $billNumber, int $line): ?string
+    {
+        $code = match (strtoupper($label)) {
+            'BAG', 'BAGS', 'BAG(S)' => 'BG',
+            'BALE, COMPRESSED' => 'BL',
+            'BARREL', 'BARRELS', 'BARREL(S)' => 'BA',
+            'BOX', 'BOXES', 'BOX(ES)' => 'BX',
+            'CARTON', 'CARTONS', 'CARTON(S)' => 'CT',
+            'CASE', 'CASES', 'CASE(S)' => 'CS',
+            'DRUM', 'DRUMS', 'DRUM(S)' => 'DR',
+            'JUMBO BAG', 'JUMBO BAGS', 'JUMBO BAG(S)' => 'JB',
+            'PACKAGE', 'PACKAGES', 'PACKAGE(S)' => 'PK',
+            'PALLET', 'PALLETS', 'PALLET(S)' => 'PX',
+            'PIECE', 'PIECES', 'PIECE(S)' => 'PP',
+            'RACK', 'RACKS', 'RACK(S)' => 'RK',
+            'REEL', 'REELS', 'REEL(S)' => 'RL',
+            'ROLL', 'ROLLS', 'ROLL(S)' => 'RO',
+            'SKID', 'SKIDS', 'SKID(S)' => 'SI',
+            'TANK CYLINDRICAL', 'TANK, CYLINDRICAL' => 'TY',
+            'TANK RECTANGULAR', 'TANK, RECTANGULAR', 'TANK,RECTANGULAR' => 'TK',
+            'UNIT', 'UNITS', 'UNIT(S)' => 'UN',
+            default => null,
+        };
+
+        if ($code === null && !in_array(strtoupper($label), ['', 'T'], true)) {
+            $this->warnings[] = "BL {$billNumber}, línea {$line}: embalaje {$label} sin equivalencia EDIFACT inequívoca.";
+        }
+
+        return $code;
+    }
+
     protected function createShipmentItem(
         BillOfLading $bill,
         array $data
@@ -1603,6 +1634,11 @@ class ParanaExcelParser implements ManifestParserInterface
                 ),
                 'cargo_type_id' =>
                     $this->determinateCargoTypeId($data),
+                'packaging_code' => $this->sourcePackagingCode(
+                    trim((string) ($data['PACK_TYPE'] ?? '')),
+                    $bill->bill_number,
+                    $nextLineNumber
+                ),
                 'packaging_type_id' =>
                     $this->determinatePackagingTypeId($data),
                 'volume_m3' => $this->parseVolume(

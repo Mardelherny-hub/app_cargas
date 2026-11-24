@@ -3,11 +3,19 @@
 namespace Tests\Unit\Services\Parsers;
 
 use App\Services\Parsers\ParanaExcelParser;
+use App\Models\{BillOfLading, Container};
+use App\Services\Simple\SimpleXmlGenerator;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use ReflectionClass;
 use ReflectionMethod;
 use Tests\TestCase;
+use Tests\Unit\Services\Parsers\Concerns\BuildsManifestImportSchema;
 
 class ParanaExcelParserCoreIntegrityTest extends TestCase
 {
+    use BuildsManifestImportSchema;
+
     private ParanaExcelParser $parser;
 
     protected function setUp(): void
@@ -28,6 +36,29 @@ class ParanaExcelParserCoreIntegrityTest extends TestCase
             $this->parser,
             $args
         );
+    }
+
+    public function test_source_packaging_and_local_container_fallback(): void
+    {
+        $this->useIsolatedDatabase();
+        DB::table('packaging_types')->where('name', 'CONTENEDOR')->update(['code' => 'T']);
+        $container = Container::withoutEvents(fn () => Container::create(['container_number' => 'TSTU0000001']));
+        $bill = (new BillOfLading())->forceFill(['id' => 1, 'bill_number' => 'QA-PARANA']);
+        $data = ['DESCRIPTION' => 'CARGA QA', 'NUMBER_OF_PACKAGES' => '1', 'CONTAINER_NUMBER' => $container->container_number];
+        $generator = (new ReflectionClass(SimpleXmlGenerator::class))->newInstanceWithoutConstructor();
+        $micDtaCode = new ReflectionMethod($generator, 'micDtaPackagingCode');
+
+        foreach (['Carton(s)' => 'CT', 'EMBALAJE ESPECIAL' => null, 'T' => null] as $label => $expected) {
+            $item = Model::withoutEvents(fn () => $this->invoke('createShipmentItem', [$bill, $data + ['PACK_TYPE' => $label]]));
+            $this->assertSame($expected, $item->fresh()->packaging_code);
+            if ($label === 'T') {
+                $this->assertSame('T', $item->packagingType->code);
+                $this->assertSame(1, DB::table('container_shipment_item')->where('shipment_item_id', $item->id)->count());
+                $this->assertSame('CN', $micDtaCode->invoke($generator, $item, $bill->bill_number, $container));
+            }
+        }
+        $warnings = (new ReflectionClass($this->parser))->getProperty('warnings')->getValue($this->parser);
+        $this->assertSame(['BL QA-PARANA, línea 2: embalaje EMBALAJE ESPECIAL sin equivalencia EDIFACT inequívoca.'], $warnings);
     }
 
     public function test_voyage_dates_are_not_invented(): void
@@ -133,6 +164,8 @@ class ParanaExcelParserCoreIntegrityTest extends TestCase
 
     public function test_real_supported_container_types_resolve(): void
     {
+        $this->useIsolatedDatabase();
+        $this->addContainerTypes(['20GP', '40GP', '40HC', '40RH', '20TN']);
         $cases = [
             '20DV' => '20GP',
             '40DV' => '40GP',
@@ -157,6 +190,8 @@ class ParanaExcelParserCoreIntegrityTest extends TestCase
 
     public function test_40fr_remains_unmapped_instead_of_fabricated_as_40hc(): void
     {
+        $this->useIsolatedDatabase();
+        $this->addContainerTypes(['40HC']);
         $type = $this->invoke(
             'findExistingContainerType',
             ['40FR']
