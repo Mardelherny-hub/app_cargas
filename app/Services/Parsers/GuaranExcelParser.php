@@ -210,7 +210,7 @@ class GuaranExcelParser implements ManifestParserInterface
                         $items[] = $item;
                         // Si hay contenedor y se creó el item, vincular en la tabla pivot
                         if ($container && $item) {
-                            $this->attachContainerToItem($container, $item);
+                            $this->attachContainerToItem($container, $item, $row['SEAL_NO'] ?? null);
                         }
                     }
                 }
@@ -2201,7 +2201,7 @@ class GuaranExcelParser implements ManifestParserInterface
      * container_shipment_item. Replica los valores cantidad/peso/volumen
      * del item al pivot (1 contenedor = 1 item en Guaran).
      */
-    protected function attachContainerToItem(Container $container, ShipmentItem $item): void
+    protected function attachContainerToItem(Container $container, ShipmentItem $item, ?string $sourceSeal = null): void
     {
         // Evitar duplicar la relación si ya existe.
         $exists = DB::table('container_shipment_item')
@@ -2216,7 +2216,8 @@ class GuaranExcelParser implements ManifestParserInterface
         DB::table('container_shipment_item')->insert(
             $this->buildContainerItemPivotData(
                 $container,
-                $item
+                $item,
+                $sourceSeal
             )
         );
     }
@@ -2229,8 +2230,14 @@ class GuaranExcelParser implements ManifestParserInterface
      */
     protected function buildContainerItemPivotData(
         Container $container,
-        ShipmentItem $item
+        ShipmentItem $item,
+        ?string $sourceSeal = null
     ): array {
+        // Precintos que este archivo declara para el contenedor, como lista
+        // de números del vínculo de este conocimiento.
+        $seals = preg_split('/[\s,;]+/', trim((string) $sourceSeal)) ?: [];
+        $seals = array_values(array_unique(array_filter($seals, static fn ($seal) => $seal !== '')));
+
         return [
             'container_id' => $container->id,
             'shipment_item_id' => $item->id,
@@ -2238,6 +2245,9 @@ class GuaranExcelParser implements ManifestParserInterface
             'gross_weight_kg' => $item->gross_weight_kg,
             'net_weight_kg' => $item->net_weight_kg,
             'volume_m3' => $item->volume_m3,
+            'source_seals' => $seals === []
+                ? null
+                : json_encode($seals, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'status' => 'planned',
             'created_date' => now(),
             'created_by_user_id' => auth()->id(),
