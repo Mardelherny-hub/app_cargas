@@ -153,7 +153,7 @@
                                         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                                     @enderror
                                     <p class="mt-1 text-xs text-red-600">
-                                        ⚠ Este shipment fue duplicado y requiere seleccionar la embarcación correcta.
+                                        ⚠ Esta carga fue duplicada y requiere seleccionar la embarcación correcta.
                                     </p>
                                 </div>
                             @else
