@@ -507,7 +507,8 @@ class DonToyoExcelParser implements ManifestParserInterface
                             $containers[] = $container;
                             DB::table('container_shipment_item')->insert([
                                 'container_id' => $container->id, 'shipment_item_id' => $item->id,
-                                'package_quantity' => null, 'gross_weight_kg' => $containerRow['Peso'], 'net_weight_kg' => null,
+                                'package_quantity' => count($rows) === 1 ? $row['quantity'] : null,
+                                'gross_weight_kg' => $containerRow['Peso'], 'net_weight_kg' => null,
                                 'volume_m3' => $containerRow['Volumen'], 'verified_gross_mass_kg' => $containerRow['VGM'],
                                 'required_temperature' => $containerRow['Temperatura'],
                                 'container_condition' => in_array($container->container_condition, ['H', 'P'], true)
