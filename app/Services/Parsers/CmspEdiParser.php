@@ -3765,10 +3765,20 @@ class CmspEdiParser implements ManifestParserInterface
         }
 
         if ($taxId === null) {
-            return $this->findClientByCuscarNamePrefix(
+            $client = $this->findClientByCuscarNamePrefix(
                 $name,
                 $countryId
             );
+
+            $warning = $client
+                ? $this->inactiveClientWarning($client, $name)
+                : null;
+
+            if ($warning !== null && !in_array($warning, $this->stats['warnings'], true)) {
+                $this->stats['warnings'][] = $warning;
+            }
+
+            return $client;
         }
 
         return null;
