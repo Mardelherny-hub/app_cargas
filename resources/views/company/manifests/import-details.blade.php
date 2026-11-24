@@ -110,7 +110,7 @@
                             <dd class="mt-1 text-2xl font-semibold text-gray-900">{{ $import->created_voyages }}</dd>
                         </div>
                         <div class="bg-gray-50 rounded-md p-4 text-center">
-                            <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Shipments</dt>
+                            <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Cargas</dt>
                             <dd class="mt-1 text-2xl font-semibold text-gray-900">{{ $import->created_shipments }}</dd>
                         </div>
                         <div class="bg-gray-50 rounded-md p-4 text-center">
@@ -154,7 +154,7 @@
                             @if($import->voyage->status ?? null)
                                 <div class="mt-1">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border">
-                                        {{ $import->voyage->status }}
+                                        {{ \App\Models\Voyage::statusLabel($import->voyage->status) }}
                                     </span>
                                 </div>
                             @endif
@@ -312,28 +312,18 @@
             @endif
 
             {{-- =========================================================
-                 7. NOTAS Y CONFIGURACIÓN DEL PARSER
+                 7. NOTAS
                  ========================================================= --}}
-            @if($import->notes || ($import->parser_config && !empty($import->parser_config)))
+            @if($import->notes)
                 <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                     <div class="px-6 py-4 border-b border-gray-200">
                         <h3 class="text-lg font-medium text-gray-900">Información adicional</h3>
                     </div>
                     <div class="p-6 space-y-4">
-                        @if($import->notes)
-                            <div>
-                                <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Notas</dt>
-                                <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $import->notes }}</dd>
-                            </div>
-                        @endif
-                        @if($import->parser_config && !empty($import->parser_config))
-                            <div>
-                                <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Configuración del parser</dt>
-                                <dd class="mt-1">
-                                    <pre class="bg-gray-50 p-3 rounded text-xs text-gray-800 overflow-x-auto">{{ json_encode($import->parser_config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
-                                </dd>
-                            </div>
-                        @endif
+                        <div>
+                            <dt class="text-xs font-medium text-gray-500 uppercase tracking-wider">Notas</dt>
+                            <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $import->notes }}</dd>
+                        </div>
                     </div>
                 </div>
             @endif
