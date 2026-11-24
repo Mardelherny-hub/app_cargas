@@ -2,7 +2,7 @@
 
 namespace Tests\Unit\Services\Parsers;
 
-use App\Models\BillOfLading;
+use App\Models\{BillOfLading, ManifestImport, Voyage};
 use App\Services\Parsers\KlineDataParser;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -49,6 +49,27 @@ class KlineDataParserMeasurementIntegrityTest extends TestCase
         }
         $stats = (new ReflectionProperty($parser, 'stats'))->getValue($parser);
         $this->assertSame(['BL QA-KLINE: embalaje SPECIAL sin equivalencia EDIFACT inequívoca.'], $stats['warnings']);
+    }
+
+    public function test_history_persists_warning_text_and_status_together(): void
+    {
+        $this->useIsolatedDatabase();
+        $warning = 'BL QA-KLINE: embalaje SPECIAL sin equivalencia EDIFACT inequívoca.';
+        $voyage = (new Voyage())->forceFill(['id' => 1]);
+
+        foreach ([[$warning], []] as $warnings) {
+            $parser = new KlineDataParser();
+            $stats = new ReflectionProperty($parser, 'stats');
+            $stats->setValue($parser, array_replace($stats->getValue($parser), ['warnings' => $warnings]));
+            $import = ManifestImport::create(['file_name' => 'qa.dat', 'status' => 'processing']);
+            $complete = new ReflectionMethod($parser, 'completeImportRecord');
+            $complete->invoke($parser, $import, $voyage, [], [], [], microtime(true));
+
+            $saved = $import->fresh();
+            $this->assertSame($warnings, $saved->warnings);
+            $this->assertSame(count($warnings), (int) $saved->warnings_count);
+            $this->assertSame($warnings === [] ? 'completed' : 'completed_with_warnings', $saved->status);
+        }
     }
 
     public function test_missing_measurements_remain_unknown(): void

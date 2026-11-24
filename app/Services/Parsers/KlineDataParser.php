@@ -1140,11 +1140,19 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
         $createdObjects = array_map(fn($ids) => array_filter($ids), $createdObjects);
         
         $importRecord->recordCreatedObjects($createdObjects);
-        $importRecord->markAsCompleted([
+        $warnings = $this->stats['warnings'];
+        $completion = [
             'voyage_id' => $voyage->id,
             'processing_time_seconds' => round($processingTime, 2),
-            'notes' => 'Importación KLine DAT completada exitosamente'
-        ]);
+            'notes' => 'Importación KLine DAT completada exitosamente',
+            'warnings' => $warnings,
+            'warnings_count' => count($warnings),
+        ];
+        if ($warnings === []) {
+            $importRecord->markAsCompleted($completion);
+        } else {
+            $importRecord->markAsCompletedWithWarnings($completion);
+        }
         
         Log::info('KLine import record completed', [
             'import_id' => $importRecord->id,
