@@ -853,6 +853,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
             $codes[$label] = match ($label) {
                 'UNIT', 'UNITS', 'UNIT(S)' => 'UN',
+                'VEHICLE', 'VEHICLES', 'VEHICLE(S)' => 'VN',
                 'BAG', 'BAGS', 'BAG(S)' => 'BG',
                 'BOX', 'BOXES', 'BOX(ES)' => 'BX',
                 'BUNDLE', 'BUNDLES', 'BUNDLE(S)' => 'BE',
