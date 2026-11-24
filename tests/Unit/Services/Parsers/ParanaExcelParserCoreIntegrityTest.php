@@ -48,7 +48,15 @@ class ParanaExcelParserCoreIntegrityTest extends TestCase
         $generator = (new ReflectionClass(SimpleXmlGenerator::class))->newInstanceWithoutConstructor();
         $micDtaCode = new ReflectionMethod($generator, 'micDtaPackagingCode');
 
-        foreach (['Carton(s)' => 'CT', 'EMBALAJE ESPECIAL' => null, 'CTNS' => 'CT', 'T' => null] as $label => $expected) {
+        $cases = [
+            'Carton(s)' => 'CT',
+            'EMBALAJE ESPECIAL' => null,
+            'CTNS' => 'CT',
+            'BIG BAGS' => 'JB',
+            'CAS' => 'CS',
+            'T' => null,
+        ];
+        foreach ($cases as $label => $expected) {
             $item = Model::withoutEvents(fn () => $this->invoke('createShipmentItem', [$bill, $data + ['PACK_TYPE' => $label]]));
             $this->assertSame($expected, $item->fresh()->packaging_code);
             if ($label === 'T') {
