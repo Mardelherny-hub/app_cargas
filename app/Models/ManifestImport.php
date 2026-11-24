@@ -737,6 +737,27 @@ class ManifestImport extends Model
     }
 
     /**
+     * Nombre visible de cada formato de archivo guardado en file_format.
+     */
+    public const FORMAT_LABELS = [
+        'kline' => 'K-Line',
+        'parana' => 'Paraná',
+        'guaran_excel' => 'Guaraní',
+        'login_xml' => 'Login',
+        'tfp' => 'TFP',
+        'navsur' => 'Navsur',
+        'cmsp' => 'CMSP (CUSCAR)',
+        'g2ocean_xml' => 'G2Ocean',
+        'msc_vessel_name' => 'MSC',
+        'don_toyo_excel' => 'Don Toyo',
+    ];
+
+    public function getFormatLabelAttribute(): string
+    {
+        return self::FORMAT_LABELS[$this->file_format] ?? strtoupper((string) $this->file_format);
+    }
+
+    /**
      * Aviso para el usuario cuando vuelve a subir un archivo ya importado:
      * cuándo, en qué viaje y qué hacer, sin identificadores internos.
      */

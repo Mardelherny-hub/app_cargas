@@ -59,10 +59,9 @@
                             <div>
                                 <select class="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" id="formatFilter">
                                     <option value="">Todos los formatos</option>
-                                    <option value="kline">KLine (.dat)</option>
-                                    <option value="parana">PARANA (.xlsx)</option>
-                                    <option value="guaran">Guaraní (.csv)</option>
-                                    <option value="login">Login (.xml)</option>
+                                    @foreach(\App\Models\ManifestImport::FORMAT_LABELS as $formatValue => $formatLabel)
+                                        <option value="{{ $formatValue }}">{{ $formatLabel }}</option>
+                                    @endforeach
                                 </select>
                             </div>
                             <div>
@@ -140,7 +139,7 @@
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
                                 @foreach($imports as $import)
-                                    <tr class="hover:bg-gray-50">
+                                    <tr class="hover:bg-gray-50" data-format="{{ $import->file_format }}">
                                         <!-- Archivo -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center">
@@ -182,7 +181,7 @@
                                         <!-- Formato -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border">
-                                                {{ strtoupper($import->file_format) }}
+                                                {{ $import->format_label }}
                                             </span>
                                         </td>
 
@@ -492,7 +491,7 @@
                 
                 rows.forEach(row => {
                     const fileName = row.querySelector('td:first-child .text-sm')?.textContent.toLowerCase() || '';
-                    const format = row.querySelector('td:nth-child(2) span')?.textContent.toLowerCase() || '';
+                    const format = row.dataset.format || '';
                     const status = row.querySelector('td:nth-child(3) span')?.classList.toString() || '';
                     
                     let showRow = true;
@@ -503,7 +502,7 @@
                     }
                     
                     // Filtro de formato
-                    if (formatValue && !format.includes(formatValue)) {
+                    if (formatValue && format !== formatValue) {
                         showRow = false;
                     }
                     
