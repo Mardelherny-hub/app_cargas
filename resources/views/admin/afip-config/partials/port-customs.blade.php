@@ -78,7 +78,8 @@
                         </td>
                         <td class="px-4 py-3 text-right">
                             <form action="{{ route('admin.afip-config.port-customs.detach', $link) }}" method="POST" class="inline"
-                                  onsubmit="return confirm('¿Eliminar vínculo {{ $link->port->code ?? '' }} ↔ {{ $link->afipCustomsOffice->code ?? '' }}?')">
+                                  data-confirm="¿Eliminar vínculo {{ $link->port->code ?? '' }} ↔ {{ $link->afipCustomsOffice->code ?? '' }}?"
+                                  onsubmit="return confirm(this.dataset.confirm)">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="text-sm text-red-600 hover:text-red-800" title="Eliminar vínculo">

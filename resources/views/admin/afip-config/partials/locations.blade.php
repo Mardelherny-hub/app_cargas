@@ -46,7 +46,7 @@
         @csrf
         <div>
             <label for="country_id" class="block text-sm font-medium text-gray-700">País *</label>
-            <select name="country_id" id="country_id" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+            <select name="country_id" id="country_id" required onchange="loadCountryPorts(this.value)" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                 <option value="">Seleccionar</option>
                 @foreach($countries as $country)
                     <option value="{{ $country->id }}">{{ $country->alpha2_code }} - {{ $country->name }}</option>
@@ -73,11 +73,8 @@
         </div>
         <div>
             <label for="port_id" class="block text-sm font-medium text-gray-700">Puerto</label>
-            <select name="port_id" id="port_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+            <select name="port_id" id="port_id" data-url="{{ route('admin.afip-config.ports.by-country', ['country' => '__COUNTRY__']) }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                 <option value="">Sin asignar</option>
-                @foreach($ports as $port)
-                    <option value="{{ $port->id }}">{{ $port->code }} - {{ $port->name }}</option>
-                @endforeach
             </select>
         </div>
         <div class="flex items-center gap-4">
@@ -128,7 +125,12 @@
                             <span class="text-sm font-mono text-indigo-600 mr-1">{{ $location->port->code }}</span>
                         @endif
                         <button type="button" 
-                                onclick="openVincularModal({{ $location->id }}, '{{ $location->location_code }}', '{{ $location->description }}', '{{ $location->port_id ?? '' }}')"
+                                data-location-id="{{ $location->id }}"
+                                data-code="{{ $location->location_code }}"
+                                data-description="{{ $location->description }}"
+                                data-port-id="{{ $location->port_id ?? '' }}"
+                                data-country-id="{{ $location->country_id }}"
+                                onclick="openVincularModal(this.dataset)"
                                 class="px-2 py-1 text-xs {{ $location->port ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }} rounded">
                             {{ $location->port ? '✏️' : 'Vincular' }}
                         </button>
@@ -159,7 +161,8 @@
                         
                         {{-- Delete --}}
                         <form action="{{ route('admin.afip-config.locations.destroy', $location) }}" method="POST" class="inline"
-                              onsubmit="return confirm('¿Eliminar lugar {{ $location->location_code }}?')">
+                              data-confirm="¿Eliminar lugar {{ $location->location_code }}?"
+                              onsubmit="return confirm(this.dataset.confirm)">
                             @csrf
                             @method('DELETE')
                             <button type="submit" class="text-sm text-red-600 hover:text-red-800" title="Eliminar">
@@ -199,8 +202,8 @@
                 <select name="port_id" id="modal_port_id" required 
                         class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     <option value="">-- Seleccionar --</option>
-                    @foreach($ports as $port)
-                        <option value="{{ $port->id }}">{{ $port->code }} - {{ $port->name }} ({{ $port->city }})</option>
+                    @foreach($locationPorts as $port)
+                        <option value="{{ $port->id }}" data-country="{{ $port->country_id }}">{{ $port->country->alpha2_code ?? '' }} · {{ $port->code }} - {{ $port->name }} ({{ $port->city }})</option>
                     @endforeach
                 </select>
             </div>
@@ -220,12 +223,38 @@
 </div>
 
 <script>
-function openVincularModal(locationId, code, description, currentPortId) {
-    document.getElementById('modalLocationCode').textContent = code;
-    document.getElementById('modalLocationDesc').textContent = description;
-    document.getElementById('vincularForm').action = `/admin/afip-config/locations/${locationId}/vincular-puerto`;
-    document.getElementById('modal_port_id').value = currentPortId || '';
+function openVincularModal(data) {
+    var countryId = data.countryId;
+    // Solo los puertos del país del lugar operativo.
+    document.querySelectorAll('#modal_port_id option[data-country]').forEach(function (option) {
+        var otherCountry = option.dataset.country !== String(countryId);
+        option.hidden = otherCountry;
+        option.disabled = otherCountry;
+    });
+    document.getElementById('modalLocationCode').textContent = data.code;
+    document.getElementById('modalLocationDesc').textContent = data.description;
+    document.getElementById('vincularForm').action = '/admin/afip-config/locations/' + encodeURIComponent(data.locationId) + '/vincular-puerto';
+    document.getElementById('modal_port_id').value = data.portId || '';
     document.getElementById('vincularModal').classList.remove('hidden');
+}
+
+// Alta: solo los puertos activos del país elegido.
+function loadCountryPorts(countryId) {
+    var select = document.getElementById('port_id');
+    select.length = 1;
+    if (!countryId) return;
+    fetch(select.dataset.url.replace('__COUNTRY__', encodeURIComponent(countryId)), {
+        headers: { 'Accept': 'application/json' }
+    })
+        .then(function (response) { return response.ok ? response.json() : []; })
+        .then(function (ports) {
+            // Si el país cambió mientras se cargaba, vale la carga más reciente.
+            if (document.getElementById('country_id').value !== String(countryId)) return;
+            select.length = 1;
+            ports.forEach(function (port) {
+                select.add(new Option(port.label, port.id));
+            });
+        });
 }
 
 function closeVincularModal() {
