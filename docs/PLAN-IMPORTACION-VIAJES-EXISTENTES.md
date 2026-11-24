@@ -157,6 +157,41 @@ inspectAfipVesselLock(companyId, voyageId, vesselId) → libre | bloqueado + lis
 
 **Parte B (Work, después del traspaso):** verificar los tres casos con datos reales de la base de asus02 y validar el punto 2, sobre todo que un `cancelled` de reset conserve `external_reference` o `success_data`.
 
+## 6 ter. Reglas de importación (Roberto) y decisiones del 23/11/2026
+
+Origen: observaciones de Roberto sobre la etapa 1 en stage (20/11) y decisiones de coordinación del 23/11, tomadas con la regla «manuales AFIP primero, después sentido común, a Roberto solo si no queda otra». Valen para **todos los formatos**, no solo para los nuevos, y Work las verifica con las muestras reales de cada uno.
+
+### Reglas de Roberto
+
+| Regla | Detalle |
+|---|---|
+| Condición del contenedor | House (H) salvo que el archivo diga otra cosa. Si el archivo trae H o P explícito, se respeta. |
+| Notificatario | Si el archivo no trae notify, es igual al consignatario. Si lo trae, se usa el del archivo. |
+| NCM | Se carga solo cuando el archivo lo informa sin ambigüedad. Si hay varios códigos o un rótulo dudoso, queda vacío con advertencia. Nunca se saca de la descripción por adivinación, y la descripción no se modifica. |
+| Embalaje | `packaging_code` EDIFACT de 2 caracteres (UN/ECE Rec. 21) tomado del archivo. Si no hay código, el MIC/DTA usa CN cuando el ítem es CONTENEDOR y está vinculado a un contenedor. |
+
+### Reglas de dominio que se mantienen
+
+- Buenos Aires: `codLugOper` = 10073 (Terminal Sur).
+- Guaraní: los ítems van como CONTENEDOR.
+- Los parsers nunca crean puertos.
+
+### Decisiones del 23/11
+
+1. **Embalaje por etiqueta:** el nombre UN/ECE Rec. 21 exacto o su plural «(s)» cuenta como ese código (Carton(s) → CT). «Unpackaged Multiple Units» → NG. Etiqueta desconocida: vacío y advertencia; nunca se inventa.
+2. **Precintos:** el precinto que trae el archivo tiene que llegar al campo que lee el MIC/DTA. Si el archivo indica el rol (CUSCAR, segmento SEL), se respeta. Si no, va como precinto del cargador (`shipper_seal`), como ya hacen Paraná, TFP, Guaraní y Don Toyo. Si supera lo que admite AFIP, no se recorta: advertencia.
+3. **Bultos en Don Toyo:** si el BL tiene un solo contenedor, los bultos del contenedor son el total del BL. Con varios contenedores, los completa el operador.
+4. **Identificación fiscal pegada al nombre** (TAX.ID:, TAXID1): se extrae, la ficha se busca y se crea con el nombre limpio y con `tax_id`.
+5. **Fichas inactivas o suspendidas:** el formulario del BL muestra la ficha ya asignada aunque no esté activa, con su estado. Al guardar solo se aceptan fichas activas o la ya asignada en ese rol. La importación reutiliza la ficha y lo advierte; no rechaza.
+6. **Fecha de embarque:** casi ningún archivo la trae (solo G2Ocean y K-Line). La completa el operador en el campo «fecha de embarque» del formulario de importación, que se aplica a todos los BL. Va en la guía de prueba para Roberto.
+
+### Qué significa «terminado» para la entrega
+
+Se entrega solo si:
+1. el ensayo de aceptación, hecho como lo haría Roberto con todas las muestras reales, no tiene observaciones propias;
+2. un viaje importado pasa la validación previa del MIC/DTA sin tocar nada, salvo los datos que el archivo realmente no trae;
+3. el otro equipo hizo el QA cruzado de cada rama integrada.
+
 ## 7. Tarjetas de tarea (para pasar a cada agente)
 
 Cada tarea arranca **solo con la orden explícita** de quien dirige su equipo.
