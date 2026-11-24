@@ -1574,7 +1574,7 @@ class ParanaExcelParser implements ManifestParserInterface
             'BALE, COMPRESSED' => 'BL',
             'BARREL', 'BARRELS', 'BARREL(S)' => 'BA',
             'BOX', 'BOXES', 'BOX(ES)' => 'BX',
-            'CARTON', 'CARTONS', 'CARTON(S)' => 'CT',
+            'CARTON', 'CARTONS', 'CARTON(S)', 'CTNS' => 'CT',
             'CASE', 'CASES', 'CASE(S)' => 'CS',
             'DRUM', 'DRUMS', 'DRUM(S)' => 'DR',
             'JUMBO BAG', 'JUMBO BAGS', 'JUMBO BAG(S)' => 'JB',
