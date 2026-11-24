@@ -69,8 +69,8 @@ trait ResolvesExistingClient
     }
 
     /**
-     * La ficha se reutiliza igual, pero el usuario tiene que saber que está
-     * inactiva. null si la ficha está activa.
+     * La ficha se reutiliza igual, pero el usuario tiene que saber que no está
+     * activa (inactiva o suspendida). null si la ficha está activa.
      */
     protected function inactiveClientWarning(Client $client, string $name): ?string
     {
@@ -78,7 +78,9 @@ trait ResolvesExistingClient
             return null;
         }
 
-        return "Cliente {$name}: se asignó la ficha #{$client->id}, que está inactiva. "
+        $state = $client->status === 'suspended' ? 'suspendida' : 'inactiva';
+
+        return "Cliente {$name}: se asignó la ficha #{$client->id}, que está {$state}. "
             . 'Revisar la ficha o la parte del conocimiento.';
     }
 

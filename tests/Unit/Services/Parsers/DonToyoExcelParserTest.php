@@ -319,6 +319,24 @@ class DonToyoExcelParserTest extends TestCase
         ], $inactiveWarnings->values()->all());
     }
 
+    public function test_suspended_existing_client_warning_names_its_actual_status(): void
+    {
+        DB::table('clients')->where('legal_name', 'IMPORTADORA EJEMPLO SRL')->update(['status' => 'suspended']);
+        $suspendedId = DB::table('clients')->where('legal_name', 'IMPORTADORA EJEMPLO SRL')->value('id');
+
+        $result = $this->import($this->workbook($this->sheets()));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame(2, DB::table('clients')->count());
+        $this->assertSame(2, DB::table('bills_of_lading')->where('consignee_id', $suspendedId)->count());
+        $this->assertContains(
+            "Cliente IMPORTADORA EJEMPLO SRL: se asignó la ficha #{$suspendedId}, que está suspendida. "
+            . 'Revisar la ficha o la parte del conocimiento.',
+            $result->warnings
+        );
+        $this->assertFalse(collect($result->warnings)->contains(fn ($warning) => str_contains($warning, 'que está inactiva')));
+    }
+
     public function test_reimport_of_the_same_file_is_rejected_without_changes(): void
     {
         $path = $this->workbook($this->sheets());
