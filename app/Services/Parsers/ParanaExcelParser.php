@@ -1789,12 +1789,25 @@ class ParanaExcelParser implements ManifestParserInterface
                     'volume_m3' => $this->parseVolume(
                         $data['VOLUME'] ?? null
                     ),
+                    // Precintos que este archivo declara para el
+                    // contenedor, como lista de números del vínculo.
+                    'source_seals' => $this->sourceSealList(
+                        $data['SEAL_NO'] ?? null
+                    ),
                     'status' => 'planned',
                 ]
             );
         }
 
         return $shipmentItem;
+    }
+
+    protected function sourceSealList(?string $value): ?string
+    {
+        $seals = preg_split('/[\s,;]+/', trim((string) $value)) ?: [];
+        $seals = array_values(array_unique(array_filter($seals, static fn ($seal) => $seal !== '')));
+
+        return $seals === [] ? null : json_encode($seals, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
 

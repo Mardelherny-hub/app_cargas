@@ -1083,12 +1083,23 @@ protected function extractValue(string $scope, string $label): ?string
                 : $item->gross_weight_kg,
             'net_weight_kg' => $item->net_weight_kg,
             'volume_m3' => $item->volume_m3,
+            // Precintos que este archivo declara para el contenedor, como lista
+            // de números del vínculo de este conocimiento.
+            'source_seals' => $this->sourceSealList($containerData['nro_precinta'] ?? null),
             'status' => 'loaded',
             'created_date' => now(),
             'created_by_user_id' => auth()->id(),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    protected function sourceSealList(?string $value): ?string
+    {
+        $seals = preg_split('/[\s,;]+/', trim((string) $value)) ?: [];
+        $seals = array_values(array_unique(array_filter($seals, static fn ($seal) => $seal !== '')));
+
+        return $seals === [] ? null : json_encode($seals, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     /**

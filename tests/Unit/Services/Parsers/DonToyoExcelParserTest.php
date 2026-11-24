@@ -179,6 +179,24 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertSame('SEAL0003', $seals['TSTU0000003']);
     }
 
+    public function test_each_bill_link_keeps_the_seals_of_this_file(): void
+    {
+        $this->addPreviousVoyage('TSTU0000001', '45G0');
+        DB::table('containers')->where('container_number', 'TSTU0000001')->update(['shipper_seal' => 'QA0000099']);
+        $sheets = $this->sheets();
+        $sheets['CONTENEDORES'][1][3] = 'QA0000001/QA0000002';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $links = DB::table('container_shipment_item')->join('containers', 'containers.id', '=', 'container_shipment_item.container_id')
+            ->whereNotNull('container_shipment_item.source_seals')
+            ->orderBy('container_number')->pluck('container_shipment_item.source_seals', 'container_number');
+        $this->assertSame(['QA0000001', 'QA0000002'], json_decode($links['TSTU0000001'], true));
+        $this->assertSame(['SEAL0002'], json_decode($links['TSTU0000002'], true));
+        $this->assertSame('QA0000099', DB::table('containers')->where('container_number', 'TSTU0000001')->value('shipper_seal'));
+    }
+
     public function test_weight_comes_from_the_bls_sheet(): void
     {
         $result = $this->import($this->workbook($this->sheets()));
