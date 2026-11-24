@@ -2,12 +2,19 @@
 
 namespace Tests\Unit\Services\Parsers;
 
+use App\Models\BillOfLading;
 use App\Services\Parsers\G2OceanXmlParser;
+use Illuminate\Database\Eloquent\Model;
 use ReflectionMethod;
+use ReflectionProperty;
+use SimpleXMLElement;
 use Tests\TestCase;
+use Tests\Unit\Services\Parsers\Concerns\BuildsManifestImportSchema;
 
 class G2OceanXmlParserCoreIntegrityTest extends TestCase
 {
+    use BuildsManifestImportSchema;
+
     private G2OceanXmlParser $parser;
 
     protected function setUp(): void
@@ -26,6 +33,24 @@ class G2OceanXmlParserCoreIntegrityTest extends TestCase
         $ref->setAccessible(true);
 
         return $ref->invokeArgs($this->parser, $args);
+    }
+
+    public function test_packaging_code_comes_from_explicit_xml_label(): void
+    {
+        $this->useIsolatedDatabase();
+        $items = [];
+        foreach (['<pkgType>Coil(s)</pkgType>', '<pkgType>SPECIAL</pkgType>', ''] as $index => $label) {
+            $line = $index + 1;
+            $detail = new SimpleXMLElement("<detail><itemSNo>{$line}</itemSNo><noOfPkgs>1</noOfPkgs><weight>1</weight>{$label}</detail>");
+            $items[] = $this->invoke('extractCargoDetail', [$detail]);
+        }
+        $bill = (new BillOfLading())->forceFill(['id' => 1, 'bill_number' => 'QA-G2']);
+        $saved = Model::withoutEvents(fn () => $this->invoke('createShipmentItems', [$bill, ['cargo_items' => $items]]));
+
+        $this->assertSame(['CL', null, null], array_map(fn ($item) => $item->fresh()->packaging_code, $saved));
+        $this->assertSame(10, (int) $saved[2]->cargo_type_id);
+        $stats = (new ReflectionProperty($this->parser, 'stats'))->getValue($this->parser);
+        $this->assertSame(['BL QA-G2, línea 2: embalaje SPECIAL sin equivalencia EDIFACT inequívoca.'], $stats['warnings']);
     }
 
     public function test_real_tanchou_arrow_ncm_code_variant_is_extracted(): void
