@@ -737,6 +737,20 @@ class ManifestImport extends Model
     }
 
     /**
+     * Aviso para el usuario cuando vuelve a subir un archivo ya importado:
+     * cuándo, en qué viaje y qué hacer, sin identificadores internos.
+     */
+    public function alreadyImportedMessage(): string
+    {
+        $when = $this->created_at ? ' el ' . $this->created_at->format('d/m/Y H:i') : '';
+        $voyageNumber = $this->voyage?->voyage_number;
+        $where = $voyageNumber ? " en el viaje {$voyageNumber}" : '';
+
+        return "Este archivo ya fue importado{$when}{$where}. "
+            . 'Si necesita importarlo de nuevo, primero revierta esa importación desde el Historial de Importaciones.';
+    }
+
+    /**
      * Crear registro de importación
      */
     public static function createForImport(array $data): self

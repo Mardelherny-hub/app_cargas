@@ -1151,7 +1151,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             if ($companyId) {
                 $existingImport = ManifestImport::isFileAlreadyImported($fileHash, $companyId);
                 if ($existingImport) {
-                    throw new \Exception("Este archivo ya fue importado anteriormente (ID: {$existingImport->id})");
+                    throw new \Exception($existingImport->alreadyImportedMessage());
                 }
             }
         }

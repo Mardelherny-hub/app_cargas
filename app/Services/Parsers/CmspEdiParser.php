@@ -1444,7 +1444,7 @@ class CmspEdiParser implements ManifestParserInterface
         if ($fileHash && $companyId) {
             $existing = ManifestImport::isFileAlreadyImported($fileHash, $companyId);
             if ($existing) {
-                throw new Exception("Este archivo ya fue importado anteriormente (ID: {$existing->id})");
+                throw new Exception($existing->alreadyImportedMessage());
             }
         }
 
