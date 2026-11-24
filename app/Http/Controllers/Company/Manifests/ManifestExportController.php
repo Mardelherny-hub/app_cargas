@@ -1303,29 +1303,40 @@ class ManifestExportController extends Controller
 
         $seals = array_merge($seals, $this->additionalSealValues($container));
 
-        return array_values(array_unique(array_filter(array_map(
-            static fn ($seal) => trim((string) $seal),
-            $seals
-        ))));
+        // Un campo puede traer varios precintos separados por espacio, igual
+        // que los lee el MIC/DTA.
+        $split = [];
+        foreach ($seals as $seal) {
+            foreach (preg_split('/\s+/', trim((string) $seal)) ?: [] as $part) {
+                if ($part !== '') {
+                    $split[] = $part;
+                }
+            }
+        }
+
+        return array_values(array_unique($split));
     }
 
     private function ediContainerSeals(Container $container): array
     {
         $entries = [];
 
-        $addSeal = static function (array &$entries, $number, $issuer = null): void {
-            $number = trim((string) $number);
+        // Un campo puede traer varios precintos separados por espacio, igual
+        // que los lee el MIC/DTA.
+        $addSeal = static function (array &$entries, $value, $issuer = null): void {
             $issuer = strtoupper(trim((string) ($issuer ?? '')));
 
-            if ($number === '') {
-                return;
-            }
+            foreach (preg_split('/\s+/', trim((string) $value)) ?: [] as $number) {
+                if ($number === '') {
+                    continue;
+                }
 
-            if (!isset($entries[$number]) || ($entries[$number]['issuer'] === '' && $issuer !== '')) {
-                $entries[$number] = [
-                    'number' => $number,
-                    'issuer' => $issuer,
-                ];
+                if (!isset($entries[$number]) || ($entries[$number]['issuer'] === '' && $issuer !== '')) {
+                    $entries[$number] = [
+                        'number' => $number,
+                        'issuer' => $issuer,
+                    ];
+                }
             }
         };
 
