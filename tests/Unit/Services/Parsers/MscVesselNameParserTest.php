@@ -249,6 +249,34 @@ class MscVesselNameParserTest extends TestCase
         $this->assertSame(3, DB::table('clients')->count());
     }
 
+    public function test_tax_id_written_after_the_name_goes_to_the_new_client_and_leaves_the_name_clean(): void
+    {
+        $content = str_replace(
+            [
+                $this->line('CONSIGNEE', 'IMPORTADORA EJEMPLO SRL'),
+                $this->line('NOTIFY', 'IMPORTADORA EJEMPLO SRL'),
+            ],
+            [
+                $this->line('CONSIGNEE', 'LOGISTICA FICTICIA S.A. TAX.ID:99999993-0'),
+                $this->line('NOTIFY', 'CARGAS DEMO S.R.L. RUC 99999994-1'),
+            ],
+            $this->bill('DEMO00000001', [
+                $this->item('TSTU0000001', '40', 'HC', '1', '1000,000', '3750,00'),
+            ], '1000,000', '3750,00', '1')
+        );
+
+        $result = $this->import($this->file($content));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $bill = DB::table('bills_of_lading')->first();
+        $consignee = DB::table('clients')->find($bill->consignee_id);
+        $notify = DB::table('clients')->find($bill->notify_party_id);
+        $this->assertSame('LOGISTICA FICTICIA S.A.', $consignee->legal_name);
+        $this->assertSame('999999930', (string) $consignee->tax_id);
+        $this->assertSame('CARGAS DEMO S.R.L.', $notify->legal_name);
+        $this->assertSame('999999941', (string) $notify->tax_id);
+    }
+
     public function test_unknown_loading_port_fails_with_clear_message_and_creates_nothing(): void
     {
         $before = $this->operationalCounts();
