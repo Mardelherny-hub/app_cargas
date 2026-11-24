@@ -125,7 +125,12 @@
                             <span class="text-sm font-mono text-indigo-600 mr-1">{{ $location->port->code }}</span>
                         @endif
                         <button type="button" 
-                                onclick="openVincularModal({{ $location->id }}, '{{ $location->location_code }}', '{{ $location->description }}', '{{ $location->port_id ?? '' }}', '{{ $location->country_id }}')"
+                                data-location-id="{{ $location->id }}"
+                                data-code="{{ $location->location_code }}"
+                                data-description="{{ $location->description }}"
+                                data-port-id="{{ $location->port_id ?? '' }}"
+                                data-country-id="{{ $location->country_id }}"
+                                onclick="openVincularModal(this.dataset)"
                                 class="px-2 py-1 text-xs {{ $location->port ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }} rounded">
                             {{ $location->port ? '✏️' : 'Vincular' }}
                         </button>
@@ -156,7 +161,8 @@
                         
                         {{-- Delete --}}
                         <form action="{{ route('admin.afip-config.locations.destroy', $location) }}" method="POST" class="inline"
-                              onsubmit="return confirm('¿Eliminar lugar {{ $location->location_code }}?')">
+                              data-confirm="¿Eliminar lugar {{ $location->location_code }}?"
+                              onsubmit="return confirm(this.dataset.confirm)">
                             @csrf
                             @method('DELETE')
                             <button type="submit" class="text-sm text-red-600 hover:text-red-800" title="Eliminar">
@@ -217,17 +223,18 @@
 </div>
 
 <script>
-function openVincularModal(locationId, code, description, currentPortId, countryId) {
+function openVincularModal(data) {
+    var countryId = data.countryId;
     // Solo los puertos del país del lugar operativo.
     document.querySelectorAll('#modal_port_id option[data-country]').forEach(function (option) {
         var otherCountry = option.dataset.country !== String(countryId);
         option.hidden = otherCountry;
         option.disabled = otherCountry;
     });
-    document.getElementById('modalLocationCode').textContent = code;
-    document.getElementById('modalLocationDesc').textContent = description;
-    document.getElementById('vincularForm').action = `/admin/afip-config/locations/${locationId}/vincular-puerto`;
-    document.getElementById('modal_port_id').value = currentPortId || '';
+    document.getElementById('modalLocationCode').textContent = data.code;
+    document.getElementById('modalLocationDesc').textContent = data.description;
+    document.getElementById('vincularForm').action = '/admin/afip-config/locations/' + encodeURIComponent(data.locationId) + '/vincular-puerto';
+    document.getElementById('modal_port_id').value = data.portId || '';
     document.getElementById('vincularModal').classList.remove('hidden');
 }
 

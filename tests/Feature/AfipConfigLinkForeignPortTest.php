@@ -102,7 +102,7 @@ class AfipConfigLinkForeignPortTest extends TestCase
 
         $html = view('admin.afip-config.partials.locations', $data)->render();
         $this->assertStringContainsString('value="20" data-country="2">PY · PYQA1 - PUERTO QA PY', $html);
-        $this->assertStringContainsString("'QA002', 'LUGAR QA PY', '', '2')", $html);
+        $this->assertMatchesRegularExpression('#data-location-id="2"[^>]*data-country-id="2"#', $html);
         $this->assertStringNotContainsString('PYQA2', $html);
         $this->assertStringNotContainsString('BRQA1', $html);
     }
@@ -136,5 +136,45 @@ class AfipConfigLinkForeignPortTest extends TestCase
             '#<select name="port_id" id="port_id" data-url="[^"]*/admin/afip-config/ports/by-country/__COUNTRY__"[^>]*>\s*<option value="">Sin asignar</option>\s*</select>#',
             $html
         );
+    }
+
+    public function test_screen_buttons_pass_texts_with_quotes_safely(): void
+    {
+        $tricky = "PUERTO D'ALVEAR \"QA\" </script> \\ FIN";
+        DB::table('afip_operative_locations')->where('id', 2)->update(['description' => $tricky, 'location_code' => "QA'02"]);
+        DB::table('afip_customs_offices')->insert(['id' => 1, 'code' => "0'1", 'name' => $tricky]);
+        DB::table('ports')->where('id', 20)->update(['code' => "PY'Q1"]);
+        DB::table('port_afip_customs')->insert(['port_id' => 20, 'afip_customs_office_id' => 1]);
+
+        $data = (new AfipConfigController())->index(Request::create('/admin/afip-config'))->getData();
+        $html = view('admin.afip-config.partials.locations', $data)->render()
+            . view('admin.afip-config.partials.customs-offices', $data)->render()
+            . view('admin.afip-config.partials.port-customs', $data)->render();
+
+        $dom = new \DOMDocument();
+        @$dom->loadHTML('<?xml encoding="UTF-8">' . $html);
+        $xpath = new \DOMXPath($dom);
+
+        // Los manejadores no llevan datos: solo leen sus atributos data-.
+        foreach ($xpath->query('//@onclick | //@onsubmit') as $handler) {
+            $this->assertMatchesRegularExpression(
+                '/^(openVincularModal\(this\.dataset\)|editCustomsOffice\(this\.dataset\)|return confirm\(this\.dataset\.confirm\)|close\w+\(\))$/',
+                $handler->value
+            );
+        }
+
+        $link = $xpath->query('//button[@data-location-id="2"]')->item(0);
+        $this->assertSame($tricky, $link->getAttribute('data-description'));
+        $this->assertSame("QA'02", $link->getAttribute('data-code'));
+        $this->assertSame('2', $link->getAttribute('data-country-id'));
+
+        $edit = $xpath->query('//button[@data-office-id="1"]')->item(0);
+        $this->assertSame($tricky, $edit->getAttribute('data-name'));
+        $this->assertSame("0'1", $edit->getAttribute('data-code'));
+
+        $confirms = array_map(fn ($node) => $node->value, iterator_to_array($xpath->query('//@data-confirm')));
+        $this->assertContains("¿Eliminar lugar QA'02?", $confirms);
+        $this->assertContains("¿Eliminar aduana 0'1?", $confirms);
+        $this->assertContains("¿Eliminar vínculo PY'Q1 ↔ 0'1?", $confirms);
     }
 }
