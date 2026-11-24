@@ -414,8 +414,29 @@
                         <h3 class="text-lg font-medium text-gray-900">📜 Importaciones Recientes</h3>
                     </div>
                     <div class="px-6 py-4">
+                        @if(($recentImports ?? collect())->isNotEmpty())
+                            <ul class="divide-y divide-gray-100 mb-3">
+                                @foreach($recentImports as $recent)
+                                    <li class="py-2 text-sm">
+                                        <a href="{{ route('company.manifests.import.show', $recent) }}" class="font-medium text-gray-900 hover:text-blue-600 break-all">
+                                            {{ $recent->display_file_name }}
+                                        </a>
+                                        <div class="text-xs text-gray-500">
+                                            {{ $recent->format_label }}
+                                            · {{ optional($recent->created_at)->format('d/m/Y H:i') }}
+                                            @if($recent->voyage)
+                                                · Viaje {{ $recent->voyage->voyage_number }}
+                                            @endif
+                                            · {{ $recent->status_badge['text'] ?? $recent->status }}
+                                        </div>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        @endif
                         <p class="text-sm text-gray-600">
-                            No hay importaciones recientes. 
+                            @if(($recentImports ?? collect())->isEmpty())
+                                No hay importaciones recientes.
+                            @endif
                             <a href="{{ route('company.manifests.import.history') }}" class="text-blue-600 hover:text-blue-500">
                                 Ver historial completo →
                             </a>

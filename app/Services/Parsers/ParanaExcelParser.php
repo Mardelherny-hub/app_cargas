@@ -1609,8 +1609,8 @@ class ParanaExcelParser implements ManifestParserInterface
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'PARANA Excel',
-            'description' => 'Formato tabular MAERSK con 73 columnas estándar',
+            'name' => 'Paraná (Excel)',
+            'description' => 'Planilla Excel de Paraná con 73 columnas',
             'extensions' => ['xlsx', 'xls'],
             'version' => '1.0',
             'parser_class' => self::class,

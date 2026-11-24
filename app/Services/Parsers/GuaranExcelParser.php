@@ -2228,8 +2228,8 @@ class GuaranExcelParser implements ManifestParserInterface
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'Guaran Excel',
-            'description' => 'Planilla Excel de manifiestos de Guaran Feeder',
+            'name' => 'Guaraní (Excel)',
+            'description' => 'Planilla Excel de manifiestos de Guaraní Feeder',
             'extensions' => ['xlsx', 'xls'],
             'version' => '1.0-real-data-only',
             'parser_class' => self::class,

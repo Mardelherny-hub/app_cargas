@@ -2099,7 +2099,7 @@ protected function findOrCreateContainerType(
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'Navsur Text Format',
+            'name' => 'Navsur (texto)',
             'description' => 'Archivo de texto Navsur con conocimientos y mercadería',
             'extensions' => ['txt'],
             'mime_types' => ['text/plain'],

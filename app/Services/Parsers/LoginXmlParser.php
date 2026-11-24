@@ -2253,7 +2253,7 @@ class LoginXmlParser implements ManifestParserInterface
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'Login XML',
+            'name' => 'Login (XML)',
             'description' => 'Archivo XML de manifiestos de Login',
             'extensions' => ['xml'],
             'version' => '1.0',

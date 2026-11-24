@@ -4036,7 +4036,7 @@ class CmspEdiParser implements ManifestParserInterface
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'CMSP EDI CUSCAR',
+            'name' => 'CMSP (CUSCAR)',
             'description' => 'Archivo CUSCAR de CMSP Paraguay',
             'extensions' => ['edi'],
             'version' => 'D.96B',

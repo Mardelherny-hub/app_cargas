@@ -3723,7 +3723,7 @@ protected function extractPortInfo(array $data): array
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'KLine Data Format',
+            'name' => 'K-Line (.DAT)',
             'description' => 'Formato de archivo de datos .DAT de K-Line',
             'extensions' => ['dat', 'txt'],
             'features' => ['multiple_bills_per_file', 'automatic_voyage_creation', 'port_detection']

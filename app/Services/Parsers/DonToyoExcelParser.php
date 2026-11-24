@@ -647,7 +647,7 @@ class DonToyoExcelParser implements ManifestParserInterface
 
     public function getFormatInfo(): array
     {
-        return ['name' => 'Don Toyo Excel', 'description' => 'Resumen de manifiesto con hojas BUQUE, BLS y CONTENEDORES', 'extensions' => ['xls', 'xlsx']];
+        return ['name' => 'Don Toyo (Excel)', 'description' => 'Resumen de manifiesto con hojas BUQUE, BLS y CONTENEDORES', 'extensions' => ['xls', 'xlsx']];
     }
 
     public function getDefaultConfig(): array

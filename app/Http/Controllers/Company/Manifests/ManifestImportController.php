@@ -69,7 +69,14 @@ class ManifestImportController extends Controller
             ->orderByDesc('id')
             ->get(['id', 'voyage_number', 'lead_vessel_id', 'is_convoy', 'departure_date']);
 
+        $recentImports = ManifestImport::forCompany($company->id)
+            ->with('importTracking', 'voyage:id,voyage_number')
+            ->latest()
+            ->limit(5)
+            ->get();
+
         return view('company.manifests.import', [
+            'recentImports' => $recentImports,
             'supportedFormats' => $supportedFormats,
             'formatStats' => $formatStats,
             'vessels' => $vessels,
