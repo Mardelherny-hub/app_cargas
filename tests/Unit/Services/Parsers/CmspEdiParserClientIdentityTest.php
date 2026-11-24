@@ -1080,6 +1080,32 @@ class CmspEdiParserClientIdentityTest extends TestCase
         $this->assertNull($individual[1]);
     }
 
+    public function test_nad_address_after_phone_component_reaches_the_party(): void
+    {
+        $parser = new class extends CmspEdiParserCompat {
+            public function partyAddressForTest(array $segment): ?string
+            {
+                $container = ['references' => ['bill_number' => 'BL-DEMO'], 'parties' => []];
+                $this->parseParty($segment, $container);
+
+                return $this->cleanFileAddress($container['parties']['consignee']['address'] ?? null);
+            }
+        };
+
+        $this->assertSame(
+            'MAYOR FICTICIO 583 CIUDAD DEMO-PARAGUAY',
+            $parser->partyAddressForTest([
+                'elements' => ['CN', '', 'EMPRESA DEMO S.A.:PHONE 900.000:MAYOR FICTICIO 583:RUC 99999993-0:CIUDAD DEMO-PARAGUAY'],
+            ])
+        );
+        $this->assertSame(
+            '15 DE EJEMPLO 432 ENTRE CALLE A Y',
+            $parser->partyAddressForTest([
+                'elements' => ['CN', '', 'EMPRESA DEMO S.A.:RUC. 99999994-1:MAIL?::DEMO@EJEMPLO.COM.PY:15 DE EJEMPLO 432 ENTRE CALLE A Y'],
+            ])
+        );
+    }
+
     public function test_blank_adz_does_not_erase_tax_id_extracted_from_nad(): void
     {
         $parser = new class extends CmspEdiParserCompat {

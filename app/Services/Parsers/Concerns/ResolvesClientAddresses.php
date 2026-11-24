@@ -197,8 +197,9 @@ trait ResolvesClientAddresses
 
     /**
      * Limpia la dirección cruda del archivo: quita marcadores de identificación
-     * fiscal con su número (RUC, R.U.C., CUIT, TAX ID, RUT, VAT), corta la cola
-     * de contacto (TEL/PH/PHONE/FAX/CEL/ATTN/EMAIL/MAIL), quita emails sueltos
+     * fiscal con su número (RUC, R.U.C., CUIT, TAX ID, RUT, VAT), descarta los
+     * renglones de contacto que preceden al domicilio, corta la cola de contacto
+     * (TEL/PH/PHONE/FAX/CEL/ATTN/EMAIL/MAIL) que lo sigue, quita emails sueltos
      * y etiquetas iniciales (ADD:/ADDRESS:), colapsa restos y recorta a 255.
      * Devuelve null si tras limpiar no queda dirección (ej. celda que solo
      * traía "CUIT: 30688415531"). Una dirección ya limpia pasa intacta.
@@ -210,8 +211,9 @@ trait ResolvesClientAddresses
             return null;
         }
 
-        // Multilínea a una sola línea (TFP trae domicilios con saltos)
-        $s = str_replace(["\r\n", "\r", "\n"], ' ', $raw);
+        // TFP trae el domicilio en varios renglones y CUSCAR en componentes
+        // (llegan como renglones). Se conservan hasta cortar el contacto.
+        $s = str_replace(["\r\n", "\r"], "\n", $raw);
 
         // Dos puntos fullwidth (U+FF1A) de archivos de origen chino -> ASCII
         $s = str_replace('：', ':', $s);
@@ -221,14 +223,51 @@ trait ResolvesClientAddresses
 
         // 1. Marcadores fiscales + su número: RUC, R.U.C., CUIT, TAX ID, TAXID, TAX.ID, TAXID1,
         //    RUT, VAT NO, RUC / TAX ID, ID.FISCAL, RUC NUMBER/NRO/NO. Separadores: : espacio - + =
-        $s = preg_replace('/\b(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|NIT|C[NP]{2}J|TAX\s*\.?\s*ID(?:1(?!\d))?|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NBR\.?|NRO\.?|NO\.?)?\s*[:\s\-+=\.]\s*[0-9][0-9\-\.\s\/]*/i', ' ', $s) ?? $s;
+        $s = preg_replace('/\b(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|NIT|C[NP]{2}J|TAX\s*\.?\s*ID(?:1(?!\d))?|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NBR\.?|NRO\.?|NO\.?)?\s*[:\s\-+=\.]\s*[0-9][0-9\-\.\h\/]*/i', ' ', $s) ?? $s;
 
         // 1b. TAX NUMBER / VAT con prefijo alfabetico de pais (ej. "TAX NUMBER:DE 120151991").
         //     Acotada a estos marcadores: un prefijo alfa generico se comeria calles ("RUTA 2").
         $s = preg_replace('/\b(TAX\s*NUMBER|VAT(\s*NO\.?)?)\s*[:\s\-+=\.]\s*[A-Z]{1,3}\s*[0-9][0-9\-\.\s\/]*/i', ' ', $s) ?? $s;
 
-        // 2. Cortar la cola desde el primer marcador de contacto (incluye variantes ATN/ATT/CTC)
-        $s = preg_replace('/\b(TEL|PH|PHONE|FAX|CEL|ATTN|ATN|ATTE|ATT|ATENCION|CTC|E-?MAIL|MAIL|CONTACTO?)\b\s*[:.]?.*$/i', '', $s) ?? $s;
+        $contact = '(TEL|TELEFONO|TELF|T\/F|PH|PHONE|FAX|CEL|ATTN|ATN|ATTE|ATT|ATENCION|CTC|E-?MAIL|MAIL|CONTACTO?)';
+
+        // 2a. Contacto ANTES del domicilio: se descartan sus renglones (marcador,
+        //     email, y el renglón sin números que continúa el nombre de contacto),
+        //     porque el domicilio viene después ("PH: 595 985 717 118" /
+        //     "EUSEBIO LILLO 1331"). Si el renglón del marcador sigue con una calle,
+        //     se conserva desde ahí ("ATN. SR. X AV. BOGGIANI 7180").
+        $street = '\b(?:AV|AVDA|AVENIDA|CALLE|RUTA)\b\.?\s';
+        $lines = explode("\n", $s);
+        $afterContact = false;
+        while ($lines !== []) {
+            $first = trim($lines[0], " \t,;:.-");
+
+            if (
+                $first === ''
+                || preg_match('/^[^\s@]+@\S+$/', $first)
+                || ($afterContact && !preg_match('/\d/', $first) && !preg_match('/^' . $street . '/i', $first))
+            ) {
+                array_shift($lines);
+                continue;
+            }
+
+            if (!preg_match('/^' . $contact . '\b/i', $first)) {
+                break;
+            }
+
+            $afterContact = true;
+
+            if (preg_match('/' . $street . '.*$/i', $first, $fromStreet)) {
+                $lines[0] = $fromStreet[0];
+                break;
+            }
+
+            array_shift($lines);
+        }
+        $s = implode(' ', $lines);
+
+        // 2b. Contacto DESPUÉS del domicilio: cortar la cola desde el primer marcador
+        $s = preg_replace('/\b' . $contact . '\b\s*[:.]?.*$/i', '', $s) ?? $s;
 
         // 3. Bloques <email o nombre> completos, y emails sueltos remanentes
         $s = preg_replace('/<[^>]*>/', ' ', $s) ?? $s;

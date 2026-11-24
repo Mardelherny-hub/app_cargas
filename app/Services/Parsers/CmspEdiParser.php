@@ -1160,9 +1160,13 @@ class CmspEdiParser implements ManifestParserInterface
                 }
             }
 
-            $partyAddress = count($partyParts) > 1
-                ? $this->cleanEdifactText(implode(' ', array_slice($partyParts, 1)))
-                : null;
+            // Un renglón por componente: el contacto ("PHONE 909.101", "MAIL:")
+            // ocupa su propio componente y el domicilio sigue en los demás.
+            $addressParts = array_filter(
+                array_map(fn ($part) => $this->cleanEdifactText($part), array_slice($partyParts, 1)),
+                static fn (string $part) => $part !== ''
+            );
+            $partyAddress = $addressParts !== [] ? implode("\n", $addressParts) : null;
 
             [$resolvedPartyName, $embeddedAddress] =
                 $this->splitCuscarPartyNameAndAddress($partyName);
@@ -1171,7 +1175,7 @@ class CmspEdiParser implements ManifestParserInterface
                 $partyName = $resolvedPartyName;
                 $partyAddress = trim(
                     $embeddedAddress
-                    . ($partyAddress !== null ? ' ' . $partyAddress : '')
+                    . ($partyAddress !== null ? "\n" . $partyAddress : '')
                 );
             }
 
