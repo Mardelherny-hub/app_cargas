@@ -268,6 +268,7 @@ class BillOfLadingController extends Controller
         }
 
         $bulkDeleteVesselInfo = null;
+        $bulkDeleteBlocked = null;
         if ($request->filled('shipment_id') && $this->canPerform('view_cargas') && $this->hasCompanyRole('Cargas')) {
             $shipment = Shipment::with('voyage', 'vessel')
                 ->whereHas('voyage', fn ($q) => $q->where('company_id', $company->id))
@@ -276,7 +277,14 @@ class BillOfLadingController extends Controller
                 $shipmentIds = Shipment::where('voyage_id', $shipment->voyage_id)
                     ->where('vessel_id', $shipment->vessel_id)->pluck('id');
                 $vesselBills = BillOfLading::with('shipment.voyage')->whereIn('shipment_id', $shipmentIds)->get();
-                if ($vesselBills->isNotEmpty() && $vesselBills->every(fn ($bill) => $this->billDeletionReason($bill) === null)) {
+                $blockedReason = $vesselBills->map(fn ($bill) => $this->billDeletionReason($bill))->filter()->first();
+                if ($vesselBills->isNotEmpty() && $blockedReason !== null) {
+                    $bulkDeleteBlocked = [
+                        'vessel' => $shipment->vessel?->name,
+                        'reason' => $blockedReason,
+                    ];
+                }
+                if ($vesselBills->isNotEmpty() && $blockedReason === null) {
                     $bulkDeleteVesselInfo = [
                         'voyage' => $shipment->voyage,
                         'vessel' => $shipment->vessel,
@@ -293,6 +301,7 @@ class BillOfLadingController extends Controller
             'billsOfLading',
             'canDeleteBillIds',
             'bulkDeleteVesselInfo',
+            'bulkDeleteBlocked',
             'filterData',
             'stats',
             'company'
@@ -854,9 +863,12 @@ $data['is_house_bill'] = isset($data['is_house_bill']) && $data['is_house_bill']
      */
     private function getBillPermissions(BillOfLading $billOfLading): array
     {
+        $deletionReason = $this->billDeletionReason($billOfLading);
+
         return [
             'canEdit' => $this->hasCompanyRole('Cargas') && $billOfLading->canBeEdited(),
-            'canDelete' => $this->billDeletionReason($billOfLading) === null,
+            'canDelete' => $deletionReason === null,
+            'deleteBlockedReason' => $deletionReason,
             'canVerify' => $this->hasCompanyRole('Cargas') && !$billOfLading->verified_at && $billOfLading->status === 'draft',
             'canSendToArgentina' => $this->hasCompanyRole('Cargas') && $billOfLading->isReadyForWebservice() && !$billOfLading->argentina_sent_at,
             'canSendToParaguay' => $this->hasCompanyRole('Cargas') && $billOfLading->isReadyForWebservice() && !$billOfLading->paraguay_sent_at,

@@ -42,6 +42,10 @@ class ManifestImportRevertServiceTest extends TestCase
         Schema::create('companies', function (Blueprint $t) {
             $t->id(); $t->string('ws_environment')->nullable(); $t->timestamps();
         });
+        Schema::create('vessels', function (Blueprint $t) {
+            $t->id(); $t->string('name');
+        });
+        DB::table('vessels')->insert(['id' => self::BARGE, 'name' => 'BARCAZA QA']);
         Schema::create('voyages', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->string('voyage_number');
             $t->string('status')->default('planning'); $t->unsignedBigInteger('lead_vessel_id')->nullable();
@@ -405,7 +409,7 @@ class ManifestImportRevertServiceTest extends TestCase
         ]);
 
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('registros vigentes en AFIP');
+        $this->expectExceptionMessage('La embarcación BARCAZA QA tiene registros vigentes en AFIP para este viaje: MIC/DTA M1 registrado en AFIP sin anulación aprobada.');
         $this->revert($added);
     }
 

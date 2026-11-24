@@ -107,6 +107,13 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
             </div>
         @endif
 
+        @if(!empty($bulkDeleteBlocked))
+            <div class="bg-amber-50 border border-amber-200 rounded-lg mb-6 p-4 text-sm text-amber-900">
+                <span class="font-semibold">No se pueden eliminar los conocimientos de {{ $bulkDeleteBlocked['vessel'] ?? 'esta embarcación' }}.</span>
+                {{ $bulkDeleteBlocked['reason'] }}
+            </div>
+        @endif
+
         {{-- FILTROS DE CONOCIMIENTOS --}}
         <div class="bg-white rounded-lg shadow-sm mb-6 p-4">
             <form method="GET">

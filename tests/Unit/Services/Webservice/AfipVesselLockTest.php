@@ -256,4 +256,19 @@ class AfipVesselLockTest extends TestCase
         $this->tx('RegistrarMicDta', ['environment' => 'production', 'external_reference' => 'M1']);
         $this->assertTrue($this->inspect()['locked']);
     }
+
+    public function test_messages_avoid_internal_method_names(): void
+    {
+        $this->tx('RegistrarMicDta', ['external_reference' => 'QA-MIC-1']);
+        $this->tx('RegistrarTitMicDta');
+        $this->tx('RegistrarTitEnvios', ['request_xml' => '<sin-titulos/>']);
+
+        $messages = array_column($this->inspect()['reasons'], 'message');
+
+        $this->assertSame([
+            'MIC/DTA QA-MIC-1 registrado en AFIP sin anulación aprobada.',
+            'MIC/DTA registrado en AFIP sin número identificable y sin anulación aprobada.',
+            'Registro de títulos en AFIP sin títulos identificables en el envío.',
+        ], $messages);
+    }
 }
