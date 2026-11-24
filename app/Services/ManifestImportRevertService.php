@@ -271,14 +271,14 @@ class ManifestImportRevertService
         }
 
         $steps = [
-            'bills' => [BillOfLading::class, 'conocimientos de embarque'],
-            'items' => [ShipmentItem::class, 'items de carga'],
-            'containers' => [Container::class, 'contenedores'],
-            'shipments' => [Shipment::class, 'envíos'],
-            'voyages' => [Voyage::class, 'viajes'],
+            'bills' => [BillOfLading::class, 'conocimiento de embarque', 'conocimientos de embarque'],
+            'items' => [ShipmentItem::class, 'ítem de carga', 'ítems de carga'],
+            'containers' => [Container::class, 'contenedor', 'contenedores'],
+            'shipments' => [Shipment::class, 'carga', 'cargas'],
+            'voyages' => [Voyage::class, 'viaje', 'viajes'],
         ];
 
-        foreach ($steps as $key => [$model, $label]) {
+        foreach ($steps as $key => [$model, $singular, $plural]) {
             // Un contenedor que sigue vinculado a ítems de otro viaje ya existía:
             // los parsers lo reutilizan por número. Solo se borra si quedó sin vínculos.
             if ($key === 'containers' && $pivot && !empty($created[$key])) {
@@ -297,7 +297,7 @@ class ManifestImportRevertService
             Log::info('REVERT - Eliminados', ['type' => $key, 'count' => $count]);
 
             if ($count > 0) {
-                $summary[] = "{$count} {$label}";
+                $summary[] = $count . ' ' . ($count === 1 ? $singular : $plural);
             }
         }
 

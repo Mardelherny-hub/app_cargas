@@ -590,7 +590,7 @@ class ManifestImportController extends Controller
         if (!empty($stats)) {
             $details = [];
             if (isset($stats['bills'])) $details[] = "{$stats['bills']} conocimientos";
-            if (isset($stats['shipments'])) $details[] = "{$stats['shipments']} envíos";
+            if (isset($stats['shipments'])) $details[] = "{$stats['shipments']} cargas";
             if (isset($stats['items'])) $details[] = "{$stats['items']} items";
             
             if (!empty($details)) {

@@ -431,10 +431,9 @@
                         </div>
                         <p class="text-sm text-gray-700 mb-2">Se eliminarán:</p>
                         <ul class="text-sm text-gray-600 list-disc list-inside space-y-1 mb-4" data-revert-mode="import">
-                            <li>Conocimientos de embarque (Bills of Lading)</li>
-                            <li>Items de carga (Shipment Items)</li>
-                            <li>Contenedores (si aplica)</li>
-                            <li>El viaje creado</li>
+                            <li>Los conocimientos de embarque y sus ítems de carga</li>
+                            <li>Los contenedores que no use otro viaje</li>
+                            <li>La carga y el viaje que creó este archivo</li>
                         </ul>
                         <ul class="text-sm text-gray-600 list-disc list-inside space-y-1 mb-4 hidden" data-revert-mode="added">
                             <li>Los conocimientos, ítems y contenedores que agregó este archivo</li>
