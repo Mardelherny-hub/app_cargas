@@ -148,6 +148,21 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertSame(8, (int) $links['TSTU0000003']);
     }
 
+    public function test_seals_separated_by_slash_are_stored_as_separate_seals(): void
+    {
+        $sheets = $this->sheets();
+        $sheets['CONTENEDORES'][1][3] = 'QA0000000001/QA0000002 / QA0000003/QA0000000004';
+        $sheets['CONTENEDORES'][2][3] = 'QA0000005/QA0000005';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $seals = DB::table('containers')->orderBy('container_number')->pluck('shipper_seal', 'container_number');
+        $this->assertSame('QA0000000001 QA0000002 QA0000003 QA0000000004', $seals['TSTU0000001']);
+        $this->assertSame('QA0000005', $seals['TSTU0000002']);
+        $this->assertSame('SEAL0003', $seals['TSTU0000003']);
+    }
+
     public function test_weight_comes_from_the_bls_sheet(): void
     {
         $result = $this->import($this->workbook($this->sheets()));

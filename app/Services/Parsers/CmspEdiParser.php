@@ -567,6 +567,7 @@ class CmspEdiParser implements ManifestParserInterface
                 //   CU = Aduana
                 //   CA = transportista
                 //   AB = emisor desconocido
+                //   otros emisores: additional_seals
                 case 'SEL':
                     if ($currentEquipment !== null) {
                         $seal = trim($segment['elements'][0] ?? '');
@@ -575,19 +576,31 @@ class CmspEdiParser implements ManifestParserInterface
                         $issuerCode = strtoupper(trim($issuerParts[0] ?? ''));
 
                         if ($seal !== '') {
+                            // Sin emisor o con emisor desconocido (AB) el
+                            // archivo no indica el rol: va como precinto del
+                            // cargador.
                             $sealField = match ($issuerCode) {
-                                'SH' => 'shipper_seal',
+                                'SH', 'AB', '' => 'shipper_seal',
                                 'CU' => 'customs_seal',
                                 'CA' => 'carrier_seal',
                                 default => null,
                             };
 
-                            // Los campos específicos admiten un precinto.
-                            // Si ya existe otro del mismo tipo, conservar el
-                            // siguiente en additional_seals en vez de pisarlo.
-                            if ($sealField !== null
-                                && empty($this->parsedData['equipment'][$currentEquipment][$sealField])) {
-                                $this->parsedData['equipment'][$currentEquipment][$sealField] = $seal;
+                            if (mb_strlen($seal) > 15) {
+                                $this->stats['warnings'][] = "Contenedor {$currentEquipment}: "
+                                    . "el precinto {$seal} supera 15 caracteres.";
+                            }
+
+                            // Varios precintos del mismo rol quedan en el
+                            // mismo campo, separados por espacio.
+                            if ($sealField !== null) {
+                                $current = trim((string) $this->parsedData['equipment'][$currentEquipment][$sealField]);
+                                $known = $current === '' ? [] : preg_split('/\s+/', $current);
+
+                                if (!in_array($seal, $known, true)) {
+                                    $this->parsedData['equipment'][$currentEquipment][$sealField] =
+                                        $current === '' ? $seal : $current . ' ' . $seal;
+                                }
                             } else {
                                 $this->parsedData['equipment'][$currentEquipment]['additional_seals'][] = [
                                     'seal_number' => $seal,

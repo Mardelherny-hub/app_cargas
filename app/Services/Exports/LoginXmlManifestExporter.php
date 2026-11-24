@@ -503,13 +503,18 @@ class LoginXmlManifestExporter
             $this->additionalSeals($container)
         );
 
-        return array_values(array_unique(array_filter(
-            array_map(
-                static fn ($seal) => trim((string) $seal),
-                $seals
-            ),
-            static fn ($seal) => $seal !== ''
-        )));
+        // Un campo puede traer varios precintos separados por espacio, igual
+        // que los lee el MIC/DTA.
+        $split = [];
+        foreach ($seals as $seal) {
+            foreach (preg_split('/\s+/', trim((string) $seal)) ?: [] as $part) {
+                if ($part !== '') {
+                    $split[] = $part;
+                }
+            }
+        }
+
+        return array_values(array_unique($split));
     }
 
     private function additionalSeals(Container $container): array
