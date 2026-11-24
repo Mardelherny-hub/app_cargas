@@ -838,6 +838,44 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
 
 
 
+    private function sourcePackagingCode(array $data, string $billNumber): ?string
+    {
+        $codes = [];
+        foreach ($data['CMMDREC0'] ?? [] as $record) {
+            if (!preg_match('/NAUT\d+[ \t]*(.*?)(?=[ \t]*\d+(?:KGS|M3)(?![A-Z])|$)/i', $record, $match)) {
+                continue;
+            }
+
+            $label = strtoupper(trim($match[1]));
+            if ($label === '') {
+                continue;
+            }
+
+            $codes[$label] = match ($label) {
+                'UNIT', 'UNITS', 'UNIT(S)' => 'UN',
+                'BAG', 'BAGS', 'BAG(S)' => 'BG',
+                'BOX', 'BOXES', 'BOX(ES)' => 'BX',
+                'BUNDLE', 'BUNDLES', 'BUNDLE(S)' => 'BE',
+                'CARTON', 'CARTONS', 'CARTON(S)' => 'CT',
+                'COIL', 'COILS', 'COIL(S)' => 'CL',
+                'PACKAGE', 'PACKAGES', 'PACKAGE(S)' => 'PK',
+                'PALLET', 'PALLETS', 'PALLET(S)' => 'PX',
+                'PIECE', 'PIECES', 'PIECE(S)' => 'PP',
+                default => null,
+            };
+        }
+
+        $uniqueCodes = array_unique(array_values($codes));
+        if (count($uniqueCodes) > 1 || in_array(null, $uniqueCodes, true)) {
+            $labels = implode(', ', array_keys($codes));
+            $this->stats['warnings'][] = "BL {$billNumber}: embalaje {$labels} sin equivalencia EDIFACT inequívoca.";
+
+            return null;
+        }
+
+        return $uniqueCodes[0] ?? null;
+    }
+
     /**
      * Crear ShipmentItems - CORREGIDO: usar bill_of_lading_id y campos obligatorios
      */
@@ -882,6 +920,8 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 . "manualmente.";
         }
 
+        $packagingCode = $this->sourcePackagingCode($data, $bill->bill_number);
+
         foreach ($descriptions as $description) {
             // CORREGIDO: Verificar duplicado line_number sin throw Exception
             $existingItem = ShipmentItem::where('bill_of_lading_id', $bill->id)
@@ -905,6 +945,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
                 'item_description' => $description,
                 // FIX bugs #3, #4: K-Line no contenedorizado
                 'cargo_type_id' => $this->resolveCargoTypeId($data, $bill->bill_number),     // OTRA CARGA NO CONTENEDORIZADA
+                'packaging_code' => $packagingCode,
                 'packaging_type_id' => $this->resolvePackagingTypeId($data), // NO RETORNABLE
                 'package_quantity' => $realMeasurements['package_quantity'], // REAL
                 'gross_weight_kg' => $realMeasurements['gross_weight_kg'], // REAL
