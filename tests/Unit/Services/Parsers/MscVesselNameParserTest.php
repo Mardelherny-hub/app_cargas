@@ -59,7 +59,7 @@ class MscVesselNameParserTest extends TestCase
         return $label . "\t" . $value . "\t\t\n";
     }
 
-    private function item(string $container, string $size, string $type, string $packages, string $gross, string $tare): string
+    private function item(string $container, string $size, string $type, string $packages, string $gross, string $tare, string $seal = 'SEAL0001', string $seal2 = ''): string
     {
         return $this->line('NUMBER OUTER PACKAGES', $packages)
             . $this->line('KIND OUTER PACKAGES', 'PALLETS')
@@ -69,8 +69,8 @@ class MscVesselNameParserTest extends TestCase
             . $this->line('GROSS WEIGHT UNIT', 'kgs')
             . $this->line('MARCS & NUMBERS')
             . $this->line('CONTAINER NR.', $container)
-            . $this->line('SEAL NR.', 'SEAL0001')
-            . $this->line('SEAL NR.')
+            . $this->line('SEAL NR.', $seal)
+            . $this->line('SEAL NR.', $seal2)
             . $this->line('SIZE', $size)
             . $this->line('CONDITION', 'Port to Port')
             . $this->line('SOC CONTAINERS', 'N')
@@ -275,6 +275,50 @@ class MscVesselNameParserTest extends TestCase
         $this->assertSame('999999930', (string) $consignee->tax_id);
         $this->assertSame('CARGAS DEMO S.R.L.', $notify->legal_name);
         $this->assertSame('999999941', (string) $notify->tax_id);
+    }
+
+    public function test_file_seals_reach_the_shipper_seal_read_by_micdta(): void
+    {
+        $content = $this->bill('DEMO00000001', [
+            $this->item('TSTU0000001', '40', 'HC', '10', '10000,000', '3750,00', 'QA500001', 'QA500002 QA500003'),
+            $this->item('TSTU0000002', '20', 'DV', '5', '5000,000', '2150,00', 'QA500004'),
+        ], '15000,000', '5900,00', '15')
+            . $this->bill('DEMO00000002', [
+                $this->item('TSTU0000001', '40', 'HC', '3', '2500,500', '3750,00', 'QA500001', 'QA500005'),
+            ], '2500,500', '3750,00', '3');
+
+        $result = $this->import($this->file(str_replace("\n", "\r\n", $content)));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame('QA500001 QA500002 QA500003 QA500005', Container::where('container_number', 'TSTU0000001')->value('shipper_seal'));
+        $this->assertSame('QA500004', Container::where('container_number', 'TSTU0000002')->value('shipper_seal'));
+        $this->assertNull(Container::where('container_number', 'TSTU0000001')->value('customs_seal'));
+        $this->assertSame([], array_values(array_filter($result->warnings, fn ($w) => str_contains($w, 'precinto'))));
+    }
+
+    public function test_long_seal_is_kept_whole_with_a_warning(): void
+    {
+        $content = $this->bill('DEMO00000001', [
+            $this->item('TSTU0000001', '40', 'HC', '1', '1000,000', '3750,00', 'QA6000000000000001'),
+        ], '1000,000', '3750,00', '1');
+
+        $result = $this->import($this->file(str_replace("\n", "\r\n", $content)));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame('QA6000000000000001', Container::where('container_number', 'TSTU0000001')->value('shipper_seal'));
+        $this->assertContains('Contenedor TSTU0000001: el precinto QA6000000000000001 supera 15 caracteres.', $result->warnings);
+    }
+
+    public function test_existing_container_seal_is_not_changed_and_is_reported(): void
+    {
+        $this->addPreviousVoyage('TSTU0000001', '40HC');
+
+        $result = $this->import($this->file($this->manifest()));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertNull(Container::where('container_number', 'TSTU0000001')->value('shipper_seal'));
+        $this->assertSame('SEAL0001', Container::where('container_number', 'TSTU0000002')->value('shipper_seal'));
+        $this->assertContains('Contenedor TSTU0000001: ya existía y no tiene el precinto SEAL0001 del archivo; no se modificó.', $result->warnings);
     }
 
     public function test_unknown_loading_port_fails_with_clear_message_and_creates_nothing(): void
