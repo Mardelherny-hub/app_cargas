@@ -98,6 +98,24 @@ class ResolvesClientAddressesTest extends TestCase
         );
     }
 
+    public function test_taxid1_and_tax_dot_id_labels_are_removed_with_their_number(): void
+    {
+        $this->assertSame(
+            'TENIENTE VERA 3148/CASI CORNEL ESCURRA BARRIO: YKUA SATI ASUNCION . PARAGUAY',
+            $this->resolver()->cleanForClient(
+                new Client(),
+                'TENIENTE VERA 3148/CASI CORNEL ESCURRA BARRIO: YKUA SATI ASUNCION . PARAGUAY TAXID1 : 80044515-5'
+            )
+        );
+        $this->assertSame(
+            'AV. SAN MARTIN 504 ASUNCION',
+            $this->resolver()->cleanForClient(
+                new Client(),
+                'AV. SAN MARTIN 504 ASUNCION TAX.ID:80027640-0'
+            )
+        );
+    }
+
     public function test_same_address_does_not_create_specific_contact(): void
     {
         $primary = new ClientContactData();
