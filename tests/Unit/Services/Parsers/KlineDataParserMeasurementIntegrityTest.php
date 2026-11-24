@@ -2,12 +2,19 @@
 
 namespace Tests\Unit\Services\Parsers;
 
+use App\Models\BillOfLading;
 use App\Services\Parsers\KlineDataParser;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use ReflectionMethod;
+use ReflectionProperty;
 use Tests\TestCase;
+use Tests\Unit\Services\Parsers\Concerns\BuildsManifestImportSchema;
 
 class KlineDataParserMeasurementIntegrityTest extends TestCase
 {
+    use BuildsManifestImportSchema;
+
     private function invokeParser(string $method, array $arguments = []): mixed
     {
         $parser = new KlineDataParser();
@@ -20,6 +27,28 @@ class KlineDataParserMeasurementIntegrityTest extends TestCase
         $reflection->setAccessible(true);
 
         return $reflection->invokeArgs($parser, $arguments);
+    }
+
+    public function test_packaging_code_uses_only_the_structured_source_label(): void
+    {
+        $this->useIsolatedDatabase();
+        DB::table('cargo_types')->insert(['code' => 'VEH001', 'name' => 'VEHICULOS', 'active' => true]);
+        DB::table('packaging_types')->insert(['code' => 'N', 'name' => 'NO RETORNABLE', 'active' => true]);
+        $parser = new KlineDataParser();
+        $create = new ReflectionMethod($parser, 'createShipmentItems');
+        $billId = 1;
+        foreach (['UNIT(S)' => 'UN', 'VEHICLES' => 'VN', 'SPECIAL' => null, '' => null] as $label => $expected) {
+            $bill = (new BillOfLading())->forceFill(['id' => $billId++, 'bill_number' => 'QA-KLINE']);
+            $data = [
+                'CMMDREC0' => ["000001NAUT00000001{$label} 00001000000KGS000000000M3"],
+                'DESCREC0' => ['000001VEHICLES IN CARTONS'],
+            ];
+            $items = Model::withoutEvents(fn () => $create->invoke($parser, $bill, $data));
+
+            $this->assertSame($expected, $items[0]->fresh()->packaging_code);
+        }
+        $stats = (new ReflectionProperty($parser, 'stats'))->getValue($parser);
+        $this->assertSame(['BL QA-KLINE: embalaje SPECIAL sin equivalencia EDIFACT inequívoca.'], $stats['warnings']);
     }
 
     public function test_missing_measurements_remain_unknown(): void
