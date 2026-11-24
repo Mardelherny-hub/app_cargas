@@ -3048,6 +3048,7 @@ class CmspEdiParser implements ManifestParserInterface
                     'net_weight_kg' => $this->pesoNetoContenedor($itemData),
                     'volume_m3' => $this->volumenContenedor($itemData),
                     'verified_gross_mass_kg' => $this->verifiedGrossMassForContainer($containerNumber),
+                    'source_seals' => $this->equipmentSourceSeals($containerNumber),
                 ]);
             }
 
@@ -3102,6 +3103,7 @@ class CmspEdiParser implements ManifestParserInterface
                 'net_weight_kg' => 0,
                 'volume_m3' => 0,
                 'verified_gross_mass_kg' => null,
+                'source_seals' => $this->equipmentSourceSeals($containerNumber),
             ]);
 
             $this->stats['processed_containers']++;
@@ -3246,9 +3248,40 @@ class CmspEdiParser implements ManifestParserInterface
             'net_weight_kg' => $this->pesoNetoContenedor($itemData),
             'volume_m3' => $this->volumenContenedor($itemData),
             'verified_gross_mass_kg' => $this->verifiedGrossMassForContainer($containerNumber),
+            'source_seals' => $this->equipmentSourceSeals($containerNumber),
         ]);
 
         $this->stats['processed_containers']++;
+    }
+
+    /**
+     * Precintos que el archivo declara para el contenedor (todos sus SEL), como
+     * lista de números para el vínculo de este conocimiento. El rol queda en los
+     * campos del contenedor. Null si el archivo no trae precintos.
+     */
+    protected function equipmentSourceSeals(string $containerNumber): ?string
+    {
+        $equipment = $this->parsedData['equipment'][$containerNumber] ?? [];
+        $seals = [];
+
+        foreach (['shipper_seal', 'customs_seal', 'carrier_seal'] as $field) {
+            foreach (preg_split('/\s+/', trim((string) ($equipment[$field] ?? ''))) ?: [] as $seal) {
+                if ($seal !== '') {
+                    $seals[$seal] = $seal;
+                }
+            }
+        }
+
+        foreach ($equipment['additional_seals'] ?? [] as $additional) {
+            $seal = trim((string) ($additional['seal_number'] ?? ''));
+            if ($seal !== '') {
+                $seals[$seal] = $seal;
+            }
+        }
+
+        return $seals === []
+            ? null
+            : json_encode(array_values($seals), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     /**

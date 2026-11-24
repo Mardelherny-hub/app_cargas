@@ -2,13 +2,63 @@
 
 namespace Tests\Unit\Services\Parsers;
 
+use App\Models\Container;
+use App\Models\ShipmentItem;
 use App\Services\Parsers\CmspEdiParser;
+use Illuminate\Support\Facades\DB;
 use ReflectionMethod;
 use ReflectionProperty;
 use Tests\TestCase;
+use Tests\Unit\Services\Parsers\Concerns\BuildsManifestImportSchema;
 
 class CmspEdiParserSealTest extends TestCase
 {
+    use BuildsManifestImportSchema;
+
+    public function test_link_of_an_existing_container_keeps_the_seals_of_this_file(): void
+    {
+        $this->useIsolatedDatabase();
+        $container = Container::create(['container_number' => 'ABCU1234567', 'shipper_seal' => 'QA000099']);
+        $item = ShipmentItem::create(['bill_of_lading_id' => 1, 'line_number' => 1]);
+        $item->setRelation('containers', collect());
+
+        $parser = $this->parserWith(
+            "EQD+CN+ABCU1234567+22G1:6346:5++2+5'\n"
+            . "SEL+QA500001+CU'\n"
+            . "SEL+QA500002+CA'\n"
+            . "SEL+QA500003+AB'\n"
+        );
+        (new ReflectionMethod($parser, 'createContainer'))->invoke($parser, 'ABCU1234567', ['package_info' => '10:PK', 'gross_weight_kg' => 1000], $item);
+
+        $this->assertSame(
+            ['QA500003', 'QA500001', 'QA500002'],
+            json_decode(DB::table('container_shipment_item')->value('source_seals'), true)
+        );
+        $this->assertSame('QA000099', $container->fresh()->shipper_seal);
+    }
+
+    public function test_container_without_seals_leaves_the_link_without_source_seals(): void
+    {
+        $parser = $this->parserWith("EQD+CN+ABCU1234567+22G1:6346:5++2+5'\n");
+
+        $this->assertNull((new ReflectionMethod($parser, 'equipmentSourceSeals'))->invoke($parser, 'ABCU1234567'));
+    }
+
+    private function parserWith(string $segments): CmspEdiParser
+    {
+        $tmp = tempnam(sys_get_temp_dir(), 'cuscar-sel-');
+        file_put_contents($tmp, "UNH+1+CUSCAR:D:96B:UN'\n" . $segments);
+
+        try {
+            $parser = new CmspEdiParser();
+            (new ReflectionMethod($parser, 'parseEdiFile'))->invoke($parser, $tmp);
+            (new ReflectionMethod($parser, 'extractStructuredData'))->invoke($parser);
+
+            return $parser;
+        } finally {
+            @unlink($tmp);
+        }
+    }
     public function test_seal_without_known_issuer_goes_to_shipper_seal(): void
     {
         [$equipment] = $this->parse(

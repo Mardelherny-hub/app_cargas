@@ -230,6 +230,27 @@ class GuaranExcelParserContainerIntegrityTest extends TestCase
         $this->assertSame('planned', $pivot['status']);
         $this->assertSame(50, $pivot['container_id']);
         $this->assertSame(60, $pivot['shipment_item_id']);
+        $this->assertNull($pivot['source_seals']);
+    }
+
+    public function test_container_item_relation_keeps_the_seals_of_this_file(): void
+    {
+        $container = new Container();
+        $container->setAttribute('id', 50);
+        $container->setAttribute('shipper_seal', 'QA000099');
+
+        $item = new ShipmentItem();
+        $item->setAttribute('id', 60);
+
+        $pivot = $this->invoke(
+            'buildContainerItemPivotData',
+            [$container, $item, 'QA10000001, QA100002, QA.100003']
+        );
+
+        $this->assertSame(
+            ['QA10000001', 'QA100002', 'QA.100003'],
+            json_decode($pivot['source_seals'], true)
+        );
     }
 
 }

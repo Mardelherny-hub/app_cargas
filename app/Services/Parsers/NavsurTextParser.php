@@ -170,7 +170,7 @@ class NavsurTextParser implements ManifestParserInterface
                                         $this->stats['processed_items']++;
                                         // Vincular este contenedor con su ítem (pivote container_shipment_item)
                                         if ($container) {
-                                            $this->attachContainerToItem($container, $item);
+                                            $this->attachContainerToItem($container, $item, $containerData);
                                         }
                                     }
                                 }
@@ -1250,7 +1250,7 @@ class NavsurTextParser implements ManifestParserInterface
     /**
      * Vincular un Container con un ShipmentItem en el pivote container_shipment_item.
      */
-    protected function attachContainerToItem(Container $container, ShipmentItem $item): void
+    protected function attachContainerToItem(Container $container, ShipmentItem $item, array $containerData = []): void
     {
         $exists = DB::table('container_shipment_item')
             ->where('container_id', $container->id)
@@ -1268,12 +1268,34 @@ class NavsurTextParser implements ManifestParserInterface
             'gross_weight_kg' => $item->gross_weight_kg,
             'net_weight_kg' => $item->net_weight_kg,
             'volume_m3' => $item->volume_m3,
+            'source_seals' => $this->sourceSealList($containerData),
             'status' => 'loaded',
             'created_date' => now(),
             'created_by_user_id' => auth()->id(),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    /**
+     * Precintos que este archivo declara para el contenedor (línea, aduana y
+     * SENACSA), como lista de números del vínculo de este conocimiento. El rol
+     * queda en los campos del contenedor.
+     */
+    protected function sourceSealList(array $containerData): ?string
+    {
+        $seals = [];
+        foreach (['precintos_linea', 'precintos_aduana', 'precintos_senacsa'] as $field) {
+            foreach (preg_split('/[\s,;]+/', trim((string) ($containerData[$field] ?? ''))) ?: [] as $seal) {
+                if ($seal !== '') {
+                    $seals[$seal] = $seal;
+                }
+            }
+        }
+
+        return $seals === []
+            ? null
+            : json_encode(array_values($seals), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
 /**
