@@ -46,7 +46,7 @@
         @csrf
         <div>
             <label for="country_id" class="block text-sm font-medium text-gray-700">País *</label>
-            <select name="country_id" id="country_id" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+            <select name="country_id" id="country_id" required onchange="loadCountryPorts(this.value)" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                 <option value="">Seleccionar</option>
                 @foreach($countries as $country)
                     <option value="{{ $country->id }}">{{ $country->alpha2_code }} - {{ $country->name }}</option>
@@ -73,11 +73,8 @@
         </div>
         <div>
             <label for="port_id" class="block text-sm font-medium text-gray-700">Puerto</label>
-            <select name="port_id" id="port_id" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+            <select name="port_id" id="port_id" data-url="{{ route('admin.afip-config.ports.by-country', ['country' => '__COUNTRY__']) }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                 <option value="">Sin asignar</option>
-                @foreach($ports as $port)
-                    <option value="{{ $port->id }}">{{ $port->code }} - {{ $port->name }}</option>
-                @endforeach
             </select>
         </div>
         <div class="flex items-center gap-4">
@@ -232,6 +229,25 @@ function openVincularModal(locationId, code, description, currentPortId, country
     document.getElementById('vincularForm').action = `/admin/afip-config/locations/${locationId}/vincular-puerto`;
     document.getElementById('modal_port_id').value = currentPortId || '';
     document.getElementById('vincularModal').classList.remove('hidden');
+}
+
+// Alta: solo los puertos activos del país elegido.
+function loadCountryPorts(countryId) {
+    var select = document.getElementById('port_id');
+    select.length = 1;
+    if (!countryId) return;
+    fetch(select.dataset.url.replace('__COUNTRY__', encodeURIComponent(countryId)), {
+        headers: { 'Accept': 'application/json' }
+    })
+        .then(function (response) { return response.ok ? response.json() : []; })
+        .then(function (ports) {
+            // Si el país cambió mientras se cargaba, vale la carga más reciente.
+            if (document.getElementById('country_id').value !== String(countryId)) return;
+            select.length = 1;
+            ports.forEach(function (port) {
+                select.add(new Option(port.label, port.id));
+            });
+        });
 }
 
 function closeVincularModal() {

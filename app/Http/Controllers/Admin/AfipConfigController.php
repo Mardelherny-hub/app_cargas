@@ -209,6 +209,24 @@ class AfipConfigController extends Controller
         return response()->json($locations);
     }
 
+    /**
+     * API: puertos activos de un país, para el alta de lugares operativos.
+     */
+    public function portsByCountry(Country $country)
+    {
+        $ports = Port::where('active', true)
+            ->where('country_id', $country->id)
+            ->orderBy('name')
+            ->get(['id', 'code', 'name', 'city'])
+            ->map(fn (Port $port) => [
+                'id' => $port->id,
+                'label' => "{$country->alpha2_code} · {$port->code} - {$port->name}"
+                    . ($port->city ? " ({$port->city})" : ''),
+            ]);
+
+        return response()->json($ports);
+    }
+
     // =========================================================================
     // VÍNCULOS PUERTO-ADUANA
     // =========================================================================

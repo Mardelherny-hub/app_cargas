@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Admin\AfipConfigController;
 use App\Models\AfipOperativeLocation;
+use App\Models\Country;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -116,5 +117,24 @@ class AfipConfigLinkForeignPortTest extends TestCase
         );
 
         $this->assertSame(20, (int) $location->fresh()->port_id);
+    }
+
+    public function test_new_location_form_offers_active_ports_of_the_chosen_country(): void
+    {
+        $response = (new AfipConfigController())->portsByCountry(Country::findOrFail(self::PY));
+
+        $this->assertSame([['id' => 20, 'label' => 'PY · PYQA1 - PUERTO QA PY (QA)']], $response->getData(true));
+
+        $route = app('router')->getRoutes()->getByName('admin.afip-config.ports.by-country');
+        $this->assertNotNull($route);
+        $this->assertContains('role:super-admin', $route->gatherMiddleware());
+
+        $data = (new AfipConfigController())->index(Request::create('/admin/afip-config', 'GET', ['tab' => 'locations']))->getData();
+        $html = view('admin.afip-config.partials.locations', $data)->render();
+        $this->assertStringContainsString('onchange="loadCountryPorts(this.value)"', $html);
+        $this->assertMatchesRegularExpression(
+            '#<select name="port_id" id="port_id" data-url="[^"]*/admin/afip-config/ports/by-country/__COUNTRY__"[^>]*>\s*<option value="">Sin asignar</option>\s*</select>#',
+            $html
+        );
     }
 }
