@@ -128,7 +128,7 @@
                             <span class="text-sm font-mono text-indigo-600 mr-1">{{ $location->port->code }}</span>
                         @endif
                         <button type="button" 
-                                onclick="openVincularModal({{ $location->id }}, '{{ $location->location_code }}', '{{ $location->description }}', '{{ $location->port_id ?? '' }}')"
+                                onclick="openVincularModal({{ $location->id }}, '{{ $location->location_code }}', '{{ $location->description }}', '{{ $location->port_id ?? '' }}', '{{ $location->country_id }}')"
                                 class="px-2 py-1 text-xs {{ $location->port ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' }} rounded">
                             {{ $location->port ? '✏️' : 'Vincular' }}
                         </button>
@@ -199,8 +199,8 @@
                 <select name="port_id" id="modal_port_id" required 
                         class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     <option value="">-- Seleccionar --</option>
-                    @foreach($ports as $port)
-                        <option value="{{ $port->id }}">{{ $port->code }} - {{ $port->name }} ({{ $port->city }})</option>
+                    @foreach($locationPorts as $port)
+                        <option value="{{ $port->id }}" data-country="{{ $port->country_id }}">{{ $port->country->alpha2_code ?? '' }} · {{ $port->code }} - {{ $port->name }} ({{ $port->city }})</option>
                     @endforeach
                 </select>
             </div>
@@ -220,7 +220,13 @@
 </div>
 
 <script>
-function openVincularModal(locationId, code, description, currentPortId) {
+function openVincularModal(locationId, code, description, currentPortId, countryId) {
+    // Solo los puertos del país del lugar operativo.
+    document.querySelectorAll('#modal_port_id option[data-country]').forEach(function (option) {
+        var otherCountry = option.dataset.country !== String(countryId);
+        option.hidden = otherCountry;
+        option.disabled = otherCountry;
+    });
     document.getElementById('modalLocationCode').textContent = code;
     document.getElementById('modalLocationDesc').textContent = description;
     document.getElementById('vincularForm').action = `/admin/afip-config/locations/${locationId}/vincular-puerto`;
