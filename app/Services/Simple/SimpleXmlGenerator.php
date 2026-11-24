@@ -747,7 +747,9 @@ class SimpleXmlGenerator
                     }
 
                     // === CONTENEDORES (todos, llenos y vacíos) ===
-                    $allContainersUnique = $allContainers->merge($emptyContainers)->unique('container_number');
+                    $allContainersLinked = $allContainers->merge($emptyContainers);
+                    $linkSeals = $this->linkSealsByContainer($allContainersLinked);
+                    $allContainersUnique = $allContainersLinked->unique('container_number');
                     
                     if ($allContainersUnique->isNotEmpty()) {
                         $w->startElement('contenedores');
@@ -755,7 +757,8 @@ class SimpleXmlGenerator
                             $this->writeMicDtaContainer(
                                 $w,
                                 $container,
-                                'RegistrarTitEnvios'
+                                'RegistrarTitEnvios',
+                                $linkSeals[trim((string) $container->container_number)] ?? []
                             );
                         }
                         $w->endElement(); // contenedores
@@ -1179,10 +1182,47 @@ class SimpleXmlGenerator
         return null;
     }
 
+    /**
+     * Precintos que los archivos declararon en los vínculos de cada contenedor
+     * con los conocimientos de este XML (source_seals), por número de
+     * contenedor y sin repetir.
+     *
+     * @return array<string, array<int, string>>
+     */
+    private function linkSealsByContainer(\Illuminate\Support\Collection $containers): array
+    {
+        $byNumber = [];
+
+        foreach ($containers as $container) {
+            $raw = $container->pivot?->source_seals ?? null;
+            $list = is_string($raw) ? json_decode($raw, true) : $raw;
+
+            if (!is_array($list)) {
+                continue;
+            }
+
+            $number = trim((string) $container->container_number);
+            foreach ($list as $value) {
+                foreach (preg_split('/[\\s,;]+/', trim((string) $value)) ?: [] as $seal) {
+                    if ($seal !== '') {
+                        $byNumber[$number][$seal] = $seal;
+                    }
+                }
+            }
+        }
+
+        return array_map('array_values', $byNumber);
+    }
+
+    /**
+     * $linkSeals: precintos del vínculo con el conocimiento de este viaje. Si
+     * no hay, se usan los campos del contenedor como respaldo.
+     */
     private function writeMicDtaContainer(
         \XMLWriter $w,
         $container,
-        string $context
+        string $context,
+        array $linkSeals = []
     ): void {
         $number = trim((string) $container->container_number);
         $measure = trim((string) (
@@ -1207,7 +1247,7 @@ class SimpleXmlGenerator
             );
         }
 
-        $rawSeals = array_filter([
+        $rawSeals = $linkSeals !== [] ? $linkSeals : array_filter([
             trim((string) $container->shipper_seal),
             trim((string) $container->carrier_seal),
             trim((string) $container->customs_seal),
@@ -1605,6 +1645,7 @@ class SimpleXmlGenerator
             $w->endElement(); // Envio
             $w->endElement(); // envios
 
+            $linkSeals = $this->linkSealsByContainer($allContainers);
             $uniqueContainers = $allContainers
                 ->unique('container_number')
                 ->values();
@@ -1614,7 +1655,8 @@ class SimpleXmlGenerator
                     $this->writeMicDtaContainer(
                         $w,
                         $container,
-                        'RegistrarEnvios'
+                        'RegistrarEnvios',
+                        $linkSeals[trim((string) $container->container_number)] ?? []
                     );
                 }
                 $w->endElement();
