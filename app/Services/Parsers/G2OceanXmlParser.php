@@ -707,7 +707,7 @@ class G2OceanXmlParser implements ManifestParserInterface
             'item_number' => (int)($detail->itemSNo ?? 1),
             'description' => $description,
             'packages' => (int)($detail->noOfPkgs ?? 1),
-            'package_type' => (string)($detail->pkgType ?? 'PACKAGES'),
+            'package_type' => isset($detail->pkgType) ? (string) $detail->pkgType : null,
             'weight_mt' => (float)($detail->weight ?? 0),
             'weight_unit' => (string)($detail->weightUOM ?? 'MT'),
             'volume' => (float)($detail->measure ?? 0),
@@ -1273,12 +1273,12 @@ class G2OceanXmlParser implements ManifestParserInterface
             'primary_cargo_type_id' =>
                 $this->resolveCargoTypeByPkgType(
                     $blData['cargo_items'][0]
-                        ['package_type'] ?? ''
+                        ['package_type'] ?? 'PACKAGES'
                 ),
             'primary_packaging_type_id' =>
                 $this->resolvePackagingTypeByPkgType(
                     $blData['cargo_items'][0]
-                        ['package_type'] ?? ''
+                        ['package_type'] ?? 'PACKAGES'
                 ),
             'total_packages' => $totalPackages,
             'gross_weight_kg' => $totalGrossKg,
@@ -1350,10 +1350,29 @@ class G2OceanXmlParser implements ManifestParserInterface
     }
 
 
+    private function sourcePackagingCode(string $label, string $billNumber, int $line): ?string
+    {
+        $code = match (strtoupper($label)) {
+            'PACKAGE', 'PACKAGES', 'PACKAGE(S)' => 'PK',
+            'BUNDLE', 'BUNDLES', 'BUNDLE(S)' => 'BE',
+            'COIL', 'COILS', 'COIL(S)' => 'CL',
+            'PIECE', 'PIECES', 'PIECE(S)' => 'PP',
+            'CARTON', 'CARTONS', 'CARTON(S)' => 'CT',
+            'BOX', 'BOXES', 'BOX(ES)' => 'BX',
+            'PALLET', 'PALLETS', 'PALLET(S)' => 'PX',
+            default => null,
+        };
+
+        if ($code === null && $label !== '') {
+            $this->stats['warnings'][] = "BL {$billNumber}, línea {$line}: embalaje {$label} sin equivalencia EDIFACT inequívoca.";
+        }
+
+        return $code;
+    }
+
     /**
      * Crear ShipmentItems
      */
-
     protected function createShipmentItems(
         BillOfLading $bill,
         array $blData
@@ -1384,11 +1403,16 @@ class G2OceanXmlParser implements ManifestParserInterface
                     ),
                 'cargo_type_id' =>
                     $this->resolveCargoTypeByPkgType(
-                        $cargoItem['package_type'] ?? ''
+                        $cargoItem['package_type'] ?? 'PACKAGES'
                     ),
+                'packaging_code' => $this->sourcePackagingCode(
+                    trim($cargoItem['package_type'] ?? ''),
+                    $bill->bill_number,
+                    $cargoItem['item_number']
+                ),
                 'packaging_type_id' =>
                     $this->resolvePackagingTypeByPkgType(
-                        $cargoItem['package_type'] ?? ''
+                        $cargoItem['package_type'] ?? 'PACKAGES'
                     ),
                 'package_quantity' =>
                     $this->parseG2OceanPackageQuantity(

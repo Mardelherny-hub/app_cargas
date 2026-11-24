@@ -149,6 +149,21 @@ class DonToyoExcelParserTest extends TestCase
             ->orderBy('container_number')->pluck('container_types.iso_code', 'containers.container_number')->all());
     }
 
+    public function test_package_quantity_is_assigned_only_to_a_single_container(): void
+    {
+        $sheets = $this->sheets();
+        array_pop($sheets['CONTENEDORES']);
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $links = DB::table('container_shipment_item')->join('containers', 'containers.id', '=', 'container_shipment_item.container_id')
+            ->orderBy('container_number')->pluck('container_shipment_item.package_quantity', 'container_number');
+
+        $this->assertNull($links['TSTU0000001']);
+        $this->assertNull($links['TSTU0000002']);
+        $this->assertSame(8, (int) $links['TSTU0000003']);
+    }
+
     public function test_weight_comes_from_the_bls_sheet(): void
     {
         $result = $this->import($this->workbook($this->sheets()));
