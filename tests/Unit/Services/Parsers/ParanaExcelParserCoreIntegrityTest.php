@@ -61,6 +61,22 @@ class ParanaExcelParserCoreIntegrityTest extends TestCase
         $this->assertSame(['BL QA-PARANA, línea 2: embalaje EMBALAJE ESPECIAL sin equivalencia EDIFACT inequívoca.'], $warnings);
     }
 
+    public function test_link_keeps_the_seals_declared_by_this_file(): void
+    {
+        $this->useIsolatedDatabase();
+        $container = Container::withoutEvents(fn () => Container::create(['container_number' => 'TSTU0000001', 'shipper_seal' => 'QA000099']));
+        $bill = (new BillOfLading())->forceFill(['id' => 1, 'bill_number' => 'QA-PARANA']);
+        $data = ['DESCRIPTION' => 'CARGA QA', 'NUMBER_OF_PACKAGES' => '1', 'PACK_TYPE' => 'CTNS', 'CONTAINER_NUMBER' => 'TSTU0000001'];
+
+        $sealed = Model::withoutEvents(fn () => $this->invoke('createShipmentItem', [$bill, $data + ['SEAL_NO' => 'QA100001 QA100002']]));
+        $unsealed = Model::withoutEvents(fn () => $this->invoke('createShipmentItem', [$bill, $data + ['SEAL_NO' => '']]));
+
+        $links = DB::table('container_shipment_item')->pluck('source_seals', 'shipment_item_id');
+        $this->assertSame(['QA100001', 'QA100002'], json_decode($links[$sealed->id], true));
+        $this->assertNull($links[$unsealed->id]);
+        $this->assertSame('QA000099', $container->fresh()->shipper_seal);
+    }
+
     public function test_voyage_dates_are_not_invented(): void
     {
         $timing = $this->invoke(
