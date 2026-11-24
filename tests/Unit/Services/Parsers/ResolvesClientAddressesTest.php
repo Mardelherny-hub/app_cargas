@@ -98,6 +98,81 @@ class ResolvesClientAddressesTest extends TestCase
         );
     }
 
+    public function test_taxid1_and_tax_dot_id_labels_are_removed_with_their_number(): void
+    {
+        $this->assertSame(
+            'TENIENTE VERA 3148/CASI CORNEL ESCURRA BARRIO: YKUA SATI ASUNCION . PARAGUAY',
+            $this->resolver()->cleanForClient(
+                new Client(),
+                'TENIENTE VERA 3148/CASI CORNEL ESCURRA BARRIO: YKUA SATI ASUNCION . PARAGUAY TAXID1 : 80044515-5'
+            )
+        );
+        $this->assertSame(
+            'AV. SAN MARTIN 504 ASUNCION',
+            $this->resolver()->cleanForClient(
+                new Client(),
+                'AV. SAN MARTIN 504 ASUNCION TAX.ID:80027640-0'
+            )
+        );
+    }
+
+    public function test_address_after_contact_line_is_kept(): void
+    {
+        $resolver = $this->resolver();
+
+        $this->assertSame(
+            'CALLE FICTICIA 1331 CIUDAD DEMO, PARAGUAY',
+            $resolver->cleanForClient(new Client(), "PH: 595 900 000 000\nCALLE FICTICIA 1331\nCIUDAD DEMO, PARAGUAY")
+        );
+        $this->assertSame(
+            '15 DE EJEMPLO 432 ENTRE CALLE A Y CALLE B',
+            $resolver->cleanForClient(new Client(), "MAIL: DEMO@EJEMPLO.COM.PY\n15 DE EJEMPLO 432 ENTRE CALLE A Y CALLE B")
+        );
+        $this->assertSame(
+            'MAYOR FICTICIO 583 CIUDAD DEMO-PARAGUAY',
+            $resolver->cleanForClient(new Client(), "PHONE 900.000\nMAYOR FICTICIO 583\nRUC 99999993-0\nCIUDAD DEMO-PARAGUAY")
+        );
+    }
+
+    public function test_street_line_without_number_after_contact_is_kept(): void
+    {
+        $this->assertSame(
+            'AVDA. FICTICIA E/ EJEMPLO EDIFICIO DEMO, 5TO PISO',
+            $this->resolver()->cleanForClient(new Client(), "PHONE: +595 - 000000000\nAVDA. FICTICIA E/ EJEMPLO\nEDIFICIO DEMO, 5TO PISO")
+        );
+    }
+
+    public function test_party_with_only_contact_lines_gets_no_address(): void
+    {
+        $resolver = $this->resolver();
+
+        $this->assertNull($resolver->cleanForClient(new Client(), "ATN: SR. PERSONA DEMO / SR. OTRA\nAPELLIDO\nTEL: (59521) 000 0000\nRUC: 99999993-0"));
+        $this->assertNull($resolver->cleanForClient(new Client(), "CONTACTO: PERSONA DEMO\nTELEFONO: +595900000000\nE-MAIL:\nPERSONA@EJEMPLO.COM.P"));
+        $this->assertNull($resolver->cleanForClient(new Client(), "ATTN: PERSONA DEMO\nT/F : 59500000000 / 59500000001\nE-MAIL: PERSONA@EJEMPLO.COM;"));
+    }
+
+    public function test_attention_line_ends_where_the_street_starts(): void
+    {
+        $this->assertSame(
+            'AV. FICTICIA 7180. CIUDAD DEMO, PARAGUAY',
+            $this->resolver()->cleanForClient(
+                new Client(),
+                'RUC 99999993-0 ATN. SR. PERSONA DEMO AV. FICTICIA 7180. CIUDAD DEMO, PARAGUAY TEL. 595 21 000000'
+            )
+        );
+    }
+
+    public function test_trailing_contact_on_the_same_line_is_still_removed(): void
+    {
+        $this->assertSame(
+            'AV. EJEMPLO 123 ASUNCION',
+            $this->resolver()->cleanForClient(
+                new Client(),
+                'AV. EJEMPLO 123 ASUNCION TEL: 021 000 000 FAX 021 000 001'
+            )
+        );
+    }
+
     public function test_same_address_does_not_create_specific_contact(): void
     {
         $primary = new ClientContactData();

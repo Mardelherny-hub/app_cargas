@@ -22,8 +22,9 @@ trait ExtractsEmbeddedTaxId
         }
 
         // Prefijos conocidos. Los CUSCAR reales también usan variantes
-        // RUC NO, R.U.C, TAX-, TAX NO y TAX ID NUMBER.
-        $prefixes = 'RUT\s*\/\s*VAT|RUT|RUC\s*\/\s*TAX\s?ID|TAX\s*ID|TAXID|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
+        // RUC NO, R.U.C, TAX-, TAX NO, TAX ID NUMBER y TAXID1; MSC usa TAX.ID.
+        // El "1" de TAXID1 es parte de la etiqueta solo si no sigue otro dígito.
+        $prefixes = 'RUT\s*\/\s*VAT|RUT|RUC\s*\/\s*TAX\s?ID|TAX\s*\.?\s*ID(?:1(?!\d))?|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
         $qualifier = '(?:\s*(?:NUMBER|NBR\.?|NRO\.?|NO\.?))?';
 
         // No se acepta un número sin marcador fiscal explícito.
@@ -42,6 +43,34 @@ trait ExtractsEmbeddedTaxId
         }
 
         return $digits;
+    }
+
+    /**
+     * Quita del texto la etiqueta fiscal con su número cuando ese número es el
+     * identificador ya resuelto (ej. "EMPRESA S.A. TAX.ID:80027640-0" ->
+     * "EMPRESA S.A."). Si el número escrito es otro, el texto queda igual.
+     */
+    protected function removeEmbeddedTaxId(string $text, string $taxId): string
+    {
+        $taxId = preg_replace('/\D/', '', $taxId);
+
+        if ($taxId === '') {
+            return $text;
+        }
+
+        $prefixes = 'RUT\s*\/\s*VAT|RUT|RUC\s*\/\s*TAX\s?ID|TAX\s*\.?\s*ID(?:1(?!\d))?|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
+        $pattern = '/[\s,;\-]*\b(?:' . $prefixes . ')(?:\s*(?:NUMBER|NBR\.?|NRO\.?|NO\.?))?'
+            . '\s*[:#.?-]*\s*([0-9][0-9.\-\/]{5,})/i';
+
+        $clean = preg_replace_callback(
+            $pattern,
+            static fn (array $m) => preg_replace('/\D/', '', $m[1]) === $taxId ? '' : $m[0],
+            $text
+        ) ?? $text;
+
+        $clean = trim($clean, " \t,;-");
+
+        return $clean === '' ? $text : $clean;
     }
 
     /**

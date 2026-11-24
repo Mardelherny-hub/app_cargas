@@ -313,6 +313,11 @@ class MscVesselNameParser implements ManifestParserInterface
         }
         $address = $this->value($header, $role . '´S ADRESS');
         $taxId = $this->resolveTaxId(null, $name, $address);
+        // El archivo pega la identificación al nombre ("... S.A. TAX.ID:80027640-0"):
+        // la identificación va a tax_id y la ficha se busca y se crea con el nombre limpio.
+        if ($taxId !== null && $this->extractEmbeddedTaxId($name) === $taxId) {
+            $name = $this->removeEmbeddedTaxId($name, $taxId);
+        }
         $countryId = (int) $port->country_id;
         $documentTypeId = null;
         $type = match (strlen($taxId ?? '')) {
