@@ -86,6 +86,18 @@ class DonToyoExcelParser implements ManifestParserInterface
         return $seals === [] ? null : implode(' ', $seals);
     }
 
+    /**
+     * Los mismos precintos, como lista de números para el vínculo del BL.
+     */
+    private function sourceSealList($value): ?string
+    {
+        $seals = $this->sourceSeals($value);
+
+        return $seals === null
+            ? null
+            : json_encode(explode(' ', $seals), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
     private function text($value): string
     {
         $text = (string) ($value ?? '');
@@ -523,6 +535,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                                 'gross_weight_kg' => $containerRow['Peso'], 'net_weight_kg' => null,
                                 'volume_m3' => $containerRow['Volumen'], 'verified_gross_mass_kg' => $containerRow['VGM'],
                                 'required_temperature' => $containerRow['Temperatura'],
+                                'source_seals' => $this->sourceSealList($containerRow['Seal']),
                                 'container_condition' => in_array($container->container_condition, ['H', 'P'], true)
                                     ? $container->container_condition : Container::CONDITION_HOUSE_TO_HOUSE,
                                 'status' => 'planned',
