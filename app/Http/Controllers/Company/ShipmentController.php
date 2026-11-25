@@ -417,8 +417,9 @@ class ShipmentController extends Controller
             'total_cargo_weight_loaded' => $shipmentStats->total_weight ?? 0,
             'total_containers_loaded' => $shipmentStats->total_containers ?? 0,
             'total_cargo_capacity_tons' => $shipmentStats->total_capacity ?? 0,
-            'capacity_utilization_percentage' => $shipmentStats->total_capacity > 0 
-                ? (($shipmentStats->total_weight ?? 0) / $shipmentStats->total_capacity) * 100 
+            // Peso cargado en kg; capacidad en toneladas.
+            'capacity_utilization_percentage' => $shipmentStats->total_capacity > 0
+                ? round((($shipmentStats->total_weight ?? 0) / ($shipmentStats->total_capacity * 1000)) * 100, 2)
                 : 0,
             'is_convoy' => $isConvoy,
             'voyage_type' => $isConvoy ? 'convoy' : 'single_vessel',
@@ -445,7 +446,7 @@ class ShipmentController extends Controller
 
         // Calcular utilización general
         if ($stats['total_cargo_capacity'] > 0) {
-            $stats['cargo_utilization_percentage'] = ($stats['total_cargo_loaded'] / $stats['total_cargo_capacity']) * 100;
+            $stats['cargo_utilization_percentage'] = ($stats['total_cargo_loaded'] / ($stats['total_cargo_capacity'] * 1000)) * 100;
         } else {
             $stats['cargo_utilization_percentage'] = 0;
         }
