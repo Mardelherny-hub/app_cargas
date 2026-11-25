@@ -94,7 +94,7 @@ class LoginXmlParserCompat extends LoginXmlParser
 
         if ($voyageNumber === '') {
             throw new Exception(
-                'El archivo no informa número de viaje. Escribilo en el formulario.'
+                'El archivo no informa número de viaje. Escríbalo en el formulario.'
             );
         }
 

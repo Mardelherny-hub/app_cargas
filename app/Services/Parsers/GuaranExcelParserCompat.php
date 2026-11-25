@@ -61,7 +61,7 @@ class GuaranExcelParserCompat extends GuaranExcelParser
             : trim((string) ($voyageData['voyage_number'] ?? ''));
 
         if ($voyageData['voyage_number'] === '') {
-            throw new Exception('El archivo no informa número de viaje. Escribilo en el formulario.');
+            throw new Exception('El archivo no informa número de viaje. Escríbalo en el formulario.');
         }
 
         $originPort = $this->resolvePortStrict($voyageData['pol']);

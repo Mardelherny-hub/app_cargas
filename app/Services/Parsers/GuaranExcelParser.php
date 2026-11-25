@@ -409,7 +409,7 @@ class GuaranExcelParser implements ManifestParserInterface
 
         // Verificar datos mínimos
         if (!$voyageData['voyage_number']) {
-            throw new Exception('El archivo no informa número de viaje. Escribilo en el formulario.');
+            throw new Exception('El archivo no informa número de viaje. Escríbalo en el formulario.');
         }
 
         /*

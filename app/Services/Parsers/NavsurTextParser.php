@@ -578,7 +578,7 @@ class NavsurTextParser implements ManifestParserInterface
     protected function findOrCreateVoyage(array $data): Voyage
     {
         if ($data['voyage_number'] === '') {
-            throw new \DomainException('El archivo no informa número de viaje. Escribilo en el formulario.');
+            throw new \DomainException('El archivo no informa número de viaje. Escríbalo en el formulario.');
         }
 
         $user = auth()->user();

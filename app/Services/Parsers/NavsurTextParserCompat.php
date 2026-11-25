@@ -64,7 +64,7 @@ class NavsurTextParserCompat extends NavsurTextParser
 
         if ($voyageNumber === '') {
             throw new \DomainException(
-                'El archivo no informa número de viaje. Escribilo en el formulario.'
+                'El archivo no informa número de viaje. Escríbalo en el formulario.'
             );
         }
 

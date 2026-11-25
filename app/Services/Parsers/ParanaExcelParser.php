@@ -444,7 +444,7 @@ class ParanaExcelParser implements ManifestParserInterface
 
         $voyageNumber = trim((string) ($data['voyage_number'] ?? ''));
         if ($voyageNumber === '') {
-            throw new \Exception('El archivo no informa número de viaje. Escribilo en el formulario.');
+            throw new \Exception('El archivo no informa número de viaje. Escríbalo en el formulario.');
         }
 
         $this->guardVoyageNumberIsFree($voyageNumber, (int) $vessel->id);

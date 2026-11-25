@@ -113,7 +113,7 @@ class OperatorVoyageNumberTest extends TestCase
     {
         $options = ['vessel_id' => self::VESSEL];
         $this->assertSame('OPERATOR01', $create($options + ['voyage_number' => ' OPERATOR01 '])->fresh()->voyage_number);
-        $this->expectExceptionMessage('Escribilo en el formulario.');
+        $this->expectExceptionMessage('Escríbalo en el formulario.');
         $create($options + ['voyage_number' => ' ']);
     }
 

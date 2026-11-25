@@ -1356,7 +1356,7 @@ class LoginXmlParser implements ManifestParserInterface
     protected function createVoyage(array $data, array $context): Voyage
     {
         if ($data['voyage']['voyage_number'] === '') {
-            throw new Exception('El archivo no informa número de viaje. Escribilo en el formulario.');
+            throw new Exception('El archivo no informa número de viaje. Escríbalo en el formulario.');
         }
 
         // Obtener empresa del contexto
