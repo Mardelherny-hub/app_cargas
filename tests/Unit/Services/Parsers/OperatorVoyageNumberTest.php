@@ -2,7 +2,9 @@
 
 namespace Tests\Unit\Services\Parsers;
 
-use App\Models\Voyage;
+use App\Models\{Port, Voyage};
+use App\Services\Parsers\KlineDataParser;
+use App\Services\Parsers\KlineDataParserCompat;
 use App\Services\Parsers\LoginXmlParserCompat;
 use App\Services\Parsers\NavsurTextParserCompat;
 use Illuminate\Database\Eloquent\Model;
@@ -44,6 +46,24 @@ class OperatorVoyageNumberTest extends TestCase
             $data = ['voyage' => ['voyage_number' => 'SOURCE01', 'origin_port' => 'BUENOS AIRES', 'destination_port' => 'ASUNCION', 'departure_date' => null, 'estimated_arrival_date' => null]];
             return $this->invoke($parser, 'createVoyage', [$data, ['company_id' => self::COMPANY, 'user_id' => self::USER]]);
         });
+    }
+
+    public function test_kline_prefers_and_validates_operator_number(): void
+    {
+        $parser = new KlineDataParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $ports = Port::whereIn('code', ['ARBUE', 'PYASU'])->get()->keyBy('code');
+            return $this->invoke($parser, 'createVoyage', [['voyage_number' => 'SOURCE01'], $ports['ARBUE'], $ports['PYASU'], $options]);
+        }, 'KLINE-');
+    }
+
+    public function test_kline_base_prefers_and_validates_operator_number(): void
+    {
+        $parser = new KlineDataParser();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $ports = Port::whereIn('code', ['ARBUE', 'PYASU'])->get()->keyBy('code');
+            return $this->invoke($parser, 'createVoyage', [['voyage_number' => 'SOURCE01'], $ports['ARBUE'], $ports['PYASU'], $options]);
+        }, 'KLINE-');
     }
 
     private function setOptions(object $parser, array $options): void
