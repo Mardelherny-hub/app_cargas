@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Parsers;
 
 use App\Models\{Port, Voyage};
+use App\Services\Parsers\GuaranExcelParserCompat;
 use App\Services\Parsers\G2OceanXmlParserCompat;
 use App\Services\Parsers\KlineDataParser;
 use App\Services\Parsers\KlineDataParserCompat;
@@ -72,6 +73,15 @@ class OperatorVoyageNumberTest extends TestCase
         $parser = new G2OceanXmlParserCompat();
         $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
             $data = ['voyage_number' => 'SOURCE01', 'loading_port_code' => 'ARBUE', 'discharge_port_code' => 'PYASU'];
+            return $this->invoke($parser, 'createVoyage', [$data, $options]);
+        });
+    }
+
+    public function test_guaran_prefers_and_validates_operator_number(): void
+    {
+        $parser = new GuaranExcelParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $data = ['voyage_number' => 'SOURCE01', 'pol' => 'ARBUE', 'pod' => 'PYASU', 'manifest_type' => null];
             return $this->invoke($parser, 'createVoyage', [$data, $options]);
         });
     }

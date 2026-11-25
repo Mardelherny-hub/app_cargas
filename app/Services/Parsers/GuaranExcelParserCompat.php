@@ -55,19 +55,12 @@ class GuaranExcelParserCompat extends GuaranExcelParser
             );
         }
 
-        $sourceVoyageNumber = trim(
-            (string) ($voyageData['voyage_number'] ?? '')
-        );
+        $operatorVoyageNumber = trim((string) ($options['voyage_number'] ?? ''));
+        $voyageData['voyage_number'] = $operatorVoyageNumber !== ''
+            ? $operatorVoyageNumber
+            : trim((string) ($voyageData['voyage_number'] ?? ''));
 
-        if ($sourceVoyageNumber === '') {
-            $voyageData['voyage_number'] = trim(
-                (string) ($options['voyage_number'] ?? '')
-            );
-        } else {
-            $voyageData['voyage_number'] = $sourceVoyageNumber;
-        }
-
-        if (empty($voyageData['voyage_number'])) {
+        if ($voyageData['voyage_number'] === '') {
             throw new Exception('VOYAGE_NO es requerido en el archivo o en la importación');
         }
 
