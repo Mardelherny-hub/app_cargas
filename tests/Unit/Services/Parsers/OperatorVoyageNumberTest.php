@@ -1,0 +1,181 @@
+<?php
+
+namespace Tests\Unit\Services\Parsers;
+
+use App\Models\{Port, Voyage};
+use App\Services\Parsers\ParanaExcelParserCompat;
+use App\Services\Parsers\GuaranExcelParserCompat;
+use App\Services\Parsers\G2OceanXmlParserCompat;
+use App\Services\Parsers\KlineDataParser;
+use App\Services\Parsers\KlineDataParserCompat;
+use App\Services\Parsers\LoginXmlParserCompat;
+use App\Services\Parsers\NavsurTextParserCompat;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use ReflectionMethod;
+use ReflectionProperty;
+use Tests\TestCase;
+use Tests\Unit\Services\Parsers\Concerns\BuildsManifestImportSchema;
+
+class OperatorVoyageNumberTest extends TestCase
+{
+    use BuildsManifestImportSchema;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->useIsolatedDatabase();
+        Schema::table('vessels', fn (Blueprint $table) => $table->string('operational_status')->nullable());
+        $this->addVessel('QA VESSEL');
+        DB::table('vessels')->where('id', self::VESSEL)->update(['operational_status' => 'active']);
+    }
+
+    public function test_navsur_prefers_and_validates_operator_number(): void
+    {
+        $parser = new NavsurTextParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $this->setOptions($parser, $options);
+            return $this->invoke($parser, 'findOrCreateVoyage', [['voyage_number' => 'SOURCE01', 'pol' => 'ARBUE', 'pod' => 'PYASU']]);
+        });
+    }
+
+    public function test_login_prefers_and_validates_operator_number(): void
+    {
+        $parser = new LoginXmlParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $this->setOptions($parser, $options);
+            $data = ['voyage' => ['voyage_number' => 'SOURCE01', 'origin_port' => 'BUENOS AIRES', 'destination_port' => 'ASUNCION', 'departure_date' => null, 'estimated_arrival_date' => null]];
+            return $this->invoke($parser, 'createVoyage', [$data, ['company_id' => self::COMPANY, 'user_id' => self::USER]]);
+        });
+    }
+
+    public function test_kline_prefers_and_validates_operator_number(): void
+    {
+        $parser = new KlineDataParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $ports = Port::whereIn('code', ['ARBUE', 'PYASU'])->get()->keyBy('code');
+            return $this->invoke($parser, 'createVoyage', [['voyage_number' => 'SOURCE01'], $ports['ARBUE'], $ports['PYASU'], $options]);
+        }, 'KLINE-');
+    }
+
+    public function test_kline_base_prefers_and_validates_operator_number(): void
+    {
+        $parser = new KlineDataParser();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $ports = Port::whereIn('code', ['ARBUE', 'PYASU'])->get()->keyBy('code');
+            return $this->invoke($parser, 'createVoyage', [['voyage_number' => 'SOURCE01'], $ports['ARBUE'], $ports['PYASU'], $options]);
+        }, 'KLINE-');
+    }
+
+    public function test_g2ocean_prefers_and_validates_operator_number(): void
+    {
+        $parser = new G2OceanXmlParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $data = ['voyage_number' => 'SOURCE01', 'loading_port_code' => 'ARBUE', 'discharge_port_code' => 'PYASU'];
+            return $this->invoke($parser, 'createVoyage', [$data, $options]);
+        });
+    }
+
+    public function test_guaran_prefers_and_validates_operator_number(): void
+    {
+        $parser = new GuaranExcelParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $data = ['voyage_number' => 'SOURCE01', 'pol' => 'ARBUE', 'pod' => 'PYASU', 'manifest_type' => null];
+            return $this->invoke($parser, 'createVoyage', [$data, $options]);
+        });
+    }
+
+    public function test_parana_prefers_and_validates_operator_number(): void
+    {
+        $parser = new ParanaExcelParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $data = ['voyage_number' => 'SOURCE01', 'POL' => 'ARBUE', 'POD' => 'PYASU'];
+            return $this->invoke($parser, 'createVoyage', [$data, $options]);
+        });
+    }
+
+    public function test_navsur_accepts_operator_when_source_is_blank(): void
+    {
+        $parser = new NavsurTextParserCompat();
+        $row = ['viaje' => '', 'buque' => 'QA', 'puerto_carga' => 'ARBUE', 'puerto_descarga' => 'PYASU'];
+        $errors = (new ReflectionMethod($parser, 'validate'))->invoke($parser, [$row]);
+        $this->assertStringNotContainsString('Número de viaje', implode(' ', $errors));
+        $data = (new ReflectionMethod($parser, 'extractVoyageData'))->invoke($parser, $row);
+        $this->assertMissingSource(function (array $options) use ($parser, $data): Voyage {
+            $this->setOptions($parser, $options);
+            return $this->invoke($parser, 'findOrCreateVoyage', [$data]);
+        });
+    }
+
+    private function assertMissingSource(callable $create): void
+    {
+        $options = ['vessel_id' => self::VESSEL];
+        $this->assertSame('OPERATOR01', $create($options + ['voyage_number' => ' OPERATOR01 '])->fresh()->voyage_number);
+        $this->expectExceptionMessage('Escríbalo en el formulario.');
+        $create($options + ['voyage_number' => ' ']);
+    }
+
+    public function test_login_accepts_operator_when_source_is_blank(): void
+    {
+        $parser = new LoginXmlParserCompat();
+        $read = new ReflectionMethod($parser, 'parseVesselVoyageFlag');
+        $this->assertSame(['QA VESSEL', ''], $read->invoke($parser, 'QA VESSEL'));
+        [$vessel, $number] = $read->invoke($parser, 'QA VESSEL/');
+        $header = ['vessel_name' => $vessel, 'voyage_number' => $number];
+        $errors = $parser->validate(['header' => $header, 'bills_of_lading' => [[]]]);
+        $this->assertStringNotContainsString('Número de viaje', implode(' ', $errors));
+        $data = ['voyage' => $header + ['origin_port' => 'BUENOS AIRES', 'destination_port' => 'ASUNCION', 'departure_date' => null, 'estimated_arrival_date' => null]];
+        $this->assertMissingSource(function (array $options) use ($parser, $data): Voyage {
+            $this->setOptions($parser, $options);
+            return $this->invoke($parser, 'createVoyage', [$data, ['company_id' => self::COMPANY, 'user_id' => self::USER]]);
+        });
+    }
+
+    public function test_guaran_accepts_operator_when_source_is_blank(): void
+    {
+        $parser = new GuaranExcelParserCompat();
+        $row = [
+            'BL_NUMBER' => 'QA', 'BL_DATE' => '30/06/2025', 'SHIPPER_NAME' => 'QA EXPORT',
+            'CONSIGNEE_NAME' => 'QA IMPORT', 'VOYAGE_NO' => null, 'BARGE_NAME' => 'QA',
+            'POL' => 'ARBUE', 'POD' => 'PYASU',
+        ];
+        $this->assertSame([], (new ReflectionMethod($parser, 'validateRow'))->invoke($parser, $row, 7));
+        $this->assertSame([], $parser->validate([$row]));
+        $data = (new ReflectionMethod($parser, 'extractVoyageData'))->invoke($parser, $row);
+        $this->assertMissingSource(fn (array $options): Voyage => $this->invoke($parser, 'createVoyage', [$data, $options]));
+    }
+
+    public function test_parana_accepts_operator_when_source_is_blank(): void
+    {
+        $parser = new ParanaExcelParserCompat();
+        $sheet = (new \PhpOffice\PhpSpreadsheet\Spreadsheet())->getActiveSheet();
+        $sheet->setCellValue('A1', 'MAERSK');
+        $sheet->setCellValue('Q1', 'ARBUE');
+        $sheet->setCellValue('S1', 'PYASU');
+        $data = (new ReflectionMethod($parser, 'extractVoyageData'))->invoke($parser, $sheet);
+        $this->assertNull($data['voyage_number']);
+        $this->assertMissingSource(fn (array $options): Voyage => $this->invoke($parser, 'createVoyage', [$data, $options]));
+    }
+
+    private function setOptions(object $parser, array $options): void
+    {
+        (new ReflectionProperty($parser, 'importOptions'))->setValue($parser, $options);
+    }
+
+    private function invoke(object $parser, string $method, array $arguments): Voyage
+    {
+        return Model::withoutEvents(fn () => (new ReflectionMethod($parser, $method))->invokeArgs($parser, $arguments));
+    }
+
+    private function assertOperatorPriority(callable $create, string $prefix = ''): void
+    {
+        $options = ['vessel_id' => self::VESSEL];
+        $this->assertSame($prefix . 'OPERATOR01', $create($options + ['voyage_number' => ' OPERATOR01 '])->fresh()->voyage_number);
+        $this->assertSame($prefix . 'SOURCE01', $create($options + ['voyage_number' => '  '])->fresh()->voyage_number);
+
+        $this->expectExceptionMessage('El viaje ' . $prefix . 'OPERATOR01 ya existe');
+        $create($options + ['voyage_number' => 'OPERATOR01']);
+    }
+}

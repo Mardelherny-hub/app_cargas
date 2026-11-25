@@ -407,9 +407,8 @@ class ParanaExcelParser implements ManifestParserInterface
             'barge_name' => $this->nullableSourceText(
                 $worksheet->getCell('M' . $row)->getCalculatedValue()
             ),
-            'voyage_number' => $this->requireParanaSourceText(
-                $worksheet->getCell('N' . $row)->getCalculatedValue(),
-                'VOYAGE_NO'
+            'voyage_number' => $this->nullableSourceText(
+                $worksheet->getCell('N' . $row)->getCalculatedValue()
             ),
             'POL' => $this->requireParanaSourceText(
                 $worksheet->getCell('Q' . $row)->getCalculatedValue(),
@@ -504,10 +503,10 @@ class ParanaExcelParser implements ManifestParserInterface
             );
         }
 
-        $voyageNumber = $this->requireParanaSourceText(
-            $data['voyage_number'] ?? null,
-            'VOYAGE_NO'
-        );
+        $voyageNumber = trim((string) ($data['voyage_number'] ?? ''));
+        if ($voyageNumber === '') {
+            throw new \Exception('El archivo no informa número de viaje. Escríbalo en el formulario.');
+        }
 
         $this->guardVoyageNumberIsFree($voyageNumber, (int) $vessel->id);
 

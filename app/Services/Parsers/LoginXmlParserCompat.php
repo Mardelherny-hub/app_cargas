@@ -83,18 +83,18 @@ class LoginXmlParserCompat extends LoginXmlParser
         }
 
         $voyageNumber = trim(
-            (string) ($data['voyage']['voyage_number'] ?? '')
+            (string) ($this->importOptions['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
             $voyageNumber = trim(
-                (string) ($this->importOptions['voyage_number'] ?? '')
+                (string) ($data['voyage']['voyage_number'] ?? '')
             );
         }
 
         if ($voyageNumber === '') {
             throw new Exception(
-                'Login no informa número de viaje y no se ingresó uno en la importación.'
+                'El archivo no informa número de viaje. Escríbalo en el formulario.'
             );
         }
 

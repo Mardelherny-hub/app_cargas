@@ -54,7 +54,7 @@ class KlineDataParserVoyageIntegrityTest extends TestCase
         );
     }
 
-    public function test_source_voyage_number_has_priority(): void
+    public function test_operator_voyage_number_has_priority(): void
     {
         $number = $this->invokeParser(
             'resolveVoyageNumber',
@@ -65,7 +65,7 @@ class KlineDataParserVoyageIntegrityTest extends TestCase
         );
 
         $this->assertSame(
-            'KLINE-SOURCE01',
+            'KLINE-OPERATOR01',
             $number
         );
     }

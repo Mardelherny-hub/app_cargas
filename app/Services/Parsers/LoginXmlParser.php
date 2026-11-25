@@ -758,7 +758,7 @@ class LoginXmlParser implements ManifestParserInterface
     {
         $raw = trim($raw);
 
-        if ($raw === '' || !str_contains($raw, '/')) {
+        if ($raw === '') {
             throw new Exception(
                 "Login no informa buque/viaje en formato válido: {$raw}"
             );
@@ -766,10 +766,10 @@ class LoginXmlParser implements ManifestParserInterface
 
         [$vesselName, $voyageNumber] = array_map(
             'trim',
-            explode('/', $raw, 2)
+            array_pad(explode('/', $raw, 2), 2, '')
         );
 
-        if ($vesselName === '' || $voyageNumber === '') {
+        if ($vesselName === '') {
             throw new Exception(
                 "Login informa buque/viaje incompleto: {$raw}"
             );
@@ -930,10 +930,6 @@ class LoginXmlParser implements ManifestParserInterface
 
         if (empty($data['header']['discharge_port'])) {
             $errors[] = 'Puerto de descarga requerido en el XML';
-        }
-
-        if (empty($data['header']['voyage_number'])) {
-            $errors[] = 'Número de viaje requerido en el XML';
         }
 
         if (empty($data['header']['vessel_name'])) {
@@ -1447,6 +1443,10 @@ class LoginXmlParser implements ManifestParserInterface
      */
     protected function createVoyage(array $data, array $context): Voyage
     {
+        if ($data['voyage']['voyage_number'] === '') {
+            throw new Exception('El archivo no informa número de viaje. Escríbalo en el formulario.');
+        }
+
         // Obtener empresa del contexto
         $company = \App\Models\Company::findOrFail($context['company_id']);
         
