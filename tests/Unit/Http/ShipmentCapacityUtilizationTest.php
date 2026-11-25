@@ -6,7 +6,9 @@ use App\Http\Controllers\Company\ShipmentController;
 use App\Models\Company;
 use App\Models\Shipment;
 use App\Models\Voyage;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 use Tests\Unit\Services\Parsers\Concerns\BuildsManifestImportSchema;
@@ -98,5 +100,36 @@ class ShipmentCapacityUtilizationTest extends TestCase
 
         $this->assertTrue(Shipment::where('shipment_number', 'QA-01-02')->exists());
         $this->assertSame('98.24', Voyage::findOrFail(1)->capacity_utilization_percentage);
+    }
+
+    public function test_database_error_reaches_the_screen_without_sql(): void
+    {
+        $this->existingLoad(1000);
+        Shipment::creating(function () {
+            throw new QueryException('mysql', 'update `voyages` set `capacity_utilization_percentage` = ?', [98237],
+                new \PDOException("SQLSTATE[22003]: Numeric value out of range: 1264 Out of range value for column 'capacity_utilization_percentage'"));
+        });
+
+        $response = $this->storeBarge();
+        $error = $response->getSession()->get('error');
+
+        $this->assertStringStartsWith('No se pudo crear la carga: ocurrió un error al guardar los datos.', $error);
+        $this->assertStringNotContainsString('SQLSTATE', $error);
+        $this->assertStringNotContainsString('voyages', $error);
+        $this->assertFalse(Shipment::where('shipment_number', 'QA-01-02')->exists());
+    }
+
+    public function test_create_and_edit_screens_show_the_session_error(): void
+    {
+        session()->put('error', 'No se pudo crear la carga: prueba.');
+
+        foreach (['create', 'edit'] as $view) {
+            $source = file_get_contents(resource_path("views/company/shipments/{$view}.blade.php"));
+            $start = strpos($source, '{{-- Mensajes flash --}}');
+            $this->assertNotFalse($start, $view);
+            $end = strpos($source, '{{-- Errores', $start);
+
+            $this->assertStringContainsString('No se pudo crear la carga: prueba.', Blade::render(substr($source, $start, $end - $start)), $view);
+        }
     }
 }

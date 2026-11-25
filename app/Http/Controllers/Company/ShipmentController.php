@@ -329,7 +329,7 @@ class ShipmentController extends Controller
             DB::rollBack();
             Log::error('Error creando shipment: ' . $e->getMessage());
 
-            return back()->with('error', 'Error: ' . $e->getMessage())
+            return back()->with('error', 'No se pudo crear la carga: ' . $this->userErrorMessage($e))
                 ->withInput();
         }
     }
@@ -395,6 +395,17 @@ class ShipmentController extends Controller
                 'container_capacity' => $voyage->leadVessel->container_capacity ?? 0,
             ]
         ];
+    }
+
+    /**
+     * Texto del error para la pantalla: los errores de la base de datos no se
+     * muestran crudos (quedan en el log).
+     */
+    private function userErrorMessage(\Throwable $e): string
+    {
+        return $e instanceof \Illuminate\Database\QueryException
+            ? 'ocurrió un error al guardar los datos. Revise los valores ingresados y, si el problema continúa, comuníquese con soporte.'
+            : $e->getMessage();
     }
 
     // ===== NUEVO MÉTODO: Actualizar estadísticas del viaje =====
@@ -1057,7 +1068,7 @@ public function update(Request $request, Shipment $shipment)
 
         return redirect()->back()
             ->withInput()
-            ->with('error', 'Error al actualizar la carga: ' . $e->getMessage());
+            ->with('error', 'Error al actualizar la carga: ' . $this->userErrorMessage($e));
     }
 }
 
