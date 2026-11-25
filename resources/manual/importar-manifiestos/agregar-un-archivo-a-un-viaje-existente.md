@@ -8,9 +8,9 @@ palabras_clave: [importar, agregar, sumar archivo, viaje existente, mismo viaje,
 relacionados: [importar-manifiestos/importar-un-manifiesto, importar-manifiestos/revertir-una-importacion, viajes-y-cargas/armar-un-convoy, preguntas-frecuentes/varios-archivos-en-un-viaje]
 estado: publicado
 verificado:
-  version: 390826a
-  fecha: 2026-11-17
-  entorno: codigo
+  version: eb547c9c
+  fecha: 2026-11-24
+  entorno: stage
 ---
 
 ## Para qué sirve
@@ -43,7 +43,7 @@ El reporte muestra el recuadro **Archivo agregado a un viaje existente**, con un
 - **Los conocimientos se sumaron a la carga existente de la embarcación.**: la embarcación ya tenía carga y los conocimientos se agregaron a ella.
 - **El viaje se convirtió en convoy. Si revierte esta importación, vuelve a su configuración anterior.**: aparece solo si hubo conversión.
 
-Debajo, el reporte indica qué conocimientos se saltearon. Si un conocimiento del archivo ya estaba en el viaje, no se carga de nuevo: aparece en **Conocimientos salteados porque ya existían en el viaje**. Si no hubo repetidos, se lee **No se salteó ningún conocimiento por repetido.** Los datos generales del viaje no cambian. El mismo recuadro se ve después en **Ver Detalles** de esa importación, en el [historial](manual:importar-manifiestos/historial-de-importaciones).
+Debajo, el reporte indica qué conocimientos se saltearon. Si un conocimiento del archivo ya estaba en el viaje, no se carga de nuevo: aparece en **Conocimientos salteados porque ya existían en el viaje**. Si no hubo repetidos, se lee **No se salteó ningún conocimiento por repetido.** Salvo la conversión en convoy indicada arriba, los datos generales del viaje no cambian. El mismo recuadro se ve después en **Ver Detalles** de esa importación, en el [historial](manual:importar-manifiestos/historial-de-importaciones).
 
 ## Si algo falla
 
