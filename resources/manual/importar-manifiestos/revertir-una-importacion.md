@@ -8,9 +8,9 @@ palabras_clave: [revertir, deshacer, anular importación, borrar viaje importado
 relacionados: [importar-manifiestos/historial-de-importaciones, importar-manifiestos/importar-un-manifiesto, importar-manifiestos/agregar-un-archivo-a-un-viaje-existente]
 estado: publicado
 verificado:
-  version: 390826a
-  fecha: 2026-11-17
-  entorno: codigo
+  version: eb547c9c
+  fecha: 2026-11-24
+  entorno: stage
 ---
 
 ## Para qué sirve
@@ -19,7 +19,7 @@ Deshace una importación para corregirla o para volver a importar un archivo cor
 
 - **Revertir importación**: elimina todo lo que creó el archivo, incluido el viaje.
 - **Revertir lo agregado**: en un archivo [agregado a un viaje existente](manual:importar-manifiestos/agregar-un-archivo-a-un-viaje-existente), elimina solo lo que sumó ese archivo. El resto del viaje no cambia.
-- **Revertir viaje completo**: en un viaje con archivos agregados, revierte todas sus importaciones y elimina el viaje.
+- **Revertir viaje completo**: en un viaje con archivos agregados, revierte todas sus importaciones. Si una importación creó el viaje, también lo elimina. Si el viaje se creó a mano, conserva el viaje y las cargas creadas a mano.
 
 ## Antes de empezar
 
@@ -41,9 +41,9 @@ Deshace una importación para corregirla o para volver a importar un archivo cor
 
 ## Cómo saber que salió bien
 
-Vuelve al historial y, en la fila revertida, el estado pasa a **Revertido** y la columna **Acciones** muestra **Revertida el** seguido de la fecha y la hora.
+Vuelve al historial y, en la fila revertida, el estado pasa a **Revertido**. Abra **Acciones** en esa fila: dentro del menú aparece **Revertida el** seguido de la fecha y la hora.
 
-- Con **Revertir importación** o **Revertir viaje completo**, el viaje ya no aparece en la lista de viajes. Con **Revertir viaje completo**, todas las importaciones del viaje quedan en **Revertido**: primero se revierten las agregadas, de la más nueva a la más vieja, y al final la que creó el viaje. Si alguna no se puede revertir, no se revierte ninguna.
+- Con **Revertir importación**, se elimina el viaje que creó ese archivo. Con **Revertir viaje completo**, todas las importaciones del viaje quedan en **Revertido**: primero se revierten las agregadas, de la más nueva a la más vieja, y al final la que creó el viaje, si existe. El viaje desaparece de la lista solo si una de esas importaciones lo creó; un viaje creado a mano y sus cargas manuales se conservan. Si alguna importación no se puede revertir, no se revierte ninguna.
 - Con **Revertir lo agregado**, el viaje sigue existiendo sin los conocimientos de ese archivo. Si el archivo había creado la carga de la embarcación, la carga también se elimina. Si había convertido el viaje en convoy, el viaje vuelve a ser como estaba.
 
 Después puede volver a importar el archivo.
