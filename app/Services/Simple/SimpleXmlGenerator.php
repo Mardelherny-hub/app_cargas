@@ -1062,17 +1062,20 @@ class SimpleXmlGenerator
         // UN/ECE Rec. 21 / EDIFACT 7065 define CN para contenedor como
         // tipo de embalaje. Sólo se aplica cuando el ítem declara
         // CONTENEDOR y está realmente vinculado a un contenedor.
-        if (
-            $container !== null
-            && strtoupper(trim((string) $item->packagingType?->code)) === 'T'
-            && mb_strtoupper(trim((string) $item->packagingType?->name)) === 'CONTENEDOR'
-        ) {
+        if ($container !== null && $this->isContainerPackaging($item)) {
             return 'CN';
         }
 
         throw new \Exception(
             "RegistrarTitEnvios: BL {$billNumber}, línea {$item->line_number}: falta codTipEmbalaje EDIFACT de 2 caracteres."
         );
+    }
+
+    /** Tipo de envase local CONTENEDOR (código T). */
+    private function isContainerPackaging($item): bool
+    {
+        return strtoupper(trim((string) $item->packagingType?->code)) === 'T'
+            && mb_strtoupper(trim((string) $item->packagingType?->name)) === 'CONTENEDOR';
     }
 
     private function writeMicDtaBulto(
@@ -1095,10 +1098,22 @@ class SimpleXmlGenerator
             );
         }
 
-        $packagingCode = $this->micDtaPackagingCode($item, $billNumber, $container);
+        // Envase CONTENEDOR sin bultos en el vínculo (varios contenedores por
+        // BL): el envase es el contenedor, así que cada uno se declara como un
+        // bulto CN y el total del BL es la cantidad de contenedores, igual que
+        // en la Información Anticipada.
+        $linkQuantity = $container?->pivot?->package_quantity;
+        $countsContainer = $container !== null
+            && $this->isContainerPackaging($item)
+            && ($linkQuantity === null || $linkQuantity === ''
+                || (is_numeric($linkQuantity) && (float) $linkQuantity == 0));
+
+        $packagingCode = $countsContainer
+            ? 'CN'
+            : $this->micDtaPackagingCode($item, $billNumber, $container);
 
         if ($container) {
-            $quantity = $container->pivot?->package_quantity;
+            $quantity = $countsContainer ? 1 : $linkQuantity;
             $weight = $container->pivot?->gross_weight_kg;
             $containerNumber = trim((string) $container->container_number);
 
