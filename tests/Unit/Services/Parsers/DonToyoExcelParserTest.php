@@ -180,7 +180,7 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertStringContainsString('BL DEMOBL000003: CUIT SIM vacío (sin valor)', $warnings);
     }
 
-    public function test_package_quantity_is_assigned_only_to_a_single_container(): void
+    public function test_package_quantity_is_zero_for_multiple_containers_and_total_for_a_single_container(): void
     {
         $sheets = $this->sheets();
         array_pop($sheets['CONTENEDORES']);
@@ -190,9 +190,10 @@ class DonToyoExcelParserTest extends TestCase
         $links = DB::table('container_shipment_item')->join('containers', 'containers.id', '=', 'container_shipment_item.container_id')
             ->orderBy('container_number')->pluck('container_shipment_item.package_quantity', 'container_number');
 
-        $this->assertNull($links['TSTU0000001']);
-        $this->assertNull($links['TSTU0000002']);
+        $this->assertSame('0', (string) $links['TSTU0000001']);
+        $this->assertSame('0', (string) $links['TSTU0000002']);
         $this->assertSame(8, (int) $links['TSTU0000003']);
+        $this->assertSame([20, 8], DB::table('shipment_items')->orderBy('id')->pluck('package_quantity')->map(fn ($value) => (int) $value)->all());
     }
 
     public function test_seals_separated_by_slash_are_stored_as_separate_seals(): void
