@@ -4,6 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, Shipment, ShipmentItem, Vessel, Voyage};
+use App\Services\ClientValidationService;
 use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use Carbon\Carbon;
@@ -166,11 +167,9 @@ class DonToyoExcelParser implements ManifestParserInterface
             foreach (['Volumen', 'Peso (KG)', 'Cantidad'] as $field) {
                 $this->validateNumber($row[$field] ?? '', $label, $field, $errors, false, $field === 'Cantidad');
             }
-            foreach (['CUIT SIM', 'Cuit Facturacion'] as $field) {
-                $tax = $row[$field] ?? '';
-                if ($tax !== '' && (!ctype_digit(str_replace(['-', '.', ' '], '', $tax)) || $this->resolveTaxId($tax) === null)) {
-                    $errors[] = "{$label}: {$field} inválido.";
-                }
+            $billingTax = $row['Cuit Facturacion'] ?? '';
+            if ($billingTax !== '' && (!ctype_digit(str_replace(['-', '.', ' '], '', $billingTax)) || $this->resolveTaxId($billingTax) === null)) {
+                $errors[] = "{$label}: Cuit Facturacion inválido.";
             }
             if (!in_array($row['Consolidado'] ?? '', ['S', 'N'], true)) {
                 $errors[] = "{$label}: Consolidado debe ser S o N.";
@@ -326,9 +325,9 @@ class DonToyoExcelParser implements ManifestParserInterface
         return compact('companyId', 'vessel', 'voyageNumber', 'types', 'ports', 'cargo', 'packaging', 'existingContainers', 'origin', 'destination', 'cargoType') + ['departure' => $this->dateOption($options['departure_date'] ?? null)];
     }
 
-    private function clientPlan(string $name, int $countryHint, array &$warnings): array
+    private function clientPlan(string $name, int $countryHint, array &$warnings, ?string $shipperCuit = null): array
     {
-        $tax = $this->resolveTaxId(null, $name);
+        $tax = $shipperCuit ?? $this->resolveTaxId(null, $name);
         $countryId = $countryHint;
         $documentId = null;
         if ($tax !== null) {
@@ -342,15 +341,71 @@ class DonToyoExcelParser implements ManifestParserInterface
                 throw new DomainException("Cliente {$name}: falta país o tipo documental activo en el catálogo.");
             }
         }
+        if ($shipperCuit !== null) {
+            return $this->declaredShipperPlan($name, $shipperCuit, (int) $countryId, (int) $documentId, $countryHint, $warnings);
+        }
+
         $resolved = $this->resolveExistingClient($tax, $name, (int) $countryId, $documentId);
         $warnings = array_values(array_unique(array_merge($warnings, $resolved['warnings'])));
         if ($resolved['client'] !== null) {
             return ['existing' => $resolved['client']];
         }
         if ($tax === null) {
-            throw new DomainException("Cliente {$name}: falta ficha existente o identificación fiscal que permita determinar país y tipo documental. CUIT SIM no se asigna automáticamente al Shipper ni al Cnee.");
+            throw new DomainException("Cliente {$name}: falta ficha existente o identificación fiscal que permita determinar país y tipo documental.");
         }
         return ['create' => ['legal_name' => $name, 'commercial_name' => $name, 'tax_id' => $tax, 'country_id' => $countryId, 'document_type_id' => $documentId, 'status' => 'active']];
+    }
+
+    private function declaredShipperPlan(string $name, string $cuit, int $countryId, int $documentId, int $countryHint, array &$warnings): array
+    {
+        $client = Client::where('tax_id', $cuit)
+            ->where('country_id', $countryId)
+            ->where('document_type_id', $documentId)
+            ->first();
+        if ($client !== null) {
+            if (($warning = $this->inactiveClientWarning($client, $name)) !== null) {
+                $warnings[] = $warning;
+            }
+
+            return ['existing' => $client];
+        }
+
+        if (Client::where('tax_id', $cuit)->where('country_id', $countryId)->exists()) {
+            throw new DomainException("Cargador {$name}: el CUIT SIM {$cuit} figura en una ficha argentina con otro tipo de documento. Revise la ficha antes de importar.");
+        }
+
+        $identity = ['tax_id' => $cuit, 'country_id' => $countryId, 'document_type_id' => $documentId];
+        $nominalId = $this->pickClientByIdentityName($this->normalizeClientIdentityName($name), $name, $countryHint, false);
+        $nominal = $nominalId === null ? null : Client::whereKey($nominalId)->lockForUpdate()->first();
+        if ($nominal !== null && $this->normalizeClientTaxId($nominal->tax_id) === '') {
+            $nominal->updateQuietly($identity);
+            $this->rememberClientIdentity($nominal);
+            $warnings[] = "Cliente #{$nominal->id} ({$name}) no tenía identificación fiscal y se completó con {$cuit}.";
+            if (($warning = $this->inactiveClientWarning($nominal, $name)) !== null) {
+                $warnings[] = $warning;
+            }
+
+            return ['existing' => $nominal];
+        }
+
+        if ($nominal !== null) {
+            $warnings[] = "Cargador {$name}: la ficha #{$nominal->id} tiene otra identificación fiscal. Se creó una ficha nueva con CUIT SIM {$cuit}.";
+        }
+
+        return ['create' => $identity + ['legal_name' => $name, 'commercial_name' => $name, 'status' => 'active']];
+    }
+
+    private function sourceShipperCuit(string $number, string $rawCuit, ClientValidationService $validator, array &$warnings): ?string
+    {
+        $cuit = $this->normalizeClientTaxId($rawCuit);
+        if ($cuit !== '' && ctype_digit($cuit) && $validator->validateArgentineCUIT($cuit)['valid']) {
+            return $cuit;
+        }
+
+        $issue = $rawCuit === '' ? 'vacío (sin valor)' : "inválido ({$rawCuit})";
+        $warnings[] = "BL {$number}: CUIT SIM {$issue}. El cargador se resuelve por nombre.";
+
+        return null;
     }
 
     private function sourceNcm(string $number, array $row, array &$warnings): ?string
@@ -411,7 +466,9 @@ class DonToyoExcelParser implements ManifestParserInterface
             }
             $data = $this->transform($raw);
             $plan = $this->preflight($data, $options);
+            $validator = app(ClientValidationService::class);
             foreach ($data['bills'] as $number => &$row) {
+                $row['resolved_shipper_cuit'] = $this->sourceShipperCuit($number, $row['CUIT SIM'] ?? '', $validator, $warnings);
                 $row['resolved_packaging_code'] = $this->sourcePackagingCode($number, $row['DESCRIPCION MERCADERIA'], $warnings);
                 $row['resolved_ncm'] = $this->sourceNcm($number, $row, $warnings);
             }
@@ -446,22 +503,25 @@ class DonToyoExcelParser implements ManifestParserInterface
                     $this->guardVoyageNumberIsFree($plan['voyageNumber'], (int) $plan['vessel']->id);
                     $created = array_fill_keys(['voyage', 'shipment', 'bill', 'item', 'container', 'client', 'port'], []);
                     $clients = [];
+                    $billClients = [];
                     $this->clientIdentityIndex = null;
                     foreach ($data['bills'] as $row) {
                         foreach (['Shipper', 'Cnee'] as $role) {
                             $name = $row[$role];
-                            if (isset($clients[$name])) {
-                                continue;
+                            $cuit = $role === 'Shipper' ? $row['resolved_shipper_cuit'] : null;
+                            $countryHint = (int) $plan['ports'][$row['Origen']]->country_id;
+                            $key = $cuit !== null ? "CUIT:{$cuit}" : "nombre:{$countryHint}:{$name}";
+                            if (!isset($clients[$key])) {
+                                $clientPlan = $this->clientPlan($name, $countryHint, $warnings, $cuit);
+                                $client = $clientPlan['existing'] ?? null;
+                                if (!$client) {
+                                    $client = Client::create($clientPlan['create'] + ['created_by_company_id' => $plan['companyId'], 'verified_at' => now()]);
+                                    $this->rememberClientIdentity($client);
+                                    $created['client'][] = $client->id;
+                                }
+                                $clients[$key] = $client;
                             }
-                            // Origin is only a hint for existing records, never a country for creation.
-                            $clientPlan = $this->clientPlan($name, (int) $plan['ports'][$row['Origen']]->country_id, $warnings);
-                            $client = $clientPlan['existing'] ?? null;
-                            if (!$client) {
-                                $client = Client::create($clientPlan['create'] + ['created_by_company_id' => $plan['companyId'], 'verified_at' => now()]);
-                                $this->rememberClientIdentity($client);
-                                $created['client'][] = $client->id;
-                            }
-                            $clients[$name] = $client;
+                            $billClients[$row['BL']][$role] = $clients[$key]->id;
                         }
                     }
                     $voyage = Voyage::create([
@@ -486,8 +546,8 @@ class DonToyoExcelParser implements ManifestParserInterface
                         $rows = $data['containers'][$number];
                         $bill = BillOfLading::create([
                             'shipment_id' => $shipment->id, 'bill_number' => $number,
-                            'shipper_id' => $clients[$row['Shipper']]->id, 'consignee_id' => $clients[$row['Cnee']]->id,
-                            'notify_party_id' => $clients[$row['Cnee']]->id,
+                            'shipper_id' => $billClients[$number]['Shipper'], 'consignee_id' => $billClients[$number]['Cnee'],
+                            'notify_party_id' => $billClients[$number]['Cnee'],
                             'loading_port_id' => $plan['ports'][$row['Carga']]->id, 'discharge_port_id' => $plan['ports'][$row['Descarga']]->id,
                             'final_destination_port_id' => $plan['ports'][$row['Destino Final']]->id,
                             'primary_cargo_type_id' => $plan['cargo']->id, 'primary_packaging_type_id' => $plan['packaging']->id,
@@ -495,7 +555,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                             'total_packages' => $row['quantity'], 'gross_weight_kg' => $row['weight'], 'net_weight_kg' => null,
                             'volume_m3' => $row['volume'], 'container_count' => count($rows), 'cargo_description' => $row['DESCRIPCION MERCADERIA'],
                             'is_consolidated' => $row['Consolidado'] === 'S', 'status' => 'draft',
-                            'webservice_data' => ['don_toyo_source' => array_diff_key($row, array_flip(['quantity', 'weight', 'volume', '_row', 'resolved_ncm', 'resolved_packaging_code']))],
+                            'webservice_data' => ['don_toyo_source' => array_diff_key($row, array_flip(['quantity', 'weight', 'volume', '_row', 'resolved_ncm', 'resolved_packaging_code', 'resolved_shipper_cuit']))],
                             'created_by_user_id' => auth()->id(),
                         ]);
                         $bills[] = $bill;
