@@ -133,6 +133,20 @@ class OperatorVoyageNumberTest extends TestCase
         });
     }
 
+    public function test_guaran_accepts_operator_when_source_is_blank(): void
+    {
+        $parser = new GuaranExcelParserCompat();
+        $row = [
+            'BL_NUMBER' => 'QA', 'BL_DATE' => '30/06/2025', 'SHIPPER_NAME' => 'QA EXPORT',
+            'CONSIGNEE_NAME' => 'QA IMPORT', 'VOYAGE_NO' => null, 'BARGE_NAME' => 'QA',
+            'POL' => 'ARBUE', 'POD' => 'PYASU',
+        ];
+        $this->assertSame([], (new ReflectionMethod($parser, 'validateRow'))->invoke($parser, $row, 7));
+        $this->assertSame([], $parser->validate([$row]));
+        $data = (new ReflectionMethod($parser, 'extractVoyageData'))->invoke($parser, $row);
+        $this->assertMissingSource(fn (array $options): Voyage => $this->invoke($parser, 'createVoyage', [$data, $options]));
+    }
+
     private function setOptions(object $parser, array $options): void
     {
         (new ReflectionProperty($parser, 'importOptions'))->setValue($parser, $options);
