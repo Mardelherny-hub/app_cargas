@@ -117,6 +117,22 @@ class OperatorVoyageNumberTest extends TestCase
         $create($options + ['voyage_number' => ' ']);
     }
 
+    public function test_login_accepts_operator_when_source_is_blank(): void
+    {
+        $parser = new LoginXmlParserCompat();
+        $read = new ReflectionMethod($parser, 'parseVesselVoyageFlag');
+        $this->assertSame(['QA VESSEL', ''], $read->invoke($parser, 'QA VESSEL'));
+        [$vessel, $number] = $read->invoke($parser, 'QA VESSEL/');
+        $header = ['vessel_name' => $vessel, 'voyage_number' => $number];
+        $errors = $parser->validate(['header' => $header, 'bills_of_lading' => [[]]]);
+        $this->assertStringNotContainsString('Número de viaje', implode(' ', $errors));
+        $data = ['voyage' => $header + ['origin_port' => 'BUENOS AIRES', 'destination_port' => 'ASUNCION', 'departure_date' => null, 'estimated_arrival_date' => null]];
+        $this->assertMissingSource(function (array $options) use ($parser, $data): Voyage {
+            $this->setOptions($parser, $options);
+            return $this->invoke($parser, 'createVoyage', [$data, ['company_id' => self::COMPANY, 'user_id' => self::USER]]);
+        });
+    }
+
     private function setOptions(object $parser, array $options): void
     {
         (new ReflectionProperty($parser, 'importOptions'))->setValue($parser, $options);
