@@ -72,12 +72,12 @@ class ParanaExcelParserCompat extends ParanaExcelParser
         }
 
         $voyageNumber = trim(
-            (string) ($data['voyage_number'] ?? '')
+            (string) ($options['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
             $voyageNumber = trim(
-                (string) ($options['voyage_number'] ?? '')
+                (string) ($data['voyage_number'] ?? '')
             );
         }
 
