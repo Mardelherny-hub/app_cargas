@@ -11,9 +11,9 @@ relacionados:
   - preguntas-frecuentes/el-viaje-ya-existe
 estado: publicado
 verificado:
-  version: 390826a
-  fecha: 2026-11-17
-  entorno: codigo
+  version: eb547c9c
+  fecha: 2026-11-24
+  entorno: stage
 ---
 
 ## Para qué sirve
