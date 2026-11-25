@@ -149,7 +149,54 @@ class DonToyoExcelParserTest extends TestCase
             ->orderBy('container_number')->pluck('container_types.iso_code', 'containers.container_number')->all());
     }
 
-    public function test_package_quantity_is_assigned_only_to_a_single_container(): void
+    public function test_cuit_sim_prefers_document_identity_and_keeps_a_different_tax_id(): void
+    {
+        $docId = DB::table('document_types')->where('code', 'CUIT')->value('id');
+        $this->addClient('FICHA ARGENTINA QA', '30585343427', self::AR);
+        DB::table('clients')->where('tax_id', '30585343427')->update(['document_type_id' => $docId]);
+        $oldId = DB::table('clients')->where('tax_id', '9999991')->value('id');
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][5] = '30-58534342-7';
+        $sheets['BLS'][2][5] = '30693184947';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $bills = \App\Models\BillOfLading::with('shipper')->orderBy('bill_number')->get();
+        $this->assertSame('FICHA ARGENTINA QA', $bills[0]->shipper->legal_name);
+        $this->assertSame('30693184947', (string) $bills[1]->shipper->tax_id);
+        $this->assertSame((int) $docId, (int) $bills[1]->shipper->document_type_id);
+        $this->assertSame('9999991', (string) DB::table('clients')->where('id', $oldId)->value('tax_id'));
+        $this->assertCount(1, ManifestImport::sole()->created_client_ids);
+        $this->assertStringContainsString('Se creó una ficha nueva', implode(' ', $result->warnings));
+    }
+
+    public function test_cuit_sim_completes_missing_tax_id_and_warns_about_missing_or_invalid_values(): void
+    {
+        $shipperId = DB::table('clients')->where('tax_id', '9999991')->value('id');
+        DB::table('clients')->where('id', $shipperId)->update(['tax_id' => null]);
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][5] = '30585343427';
+        $sheets['BLS'][2][5] = '30585343428';
+        $sheets['BLS'][] = $this->bill('DEMOBL000003', 1, 100, 1);
+        $sheets['CONTENEDORES'][] = ['DEMOBL000003', 'TSTU0000005', '22G1', '', 100, 1, 2150, 2250, ''];
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame([$shipperId], DB::table('bills_of_lading')->distinct()->pluck('shipper_id')->all());
+        $shipper = \App\Models\Client::findOrFail($shipperId);
+        $this->assertSame('30585343427', (string) $shipper->tax_id);
+        $this->assertSame(self::AR, (int) $shipper->country_id);
+        $this->assertSame('CUIT', DB::table('document_types')->where('id', $shipper->document_type_id)->value('code'));
+        $this->assertSame([], ManifestImport::sole()->created_client_ids);
+        $warnings = implode(' ', $result->warnings);
+        $this->assertStringContainsString('se completó con 30585343427', $warnings);
+        $this->assertStringContainsString('BL DEMOBL000002: CUIT SIM inválido (30585343428)', $warnings);
+        $this->assertStringContainsString('BL DEMOBL000003: CUIT SIM vacío (sin valor)', $warnings);
+    }
+
+    public function test_package_quantity_is_zero_for_multiple_containers_and_total_for_a_single_container(): void
     {
         $sheets = $this->sheets();
         array_pop($sheets['CONTENEDORES']);
@@ -159,9 +206,10 @@ class DonToyoExcelParserTest extends TestCase
         $links = DB::table('container_shipment_item')->join('containers', 'containers.id', '=', 'container_shipment_item.container_id')
             ->orderBy('container_number')->pluck('container_shipment_item.package_quantity', 'container_number');
 
-        $this->assertNull($links['TSTU0000001']);
-        $this->assertNull($links['TSTU0000002']);
+        $this->assertSame('0', (string) $links['TSTU0000001']);
+        $this->assertSame('0', (string) $links['TSTU0000002']);
         $this->assertSame(8, (int) $links['TSTU0000003']);
+        $this->assertSame([20, 8], DB::table('shipment_items')->orderBy('id')->pluck('package_quantity')->map(fn ($value) => (int) $value)->all());
     }
 
     public function test_seals_separated_by_slash_are_stored_as_separate_seals(): void
