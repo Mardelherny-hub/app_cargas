@@ -96,6 +96,27 @@ class OperatorVoyageNumberTest extends TestCase
         });
     }
 
+    public function test_navsur_accepts_operator_when_source_is_blank(): void
+    {
+        $parser = new NavsurTextParserCompat();
+        $row = ['viaje' => '', 'buque' => 'QA', 'puerto_carga' => 'ARBUE', 'puerto_descarga' => 'PYASU'];
+        $errors = (new ReflectionMethod($parser, 'validate'))->invoke($parser, [$row]);
+        $this->assertStringNotContainsString('Número de viaje', implode(' ', $errors));
+        $data = (new ReflectionMethod($parser, 'extractVoyageData'))->invoke($parser, $row);
+        $this->assertMissingSource(function (array $options) use ($parser, $data): Voyage {
+            $this->setOptions($parser, $options);
+            return $this->invoke($parser, 'findOrCreateVoyage', [$data]);
+        });
+    }
+
+    private function assertMissingSource(callable $create): void
+    {
+        $options = ['vessel_id' => self::VESSEL];
+        $this->assertSame('OPERATOR01', $create($options + ['voyage_number' => ' OPERATOR01 '])->fresh()->voyage_number);
+        $this->expectExceptionMessage('Escribilo en el formulario.');
+        $create($options + ['voyage_number' => ' ']);
+    }
+
     private function setOptions(object $parser, array $options): void
     {
         (new ReflectionProperty($parser, 'importOptions'))->setValue($parser, $options);
