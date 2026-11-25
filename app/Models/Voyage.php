@@ -1125,7 +1125,8 @@ public function scopeWithWebserviceRelations(Builder $query): Builder
             return 0;
         }
         
-        return min(100, ($this->total_cargo_weight_loaded / $this->total_cargo_capacity_tons) * 100);
+        // Peso cargado en kg; capacidad en toneladas.
+        return min(100, ($this->total_cargo_weight_loaded / ($this->total_cargo_capacity_tons * 1000)) * 100);
     }
 
     /**

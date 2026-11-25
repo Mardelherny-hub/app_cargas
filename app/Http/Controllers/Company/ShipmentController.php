@@ -310,7 +310,7 @@ class ShipmentController extends Controller
 
             $shipment = \App\Models\Shipment::create($validated);
 
-            $this->updateVoyageStats($voyage);
+            $utilization = $this->updateVoyageStats($voyage);
 
             DB::commit();
 
@@ -321,7 +321,8 @@ class ShipmentController extends Controller
             ]);
 
             return redirect()->route('company.shipments.show', $shipment)
-                ->with('success', 'Shipment creado exitosamente.');
+                ->with('success', 'Shipment creado exitosamente.')
+                ->with('warning', $this->overCapacityWarning($utilization));
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
@@ -330,7 +331,7 @@ class ShipmentController extends Controller
             DB::rollBack();
             Log::error('Error creando shipment: ' . $e->getMessage());
 
-            return back()->with('error', 'Error: ' . $e->getMessage())
+            return back()->with('error', 'No se pudo crear la carga: ' . $this->userErrorMessage($e))
                 ->withInput();
         }
     }
@@ -398,8 +399,39 @@ class ShipmentController extends Controller
         ];
     }
 
+    /**
+     * Texto del error para la pantalla: los errores de la base de datos no se
+     * muestran crudos (quedan en el log).
+     */
+    private function userErrorMessage(\Throwable $e): string
+    {
+        return $e instanceof \Illuminate\Database\QueryException
+            ? 'ocurrió un error al guardar los datos. Revise los valores ingresados y, si el problema continúa, comuníquese con soporte.'
+            : $e->getMessage();
+    }
+
+    /** Máximo que admite voyages.capacity_utilization_percentage (DECIMAL(5,2)). */
+    private const MAX_STORED_UTILIZATION = 999.99;
+
+    /**
+     * Aviso cuando el peso cargado del viaje supera su capacidad, o null.
+     */
+    private function overCapacityWarning(float $utilization): ?string
+    {
+        if ($utilization <= 100) {
+            return null;
+        }
+
+        return 'El peso cargado del viaje supera su capacidad: '
+            . number_format($utilization, 2, ',', '.') . ' % de la capacidad de sus embarcaciones. '
+            . 'Revise el peso de los ítems y la capacidad declarada de las embarcaciones.';
+    }
+
     // ===== NUEVO MÉTODO: Actualizar estadísticas del viaje =====
-    private function updateVoyageStats($voyage): void
+    /**
+     * @return float uso de capacidad real del viaje, en porcentaje
+     */
+    private function updateVoyageStats($voyage): float
     {
         $shipmentStats = $voyage->shipments()->selectRaw(
             'COUNT(*) as total_shipments,
@@ -414,19 +446,25 @@ class ShipmentController extends Controller
         $hasConvoyRoles = $shipments->whereIn('vessel_role', ['lead', 'towed', 'pushed', 'escort'])->count() > 0;
         $isConvoy = $shipmentCount > 1 || $hasConvoyRoles;
 
+        // Peso cargado en kg; capacidad en toneladas.
+        $utilization = $shipmentStats->total_capacity > 0
+            ? round((($shipmentStats->total_weight ?? 0) / ($shipmentStats->total_capacity * 1000)) * 100, 2)
+            : 0.0;
+
         $voyage->update([
             'total_cargo_weight_loaded' => $shipmentStats->total_weight ?? 0,
             'total_containers_loaded' => $shipmentStats->total_containers ?? 0,
             'total_cargo_capacity_tons' => $shipmentStats->total_capacity ?? 0,
-            'capacity_utilization_percentage' => $shipmentStats->total_capacity > 0 
-                ? (($shipmentStats->total_weight ?? 0) / $shipmentStats->total_capacity) * 100 
-                : 0,
+            // Se guarda limitado a lo que admite la columna; el valor real se avisa.
+            'capacity_utilization_percentage' => min($utilization, self::MAX_STORED_UTILIZATION),
             'is_convoy' => $isConvoy,
             'voyage_type' => $isConvoy ? 'convoy' : 'single_vessel',
             'vessel_count' => $shipmentCount,
             'last_updated_date' => now(),
             'last_updated_by_user_id' => Auth::id()
         ]);
+
+        return (float) $utilization;
     }
 
     /**
@@ -446,7 +484,7 @@ class ShipmentController extends Controller
 
         // Calcular utilización general
         if ($stats['total_cargo_capacity'] > 0) {
-            $stats['cargo_utilization_percentage'] = ($stats['total_cargo_loaded'] / $stats['total_cargo_capacity']) * 100;
+            $stats['cargo_utilization_percentage'] = ($stats['total_cargo_loaded'] / ($stats['total_cargo_capacity'] * 1000)) * 100;
         } else {
             $stats['cargo_utilization_percentage'] = 0;
         }
@@ -1035,7 +1073,7 @@ public function update(Request $request, Shipment $shipment)
 
         DB::commit();
 
-        $this->updateVoyageStats($shipment->voyage);
+        $utilization = $this->updateVoyageStats($shipment->voyage);
 
         Log::info('Shipment actualizado', [
             'shipment_id'     => $shipment->id,
@@ -1044,7 +1082,8 @@ public function update(Request $request, Shipment $shipment)
         ]);
 
         return redirect()->route('company.shipments.index')
-            ->with('success', 'Carga actualizada exitosamente.');
+            ->with('success', 'Carga actualizada exitosamente.')
+            ->with('warning', $this->overCapacityWarning($utilization));
 
     } catch (\Exception $e) {
         DB::rollBack();
@@ -1057,7 +1096,7 @@ public function update(Request $request, Shipment $shipment)
 
         return redirect()->back()
             ->withInput()
-            ->with('error', 'Error al actualizar la carga: ' . $e->getMessage());
+            ->with('error', 'Error al actualizar la carga: ' . $this->userErrorMessage($e));
     }
 }
 

@@ -23,6 +23,15 @@
     <div class="py-8">
         <div class="max-w-4xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
+            {{-- Mensajes flash --}}
+            @foreach(['error' => 'red', 'warning' => 'yellow', 'info' => 'blue'] as $type => $color)
+                @if(session($type))
+                    <div class="bg-{{ $color }}-50 border border-{{ $color }}-200 rounded-lg px-4 py-3 text-sm text-{{ $color }}-700">
+                        {{ session($type) }}
+                    </div>
+                @endif
+            @endforeach
+
             {{-- Errores --}}
             @if ($errors->any())
                 <div class="bg-red-50 border border-red-200 rounded-lg p-4">
