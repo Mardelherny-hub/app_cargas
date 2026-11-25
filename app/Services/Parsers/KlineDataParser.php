@@ -441,9 +441,9 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             (string) ($options['voyage_number'] ?? '')
         );
 
-        $number = $sourceNumber !== ''
-            ? $sourceNumber
-            : $operatorNumber;
+        $number = $operatorNumber !== ''
+            ? $operatorNumber
+            : $sourceNumber;
 
         if ($number === '') {
             throw new \DomainException(

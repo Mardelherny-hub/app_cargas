@@ -53,18 +53,18 @@ class NavsurTextParserCompat extends NavsurTextParser
         }
 
         $voyageNumber = trim(
-            (string) ($data['voyage_number'] ?? '')
+            (string) ($this->importOptions['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
             $voyageNumber = trim(
-                (string) ($this->importOptions['voyage_number'] ?? '')
+                (string) ($data['voyage_number'] ?? '')
             );
         }
 
         if ($voyageNumber === '') {
             throw new \DomainException(
-                'Navsur no informa número de viaje y no se ingresó uno en la importación.'
+                'El archivo no informa número de viaje. Escríbalo en el formulario.'
             );
         }
 

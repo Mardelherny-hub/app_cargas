@@ -347,7 +347,6 @@ class GuaranExcelParser implements ManifestParserInterface
             'BL_DATE',
             'SHIPPER_NAME',
             'CONSIGNEE_NAME',
-            'VOYAGE_NO',
             'BARGE_NAME',
             'POL',
             'POD',
@@ -410,7 +409,7 @@ class GuaranExcelParser implements ManifestParserInterface
 
         // Verificar datos mínimos
         if (!$voyageData['voyage_number']) {
-            throw new Exception("VOYAGE_NO es requerido en el archivo");
+            throw new Exception('El archivo no informa número de viaje. Escríbalo en el formulario.');
         }
 
         /*
@@ -2114,7 +2113,7 @@ class GuaranExcelParser implements ManifestParserInterface
         }
         
         $firstRow = $data[0] ?? [];
-        $required = ['BL_NUMBER', 'SHIPPER_NAME', 'CONSIGNEE_NAME', 'VOYAGE_NO', 'BARGE_NAME'];
+        $required = ['BL_NUMBER', 'SHIPPER_NAME', 'CONSIGNEE_NAME', 'BARGE_NAME'];
         
         foreach ($required as $field) {
             if (empty($firstRow[$field])) {

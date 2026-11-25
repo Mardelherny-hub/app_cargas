@@ -72,18 +72,18 @@ class ParanaExcelParserCompat extends ParanaExcelParser
         }
 
         $voyageNumber = trim(
-            (string) ($data['voyage_number'] ?? '')
+            (string) ($options['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
             $voyageNumber = trim(
-                (string) ($options['voyage_number'] ?? '')
+                (string) ($data['voyage_number'] ?? '')
             );
         }
 
         if ($voyageNumber === '') {
             throw new \Exception(
-                'PARANA no informa VOYAGE_NO y no se ingresó un número de viaje.'
+                'El archivo no informa número de viaje. Escríbalo en el formulario.'
             );
         }
 

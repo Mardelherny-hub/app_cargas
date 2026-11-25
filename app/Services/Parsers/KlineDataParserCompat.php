@@ -8,38 +8,4 @@ namespace App\Services\Parsers;
  */
 class KlineDataParserCompat extends KlineDataParser
 {
-    protected function resolveVoyageNumber(
-        array $voyageInfo,
-        array $options = []
-    ): string {
-        $operatorNumber = trim(
-            (string) ($options['voyage_number'] ?? '')
-        );
-
-        $sourceNumber = trim(
-            (string) ($voyageInfo['voyage_number'] ?? '')
-        );
-
-        $number = $sourceNumber !== ''
-            ? $sourceNumber
-            : $operatorNumber;
-
-        if ($number === '') {
-            throw new \DomainException(
-                'K-Line no informa número de viaje. '
-                . 'Debe ingresarlo al importar el manifiesto.'
-            );
-        }
-
-        if (
-            str_starts_with(
-                strtoupper($number),
-                'KLINE-'
-            )
-        ) {
-            return $number;
-        }
-
-        return 'KLINE-' . $number;
-    }
 }

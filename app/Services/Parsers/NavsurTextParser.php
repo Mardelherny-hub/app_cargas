@@ -549,7 +549,6 @@ class NavsurTextParser implements ManifestParserInterface
     protected function extractVoyageData(array $bl): array
     {
         foreach ([
-            'viaje' => 'número de viaje',
             'buque' => 'buque',
             'puerto_carga' => 'puerto de carga',
             'puerto_descarga' => 'puerto de descarga',
@@ -562,7 +561,7 @@ class NavsurTextParser implements ManifestParserInterface
         }
 
         return [
-            'voyage_number' => trim((string) $bl['viaje']),
+            'voyage_number' => trim((string) ($bl['viaje'] ?? '')),
             'vessel_name' => trim((string) $bl['buque']),
             'flag' => !empty($bl['bandera'])
                 ? trim((string) $bl['bandera'])
@@ -578,6 +577,10 @@ class NavsurTextParser implements ManifestParserInterface
 
     protected function findOrCreateVoyage(array $data): Voyage
     {
+        if ($data['voyage_number'] === '') {
+            throw new \DomainException('El archivo no informa número de viaje. Escríbalo en el formulario.');
+        }
+
         $user = auth()->user();
 
         if (!$user) {
@@ -1855,7 +1858,6 @@ protected function findOrCreateContainerType(
             foreach ([
                 'numero_bl' => 'Número de BL',
                 'buque' => 'Nombre del buque',
-                'viaje' => 'Número de viaje',
                 'puerto_carga' => 'Puerto de carga',
                 'puerto_descarga' => 'Puerto de descarga',
                 'cargador_nombre' => 'Nombre del cargador',
