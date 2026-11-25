@@ -8,9 +8,9 @@ palabras_clave: [convoy, remolcador, empujador, autopropulsado, líder, barcaza,
 relacionados: [viajes-y-cargas/crear-un-viaje-a-mano, afip-argentina/registrar-micdta-convoy, importar-manifiestos/agregar-un-archivo-a-un-viaje-existente]
 estado: publicado
 verificado:
-  version: 390826a
-  fecha: 2026-11-17
-  entorno: codigo
+  version: eb547c9c
+  fecha: 2026-11-24
+  entorno: stage
 ---
 
 ## Para qué sirve
@@ -31,9 +31,9 @@ Si la mercadería de cada embarcación llega en un archivo, también puede armar
 
 1. Abra **Manifiestos › Viajes** y haga clic en **Nuevo Viaje**. También puede usar **Crear Viaje Completo › Planificar Viaje** en el menú lateral.
 2. Complete **Número de Viaje**, seleccione **Convoy** en **Tipo de Viaje** y la embarcación que conduce el convoy en **Embarcación Líder**. Seleccione **Capitán** y complete los países, puertos, fechas y **Tipo de Operación**, como en la creación de un viaje. En **Estado de Carga**, seleccione **Con carga** si el convoy transporta mercadería y haga clic en **Crear Viaje**.
-3. En **Cargas Asociadas**, haga clic en **Nueva Carga**. Revise **Número de Carga**, seleccione la embarcación líder en **Embarcación** y conserve **Planificación** en **Estado Inicial**. Compruebe **Capitán del Convoy**, que se toma del viaje.
+3. Vuelva al listado **Manifiestos › Viajes**. En la fila del viaje, abra **🎯 Cockpit** y haga clic en **➕ Agregar Envío**; si todavía no hay cargas, también puede usar **➕ Crear Primer Envío**. Revise **Número de Carga**, seleccione la embarcación líder en **Embarcación** y conserve **Planificación** en **Estado Inicial**. Compruebe **Capitán del Convoy**, que se toma del viaje.
 4. Abra **Configuración de Convoy**, seleccione **Líder de Convoy** en **Rol en el Convoy** e indique su **Posición en Convoy**. Haga clic en **Crear Shipment**. Al crear las cargas, utilice posiciones distintas entre 1 y 10.
-5. Vuelva a **Manifiestos › Viajes**, abra el mismo viaje y haga clic en **Nueva Carga**.
+5. Vuelva a **Manifiestos › Viajes**, abra **🎯 Cockpit** en la fila del mismo viaje y haga clic en **➕ Agregar Envío**.
 6. Revise **Número de Carga** y seleccione una barcaza en **Embarcación**. En **Configuración de Convoy**, elija **Empujada** o **Remolcada** en **Rol en el Convoy**, según corresponda, y una **Posición en Convoy** distinta de las ya usadas. Conserve **Planificación** y haga clic en **Crear Shipment**. Repita la creación de una carga por cada barcaza del convoy.
 7. Abra cada carga que transportará mercadería y use **Nuevo Conocimiento**. [Cargue los conocimientos, sus ítems y sus contenedores](manual:viajes-y-cargas/cargar-conocimientos-e-items) en la carga de la embarcación que los llevará. Si la embarcación líder también lleva mercadería, como un buque autopropulsado, cargue sus conocimientos en su propia carga. Si viaja en lastre, conserve su carga sin conocimientos.
 8. En el viaje, revise **Cargas Asociadas**: debe haber una carga para la embarcación líder y una por cada barcaza, sin repetir embarcaciones. Abra cada carga y compruebe sus **Conocimientos de Embarque**; para la mercadería, revise que los ítems tengan bultos y peso, y que los totales de los contenedores coincidan con los de sus ítems.
@@ -43,12 +43,14 @@ Si la mercadería de cada embarcación llega en un archivo, también puede armar
 
 El viaje conserva **Convoy** en **Tipo de Viaje** y en **Cargas Asociadas** figuran la embarcación líder y todas las barcazas. Cada carga muestra la embarcación correcta y los conocimientos que transportará; la embarcación líder queda sin conocimientos solo si va en lastre.
 
-Al crear cada carga, aparece **Shipment creado exitosamente.**. La documentación queda preparada para continuar con el registro del MIC/DTA del convoy.
+Al crear cada carga, aparece **Shipment creado exitosamente.**. Antes de continuar con el MIC/DTA, revise la formación y complete la documentación; crear las cargas no confirma que el convoy esté listo para enviarse.
 
 ## Si algo falla
 
 - Si aparece un aviso en **Embarcación**, compruebe que esa embarcación no tenga ya una carga en el mismo viaje. Abra la carga existente para agregar sus conocimientos.
 - Si el aviso indica que ya existe otra embarcación en esa posición del convoy, asigne una posición diferente. Al crear cargas, utilice valores entre 1 y 10.
 - Si no aparece **Embarcación** para seleccionar una barcaza, revise que el viaje sea de tipo **Convoy** y que la primera carga tenga el rol **Líder de Convoy**.
+- Si una barcaza creada como **Empujada** o **Remolcada** aparece además marcada como **Líder**, no continúe con el MIC/DTA: solicite la revisión de esa configuración.
+- Si aparece **Debe seleccionar un viaje para crear el shipment.**, vuelva al listado de viajes y abra **🎯 Cockpit › ➕ Agregar Envío** en la fila del viaje correcto. No use el acceso lateral **Configurar Cargas** para este paso.
 - Si no puede agregar ítems, revise que la carga siga en **Planificación** o **Cargando**.
 - Si faltan datos de matrícula, bandera, propietario o capitán al continuar con el MIC/DTA, complete la ficha correspondiente antes de seguir.
