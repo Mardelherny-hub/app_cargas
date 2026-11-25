@@ -67,12 +67,12 @@ class G2OceanXmlParserCompat extends G2OceanXmlParser
         );
 
         $voyageNumber = trim(
-            (string) ($blData['voyage_number'] ?? '')
+            (string) ($options['voyage_number'] ?? '')
         );
 
         if ($voyageNumber === '') {
             $voyageNumber = trim(
-                (string) ($options['voyage_number'] ?? '')
+                (string) ($blData['voyage_number'] ?? '')
             );
         }
 

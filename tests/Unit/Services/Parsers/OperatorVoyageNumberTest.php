@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Parsers;
 
 use App\Models\{Port, Voyage};
+use App\Services\Parsers\G2OceanXmlParserCompat;
 use App\Services\Parsers\KlineDataParser;
 use App\Services\Parsers\KlineDataParserCompat;
 use App\Services\Parsers\LoginXmlParserCompat;
@@ -64,6 +65,15 @@ class OperatorVoyageNumberTest extends TestCase
             $ports = Port::whereIn('code', ['ARBUE', 'PYASU'])->get()->keyBy('code');
             return $this->invoke($parser, 'createVoyage', [['voyage_number' => 'SOURCE01'], $ports['ARBUE'], $ports['PYASU'], $options]);
         }, 'KLINE-');
+    }
+
+    public function test_g2ocean_prefers_and_validates_operator_number(): void
+    {
+        $parser = new G2OceanXmlParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $data = ['voyage_number' => 'SOURCE01', 'loading_port_code' => 'ARBUE', 'discharge_port_code' => 'PYASU'];
+            return $this->invoke($parser, 'createVoyage', [$data, $options]);
+        });
     }
 
     private function setOptions(object $parser, array $options): void
