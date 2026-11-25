@@ -2,13 +2,18 @@
 
 namespace Tests\Unit\Services\Parsers;
 
+use App\Models\{Client, Shipment, Voyage};
 use App\Services\Parsers\GuaranExcelParser;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Model;
 use ReflectionMethod;
 use Tests\TestCase;
+use Tests\Unit\Services\Parsers\Concerns\BuildsManifestImportSchema;
 
 class GuaranExcelParserBillItemIntegrityTest extends TestCase
 {
+    use BuildsManifestImportSchema;
+
     private GuaranExcelParser $parser;
 
     protected function setUp(): void
@@ -31,6 +36,31 @@ class GuaranExcelParserBillItemIntegrityTest extends TestCase
             $this->parser,
             $args
         );
+    }
+
+    public function test_mlo_reference_is_a_booking_and_never_a_customs_declaration(): void
+    {
+        $this->useIsolatedDatabase();
+        $parser = new class extends GuaranExcelParser {
+            protected function findOrCreateClient(?array $data): ?Client
+            {
+                return (new Client())->forceFill(['id' => 1]);
+            }
+        };
+        $voyage = (new Voyage())->forceFill(['id' => 1, 'origin_port_id' => 1, 'destination_port_id' => 2]);
+        $shipment = (new Shipment())->forceFill(['id' => 1])->setRelation('voyage', $voyage);
+        $row = [
+            'BL_NUMBER' => 'QA-GUARAN', 'BL_DATE' => '30/06/2025',
+            'FREIGHT_TERMS' => 'PREPAID', 'CONTAINER_NUMBER' => 'TSTU0000001',
+            'DESCRIPTION' => 'CARGA QA', 'UN_NUMBER' => '',
+            'MLO_BL_NR' => '746PY0065109',
+        ];
+        $create = new ReflectionMethod($parser, 'createBillOfLading');
+        $bill = Model::withoutEvents(fn () => $create->invoke($parser, $shipment, [$row]))->fresh();
+
+        $this->assertSame('746PY0065109', $bill->booking_number);
+        $this->assertNull($bill->permiso_embarque);
+        $this->assertNull($bill->id_decla);
     }
 
     public function test_bl_date_is_preserved_without_inventing_operational_dates(): void

@@ -939,7 +939,7 @@ class GuaranExcelParser implements ManifestParserInterface
             'requires_refrigeration' => $this->requiresRefrigeration($row),
             'un_number' => $row['UN_NUMBER'] ?: null,
             'status' => 'draft',
-            'permiso_embarque' => $row['MLO_BL_NR'] ?: null,
+            'booking_number' => trim((string) ($row['MLO_BL_NR'] ?? '')) ?: null,
             'created_by_user_id' => auth()->id()
         ]);
 
