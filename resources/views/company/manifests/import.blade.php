@@ -162,9 +162,6 @@
                                     </option>
                                 @endforeach
                             </select>
-                            @error('target_voyage_id')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
                             <p class="mt-1 text-xs text-gray-500">
                                 Se agregan los conocimientos del archivo a la carga de la embarcación elegida. Los datos
                                 generales del viaje no cambian y los conocimientos que ya existen en el viaje se saltean.
@@ -192,7 +189,8 @@
                                 </p>
                             </div>
 
-                            <div id="target-error" class="mt-3 bg-red-50 border border-red-200 text-red-800 rounded-md p-3 text-sm" style="display:none;"></div>
+                            {{-- Un solo aviso: el rechazo del servidor y la verificación en vivo usan esta caja. --}}
+                            <div id="target-error" class="mt-3 bg-red-50 border border-red-200 text-red-800 rounded-md p-3 text-sm" style="display:{{ $errors->has('target_voyage_id') ? 'block' : 'none' }};">{{ $errors->first('target_voyage_id') }}</div>
                         </div>
                     </div>
 
