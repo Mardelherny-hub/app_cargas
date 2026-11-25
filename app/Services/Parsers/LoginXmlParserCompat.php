@@ -147,10 +147,33 @@ class LoginXmlParserCompat extends LoginXmlParser
 
         if ($permiso !== null) {
             $bill->permiso_embarque = $permiso;
+        }
+
+        $idDecla = $this->extractIdDecla($blData);
+        if ($idDecla !== null) {
+            $bill->id_decla = $idDecla;
+        }
+        if ($bill->isDirty()) {
             $bill->saveQuietly();
         }
 
         return $bill;
+    }
+
+    private function extractIdDecla(array $bill): ?string
+    {
+        $source = ($bill['cargo_description'] ?? '') . "\n" . ($bill['export_references'] ?? '');
+        preg_match_all('/(?<![A-Z0-9])[0-9]{5}[A-Z]{2}[0-9]{8}[A-Z](?![A-Z0-9])/i', $source, $matches);
+        $codes = array_values(array_unique(array_map('strtoupper', $matches[0])));
+
+        if (count($codes) > 1) {
+            $values = implode(', ', $codes);
+            $this->addWarningOnce("BL {$bill['bill_number']}: destinaciones distintas: {$values}.");
+
+            return null;
+        }
+
+        return $codes[0] ?? null;
     }
 
     protected function extractPermisoEmbarqueFromDescription(
