@@ -254,7 +254,8 @@ class ShipmentController extends Controller
                 'origin_transport_doc' => 'nullable|string|max:39',
             ]);
 
-            $validated['is_lead_vessel'] = $request->has('is_lead_vessel') ? true : false;
+            // El alta envía el campo siempre (oculto, valor 0): se lee su valor.
+            $validated['is_lead_vessel'] = $request->boolean('is_lead_vessel') || $validated['vessel_role'] === 'lead';
 
             // Cargar voyage con embarcación para heredar capacidades
             $voyage = \App\Models\Voyage::with(['leadVessel', 'captain'])
@@ -984,7 +985,7 @@ public function update(Request $request, Shipment $shipment)
         'origin_transport_doc' => 'nullable|string|max:39',
     ]);
 
-    $validated['is_lead_vessel'] = $request->has('is_lead_vessel') ? true : false;
+    $validated['is_lead_vessel'] = $request->boolean('is_lead_vessel');
 
     // Si cambió vessel_id (placeholder → real), quitar requires_attention
     if ($shipment->requires_attention && !empty($validated['vessel_id']) && $validated['vessel_id'] != $shipment->vessel_id) {
