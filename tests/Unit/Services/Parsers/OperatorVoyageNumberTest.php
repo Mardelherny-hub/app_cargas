@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Parsers;
 
 use App\Models\Voyage;
+use App\Services\Parsers\LoginXmlParserCompat;
 use App\Services\Parsers\NavsurTextParserCompat;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
@@ -32,6 +33,16 @@ class OperatorVoyageNumberTest extends TestCase
         $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
             $this->setOptions($parser, $options);
             return $this->invoke($parser, 'findOrCreateVoyage', [['voyage_number' => 'SOURCE01', 'pol' => 'ARBUE', 'pod' => 'PYASU']]);
+        });
+    }
+
+    public function test_login_prefers_and_validates_operator_number(): void
+    {
+        $parser = new LoginXmlParserCompat();
+        $this->assertOperatorPriority(function (array $options) use ($parser): Voyage {
+            $this->setOptions($parser, $options);
+            $data = ['voyage' => ['voyage_number' => 'SOURCE01', 'origin_port' => 'BUENOS AIRES', 'destination_port' => 'ASUNCION', 'departure_date' => null, 'estimated_arrival_date' => null]];
+            return $this->invoke($parser, 'createVoyage', [$data, ['company_id' => self::COMPANY, 'user_id' => self::USER]]);
         });
     }
 
