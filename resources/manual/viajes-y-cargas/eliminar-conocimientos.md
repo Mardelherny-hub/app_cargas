@@ -8,9 +8,9 @@ palabras_clave: [eliminar, borrar, quitar, conocimiento, BL, ítems, contenedore
 relacionados: [viajes-y-cargas/cargar-conocimientos-e-items, importar-manifiestos/revertir-una-importacion]
 estado: publicado
 verificado:
-  version: 390826a
-  fecha: 2026-11-17
-  entorno: codigo
+  version: eb547c9c
+  fecha: 2026-11-24
+  entorno: stage
 ---
 
 ## Para qué sirve
@@ -30,7 +30,7 @@ Elimina un conocimiento junto con sus ítems en un solo paso, o todos los conoci
 **Un conocimiento:**
 
 1. Abra el conocimiento desde el [listado de conocimientos](ruta:company.bills-of-lading.index) o desde la carga.
-2. Haga clic en **Eliminar**. En el listado, el botón **Eliminar** está en la fila de cada conocimiento.
+2. Haga clic en **Eliminar**. En el listado, el botón **Eliminar** aparece en cada conocimiento que cumple las condiciones para borrarse.
 3. Lea el aviso **¿Eliminar el conocimiento … y sus ítems?** y confirme.
 
 **Todos los conocimientos de una embarcación:**
