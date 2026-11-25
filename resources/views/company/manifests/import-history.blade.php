@@ -320,6 +320,12 @@
                                                         {{-- La importación que creó el viaje no se revierte sola mientras haya archivos agregados vigentes. --}}
                                                         @if($import->can_be_reverted && $import->voyage && $import->voyage->status === 'planning' && !$import->reverted_at && ($isAddedImport || !in_array($import->voyage_id, $voyagesWithAddedImports ?? [])))
                                                             <div class="border-t border-gray-100"></div>
+                                                            @if($revertLocks[$import->id] ?? null)
+                                                                @include('company.manifests.partials.revert-locked-item', [
+                                                                    'label' => $isAddedImport ? 'Revertir lo agregado' : 'Revertir importación',
+                                                                    'reason' => $revertLocks[$import->id],
+                                                                ])
+                                                            @else
                                                             <button type="button" 
                                                                     onclick="openRevertModal({{ $import->id }}, @js($import->display_file_name), '{{ $isAddedImport ? 'added' : 'import' }}')"
                                                                     class="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50" role="menuitem">
@@ -328,9 +334,16 @@
                                                                 </svg>
                                                                 {{ $isAddedImport ? 'Revertir lo agregado' : 'Revertir importación' }}
                                                             </button>
+                                                            @endif
                                                         @endif
 
                                                         @if(!$import->reverted_at && $import->voyage && $import->voyage->status === 'planning' && in_array($import->voyage_id, $voyagesWithAddedImports ?? []))
+                                                            @if($voyageRevertLocks[$import->voyage_id] ?? null)
+                                                                @include('company.manifests.partials.revert-locked-item', [
+                                                                    'label' => 'Revertir viaje completo',
+                                                                    'reason' => $voyageRevertLocks[$import->voyage_id],
+                                                                ])
+                                                            @else
                                                             <button type="button"
                                                                     onclick="openRevertModal({{ $import->id }}, @js('viaje ' . $import->voyage->voyage_number), 'voyage')"
                                                                     class="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50" role="menuitem">
@@ -339,6 +352,7 @@
                                                                 </svg>
                                                                 Revertir viaje completo
                                                             </button>
+                                                            @endif
                                                         @endif
 
                                                         @if($import->reverted_at)

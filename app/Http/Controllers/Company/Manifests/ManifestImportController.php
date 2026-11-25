@@ -502,10 +502,26 @@ class ManifestImportController extends Controller
             ->unique()
             ->all();
 
+        // Con registros vigentes en AFIP, el menú muestra el motivo en vez de ofrecer revertir.
+        $revertService = app(\App\Services\ManifestImportRevertService::class);
+        $revertLocks = [];
+        $voyageRevertLocks = [];
+        foreach ($imports as $import) {
+            if ($import->reverted_at || !$import->voyage || $import->voyage->status !== 'planning') {
+                continue;
+            }
+            $revertLocks[$import->id] = $revertService->afipLockMessage($import, $import->voyage);
+            if (!array_key_exists($import->voyage_id, $voyageRevertLocks)) {
+                $voyageRevertLocks[$import->voyage_id] = $revertService->voyageAfipLockMessage($import->voyage);
+            }
+        }
+
         return view('company.manifests.import-history', [
             'imports' => $imports,
             'company' => $company,
             'voyagesWithAddedImports' => $voyagesWithAddedImports,
+            'revertLocks' => $revertLocks,
+            'voyageRevertLocks' => $voyageRevertLocks,
         ]);
     }
 

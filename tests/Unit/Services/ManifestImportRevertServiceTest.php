@@ -413,6 +413,24 @@ class ManifestImportRevertServiceTest extends TestCase
         $this->revert($added);
     }
 
+    public function test_lock_message_is_available_before_confirming(): void
+    {
+        $origin = $this->originImport();
+        $voyage = Voyage::findOrFail(self::VOYAGE);
+
+        $this->assertNull($this->service->afipLockMessage($origin, $voyage));
+        $this->assertNull($this->service->voyageAfipLockMessage($voyage));
+
+        DB::table('webservice_transactions')->insert([
+            'company_id' => 1, 'voyage_id' => self::VOYAGE, 'shipment_id' => 1,
+            'soap_action' => 'RegistrarMicDta', 'status' => 'success', 'external_reference' => 'M1',
+        ]);
+
+        $expected = 'La embarcación BARCAZA QA tiene registros vigentes en AFIP para este viaje: MIC/DTA M1 registrado en AFIP sin anulación aprobada.';
+        $this->assertSame($expected, $this->service->afipLockMessage($origin, $voyage));
+        $this->assertSame($expected, $this->service->voyageAfipLockMessage($voyage));
+    }
+
     public function test_whole_voyage_revert_fails_atomically(): void
     {
         $this->originImport();
