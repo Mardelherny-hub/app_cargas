@@ -40,6 +40,12 @@
         </div>
     @endif
 
+    @if(session('warning'))
+        <div class="mb-4 bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded" role="alert">
+            {{ session('warning') }}
+        </div>
+    @endif
+
     @if(session('error'))
         <div class="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
             <span class="block sm:inline">{{ session('error') }}</span>

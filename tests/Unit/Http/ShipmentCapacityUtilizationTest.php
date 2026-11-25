@@ -132,4 +132,49 @@ class ShipmentCapacityUtilizationTest extends TestCase
             $this->assertStringContainsString('No se pudo crear la carga: prueba.', Blade::render(substr($source, $start, $end - $start)), $view);
         }
     }
+
+    public function test_over_capacity_is_saved_and_warned(): void
+    {
+        // 1.800.000 kg sobre 1.500 t = 120 %.
+        $this->existingLoad(1800000);
+
+        $response = $this->storeBarge();
+
+        $this->assertTrue(Shipment::where('shipment_number', 'QA-01-02')->exists());
+        $this->assertSame('120.00', Voyage::findOrFail(1)->capacity_utilization_percentage);
+        $this->assertSame(
+            'El peso cargado del viaje supera su capacidad: 120,00 % de la capacidad de sus embarcaciones. '
+            . 'Revise el peso de los ítems y la capacidad declarada de las embarcaciones.',
+            $response->getSession()->get('warning')
+        );
+    }
+
+    public function test_value_beyond_the_column_is_capped(): void
+    {
+        // 30.000.000 kg sobre 1.500 t = 2.000 %: la columna admite hasta 999,99.
+        $this->existingLoad(30000000);
+
+        $response = $this->storeBarge();
+
+        $this->assertTrue(Shipment::where('shipment_number', 'QA-01-02')->exists());
+        $this->assertSame('999.99', Voyage::findOrFail(1)->capacity_utilization_percentage);
+        $this->assertStringContainsString('2.000,00 %', $response->getSession()->get('warning'));
+    }
+
+    public function test_no_warning_within_capacity(): void
+    {
+        $this->existingLoad(1473555);
+
+        $this->assertNull($this->storeBarge()->getSession()->get('warning'));
+    }
+
+    public function test_cargo_page_shows_the_warning(): void
+    {
+        session()->put('warning', 'El peso cargado del viaje supera su capacidad: prueba.');
+        $source = file_get_contents(resource_path('views/company/shipments/show.blade.php'));
+        $start = strpos($source, '{{-- Mensajes Flash --}}');
+        $end = strpos($source, "@if(session('error'))", $start);
+
+        $this->assertStringContainsString('supera su capacidad: prueba.', Blade::render(substr($source, $start, $end - $start)));
+    }
 }
