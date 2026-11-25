@@ -83,7 +83,7 @@ class ParanaExcelParserCompat extends ParanaExcelParser
 
         if ($voyageNumber === '') {
             throw new \Exception(
-                'PARANA no informa VOYAGE_NO y no se ingresó un número de viaje.'
+                'El archivo no informa número de viaje. Escribilo en el formulario.'
             );
         }
 

@@ -147,6 +147,18 @@ class OperatorVoyageNumberTest extends TestCase
         $this->assertMissingSource(fn (array $options): Voyage => $this->invoke($parser, 'createVoyage', [$data, $options]));
     }
 
+    public function test_parana_accepts_operator_when_source_is_blank(): void
+    {
+        $parser = new ParanaExcelParserCompat();
+        $sheet = (new \PhpOffice\PhpSpreadsheet\Spreadsheet())->getActiveSheet();
+        $sheet->setCellValue('A1', 'MAERSK');
+        $sheet->setCellValue('Q1', 'ARBUE');
+        $sheet->setCellValue('S1', 'PYASU');
+        $data = (new ReflectionMethod($parser, 'extractVoyageData'))->invoke($parser, $sheet);
+        $this->assertNull($data['voyage_number']);
+        $this->assertMissingSource(fn (array $options): Voyage => $this->invoke($parser, 'createVoyage', [$data, $options]));
+    }
+
     private function setOptions(object $parser, array $options): void
     {
         (new ReflectionProperty($parser, 'importOptions'))->setValue($parser, $options);
