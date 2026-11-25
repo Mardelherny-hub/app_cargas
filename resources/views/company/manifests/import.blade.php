@@ -162,9 +162,6 @@
                                     </option>
                                 @endforeach
                             </select>
-                            @error('target_voyage_id')
-                                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
-                            @enderror
                             <p class="mt-1 text-xs text-gray-500">
                                 Se agregan los conocimientos del archivo a la carga de la embarcación elegida. Los datos
                                 generales del viaje no cambian y los conocimientos que ya existen en el viaje se saltean.
@@ -192,7 +189,8 @@
                                 </p>
                             </div>
 
-                            <div id="target-error" class="mt-3 bg-red-50 border border-red-200 text-red-800 rounded-md p-3 text-sm" style="display:none;"></div>
+                            {{-- Un solo aviso: el rechazo del servidor y la verificación en vivo usan esta caja. --}}
+                            <div id="target-error" class="mt-3 bg-red-50 border border-red-200 text-red-800 rounded-md p-3 text-sm" style="display:{{ $errors->has('target_voyage_id') ? 'block' : 'none' }};">{{ $errors->first('target_voyage_id') }}</div>
                         </div>
                     </div>
 
@@ -414,8 +412,29 @@
                         <h3 class="text-lg font-medium text-gray-900">📜 Importaciones Recientes</h3>
                     </div>
                     <div class="px-6 py-4">
+                        @if(($recentImports ?? collect())->isNotEmpty())
+                            <ul class="divide-y divide-gray-100 mb-3">
+                                @foreach($recentImports as $recent)
+                                    <li class="py-2 text-sm">
+                                        <a href="{{ route('company.manifests.import.show', $recent) }}" class="font-medium text-gray-900 hover:text-blue-600 break-all">
+                                            {{ $recent->display_file_name }}
+                                        </a>
+                                        <div class="text-xs text-gray-500">
+                                            {{ $recent->format_label }}
+                                            · {{ optional($recent->created_at)->format('d/m/Y H:i') }}
+                                            @if($recent->voyage)
+                                                · Viaje {{ $recent->voyage->voyage_number }}
+                                            @endif
+                                            · {{ $recent->status_badge['text'] ?? $recent->status }}
+                                        </div>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        @endif
                         <p class="text-sm text-gray-600">
-                            No hay importaciones recientes. 
+                            @if(($recentImports ?? collect())->isEmpty())
+                                No hay importaciones recientes.
+                            @endif
                             <a href="{{ route('company.manifests.import.history') }}" class="text-blue-600 hover:text-blue-500">
                                 Ver historial completo →
                             </a>

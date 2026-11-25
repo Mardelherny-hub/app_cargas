@@ -201,6 +201,18 @@ class ManifestImportRevertService
      */
     private function guardAfipLock(ManifestImport $import, Voyage $voyage): void
     {
+        $message = $this->afipLockMessage($import, $voyage);
+
+        if ($message !== null) {
+            throw new DomainException($message);
+        }
+    }
+
+    /**
+     * Motivo por el que AFIP impide revertir la importación, o null si no lo impide.
+     */
+    public function afipLockMessage(ManifestImport $import, Voyage $voyage): ?string
+    {
         $allVessels = !$this->isTargeted($import) || isset($import->parser_config['convoy_conversion']);
 
         $shipmentIds = collect($import->created_shipment_ids ?? [])
@@ -208,19 +220,33 @@ class ManifestImportRevertService
 
         $vesselIds = Shipment::where('voyage_id', $voyage->id)
             ->when(!$allVessels, fn ($query) => $query->whereIn('id', $shipmentIds))
-            ->pluck('vessel_id')
-            ->unique();
+            ->pluck('vessel_id');
 
-        foreach ($vesselIds as $vesselId) {
+        return $this->vesselsLockMessage($voyage, $vesselIds);
+    }
+
+    /**
+     * Motivo por el que AFIP impide revertir el viaje completo, o null.
+     */
+    public function voyageAfipLockMessage(Voyage $voyage): ?string
+    {
+        return $this->vesselsLockMessage($voyage, Shipment::where('voyage_id', $voyage->id)->pluck('vessel_id'));
+    }
+
+    private function vesselsLockMessage(Voyage $voyage, $vesselIds): ?string
+    {
+        foreach ($vesselIds->unique() as $vesselId) {
             $lock = $this->afipLock->inspectAfipVesselLock((int) $voyage->company_id, (int) $voyage->id, (int) $vesselId);
 
             if ($lock['locked']) {
-                throw new DomainException(
-                    'La embarcación tiene registros vigentes en AFIP para este viaje: '
-                    . implode(' ', array_column($lock['reasons'], 'message'))
-                );
+                $name = \App\Models\Vessel::whereKey($vesselId)->value('name') ?? 'del viaje';
+
+                return "La embarcación {$name} tiene registros vigentes en AFIP para este viaje: "
+                    . implode(' ', array_column($lock['reasons'], 'message'));
             }
         }
+
+        return null;
     }
 
     /**
@@ -271,14 +297,14 @@ class ManifestImportRevertService
         }
 
         $steps = [
-            'bills' => [BillOfLading::class, 'conocimientos de embarque'],
-            'items' => [ShipmentItem::class, 'items de carga'],
-            'containers' => [Container::class, 'contenedores'],
-            'shipments' => [Shipment::class, 'envíos'],
-            'voyages' => [Voyage::class, 'viajes'],
+            'bills' => [BillOfLading::class, 'conocimiento de embarque', 'conocimientos de embarque'],
+            'items' => [ShipmentItem::class, 'ítem de carga', 'ítems de carga'],
+            'containers' => [Container::class, 'contenedor', 'contenedores'],
+            'shipments' => [Shipment::class, 'carga', 'cargas'],
+            'voyages' => [Voyage::class, 'viaje', 'viajes'],
         ];
 
-        foreach ($steps as $key => [$model, $label]) {
+        foreach ($steps as $key => [$model, $singular, $plural]) {
             // Un contenedor que sigue vinculado a ítems de otro viaje ya existía:
             // los parsers lo reutilizan por número. Solo se borra si quedó sin vínculos.
             if ($key === 'containers' && $pivot && !empty($created[$key])) {
@@ -297,7 +323,7 @@ class ManifestImportRevertService
             Log::info('REVERT - Eliminados', ['type' => $key, 'count' => $count]);
 
             if ($count > 0) {
-                $summary[] = "{$count} {$label}";
+                $summary[] = $count . ' ' . ($count === 1 ? $singular : $plural);
             }
         }
 

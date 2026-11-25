@@ -69,7 +69,14 @@ class ManifestImportController extends Controller
             ->orderByDesc('id')
             ->get(['id', 'voyage_number', 'lead_vessel_id', 'is_convoy', 'departure_date']);
 
+        $recentImports = ManifestImport::forCompany($company->id)
+            ->with('importTracking', 'voyage:id,voyage_number')
+            ->latest()
+            ->limit(5)
+            ->get();
+
         return view('company.manifests.import', [
+            'recentImports' => $recentImports,
             'supportedFormats' => $supportedFormats,
             'formatStats' => $formatStats,
             'vessels' => $vessels,
@@ -481,7 +488,7 @@ class ManifestImportController extends Controller
 
         // Obtener importaciones de la empresa con relaciones
         $imports = ManifestImport::forCompany($company->id)
-            ->with(['user', 'voyage', 'voyage.originPort', 'voyage.destinationPort'])
+            ->with(['user', 'importTracking', 'voyage', 'voyage.originPort', 'voyage.destinationPort'])
             ->latest()
             ->paginate(20);
 
@@ -495,10 +502,26 @@ class ManifestImportController extends Controller
             ->unique()
             ->all();
 
+        // Con registros vigentes en AFIP, el menú muestra el motivo en vez de ofrecer revertir.
+        $revertService = app(\App\Services\ManifestImportRevertService::class);
+        $revertLocks = [];
+        $voyageRevertLocks = [];
+        foreach ($imports as $import) {
+            if ($import->reverted_at || !$import->voyage || $import->voyage->status !== 'planning') {
+                continue;
+            }
+            $revertLocks[$import->id] = $revertService->afipLockMessage($import, $import->voyage);
+            if (!array_key_exists($import->voyage_id, $voyageRevertLocks)) {
+                $voyageRevertLocks[$import->voyage_id] = $revertService->voyageAfipLockMessage($import->voyage);
+            }
+        }
+
         return view('company.manifests.import-history', [
             'imports' => $imports,
             'company' => $company,
             'voyagesWithAddedImports' => $voyagesWithAddedImports,
+            'revertLocks' => $revertLocks,
+            'voyageRevertLocks' => $voyageRevertLocks,
         ]);
     }
 
@@ -590,7 +613,7 @@ class ManifestImportController extends Controller
         if (!empty($stats)) {
             $details = [];
             if (isset($stats['bills'])) $details[] = "{$stats['bills']} conocimientos";
-            if (isset($stats['shipments'])) $details[] = "{$stats['shipments']} envíos";
+            if (isset($stats['shipments'])) $details[] = "{$stats['shipments']} cargas";
             if (isset($stats['items'])) $details[] = "{$stats['items']} items";
             
             if (!empty($details)) {
@@ -839,7 +862,7 @@ public function showReport(Request $request)
                 'hasWarnings' => $hasWarnings,
             ],
             'fileInfo' => [
-                'name'        => $import->file_name,
+                'name'        => $import->display_file_name,
                 'imported_at' => optional($import->created_at)->format('d/m/Y H:i:s'),
                 'imported_by' => $import->user->name ?? 'Usuario',
             ],

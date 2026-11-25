@@ -1755,7 +1755,7 @@ class G2OceanXmlParser implements ManifestParserInterface
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'G2Ocean XML Format',
+            'name' => 'G2Ocean (XML)',
             'description' => 'Archivo XML de manifiestos de StarPort',
             'extensions' => ['xml'],
             'features' => ['multiple_bills_per_file', 'international_shipping', 'detailed_cargo_info']

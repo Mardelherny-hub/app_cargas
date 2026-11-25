@@ -59,10 +59,9 @@
                             <div>
                                 <select class="block w-full px-3 py-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" id="formatFilter">
                                     <option value="">Todos los formatos</option>
-                                    <option value="kline">KLine (.dat)</option>
-                                    <option value="parana">PARANA (.xlsx)</option>
-                                    <option value="guaran">Guaraní (.csv)</option>
-                                    <option value="login">Login (.xml)</option>
+                                    @foreach(\App\Models\ManifestImport::FORMAT_LABELS as $formatValue => $formatLabel)
+                                        <option value="{{ $formatValue }}">{{ $formatLabel }}</option>
+                                    @endforeach
                                 </select>
                             </div>
                             <div>
@@ -140,7 +139,7 @@
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
                                 @foreach($imports as $import)
-                                    <tr class="hover:bg-gray-50">
+                                    <tr class="hover:bg-gray-50" data-format="{{ $import->file_format }}">
                                         <!-- Archivo -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <div class="flex items-center">
@@ -168,7 +167,7 @@
                                                     @endswitch
                                                 </div>
                                                 <div>
-                                                    <div class="text-sm font-medium text-gray-900">{{ $import->file_name }}</div>
+                                                    <div class="text-sm font-medium text-gray-900">{{ $import->display_file_name }}</div>
                                                     <div class="text-sm text-gray-500">
                                                         {{ $import->file_size_formatted }}
                                                         @if($import->processing_time_seconds)
@@ -182,7 +181,7 @@
                                         <!-- Formato -->
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border">
-                                                {{ strtoupper($import->file_format) }}
+                                                {{ $import->format_label }}
                                             </span>
                                         </td>
 
@@ -321,17 +320,30 @@
                                                         {{-- La importación que creó el viaje no se revierte sola mientras haya archivos agregados vigentes. --}}
                                                         @if($import->can_be_reverted && $import->voyage && $import->voyage->status === 'planning' && !$import->reverted_at && ($isAddedImport || !in_array($import->voyage_id, $voyagesWithAddedImports ?? [])))
                                                             <div class="border-t border-gray-100"></div>
+                                                            @if($revertLocks[$import->id] ?? null)
+                                                                @include('company.manifests.partials.revert-locked-item', [
+                                                                    'label' => $isAddedImport ? 'Revertir lo agregado' : 'Revertir importación',
+                                                                    'reason' => $revertLocks[$import->id],
+                                                                ])
+                                                            @else
                                                             <button type="button" 
-                                                                    onclick="openRevertModal({{ $import->id }}, @js($import->file_name), '{{ $isAddedImport ? 'added' : 'import' }}')"
+                                                                    onclick="openRevertModal({{ $import->id }}, @js($import->display_file_name), '{{ $isAddedImport ? 'added' : 'import' }}')"
                                                                     class="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50" role="menuitem">
                                                                 <svg class="mr-3 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                                                                     <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
                                                                 </svg>
                                                                 {{ $isAddedImport ? 'Revertir lo agregado' : 'Revertir importación' }}
                                                             </button>
+                                                            @endif
                                                         @endif
 
                                                         @if(!$import->reverted_at && $import->voyage && $import->voyage->status === 'planning' && in_array($import->voyage_id, $voyagesWithAddedImports ?? []))
+                                                            @if($voyageRevertLocks[$import->voyage_id] ?? null)
+                                                                @include('company.manifests.partials.revert-locked-item', [
+                                                                    'label' => 'Revertir viaje completo',
+                                                                    'reason' => $voyageRevertLocks[$import->voyage_id],
+                                                                ])
+                                                            @else
                                                             <button type="button"
                                                                     onclick="openRevertModal({{ $import->id }}, @js('viaje ' . $import->voyage->voyage_number), 'voyage')"
                                                                     class="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50" role="menuitem">
@@ -340,6 +352,7 @@
                                                                 </svg>
                                                                 Revertir viaje completo
                                                             </button>
+                                                            @endif
                                                         @endif
 
                                                         @if($import->reverted_at)
@@ -431,10 +444,9 @@
                         </div>
                         <p class="text-sm text-gray-700 mb-2">Se eliminarán:</p>
                         <ul class="text-sm text-gray-600 list-disc list-inside space-y-1 mb-4" data-revert-mode="import">
-                            <li>Conocimientos de embarque (Bills of Lading)</li>
-                            <li>Items de carga (Shipment Items)</li>
-                            <li>Contenedores (si aplica)</li>
-                            <li>El viaje creado</li>
+                            <li>Los conocimientos de embarque y sus ítems de carga</li>
+                            <li>Los contenedores que no use otro viaje</li>
+                            <li>La carga y el viaje que creó este archivo</li>
                         </ul>
                         <ul class="text-sm text-gray-600 list-disc list-inside space-y-1 mb-4 hidden" data-revert-mode="added">
                             <li>Los conocimientos, ítems y contenedores que agregó este archivo</li>
@@ -493,7 +505,7 @@
                 
                 rows.forEach(row => {
                     const fileName = row.querySelector('td:first-child .text-sm')?.textContent.toLowerCase() || '';
-                    const format = row.querySelector('td:nth-child(2) span')?.textContent.toLowerCase() || '';
+                    const format = row.dataset.format || '';
                     const status = row.querySelector('td:nth-child(3) span')?.classList.toString() || '';
                     
                     let showRow = true;
@@ -504,7 +516,7 @@
                     }
                     
                     // Filtro de formato
-                    if (formatValue && !format.includes(formatValue)) {
+                    if (formatValue && format !== formatValue) {
                         showRow = false;
                     }
                     

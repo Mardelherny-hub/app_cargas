@@ -1151,7 +1151,7 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             if ($companyId) {
                 $existingImport = ManifestImport::isFileAlreadyImported($fileHash, $companyId);
                 if ($existingImport) {
-                    throw new \Exception("Este archivo ya fue importado anteriormente (ID: {$existingImport->id})");
+                    throw new \Exception($existingImport->alreadyImportedMessage());
                 }
             }
         }
@@ -3723,7 +3723,7 @@ protected function extractPortInfo(array $data): array
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'KLine Data Format',
+            'name' => 'K-Line (.DAT)',
             'description' => 'Formato de archivo de datos .DAT de K-Line',
             'extensions' => ['dat', 'txt'],
             'features' => ['multiple_bills_per_file', 'automatic_voyage_creation', 'port_detection']

@@ -23,25 +23,25 @@
             
             <!-- Encabezado del reporte -->
             <div class="bg-gradient-to-r from-green-500 to-green-600 rounded-lg p-6 text-white mb-8">
-                <div class="flex items-center justify-between">
-                    <div>
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div class="min-w-0">
                         <h3 class="text-2xl font-bold mb-2">
-                            @if($importResult['success'])
-                                ✅ Importación Completada Exitosamente
-                            @elseif($importResult['hasWarnings'])
+                            @if($importResult['success'] && $importResult['hasWarnings'])
                                 ⚠️ Importación Completada con Advertencias
+                            @elseif($importResult['success'])
+                                ✅ Importación Completada Exitosamente
                             @else
                                 ❌ Importación Falló
                             @endif
                         </h3>
                         <p class="text-green-100">
-                            Archivo: <strong>{{ $fileInfo['name'] }}</strong>
+                            Archivo: <strong class="break-all">{{ $fileInfo['name'] }}</strong>
                         </p>
                         <p class="text-green-100 text-sm">
                             Importado el {{ $fileInfo['imported_at'] }} por {{ $fileInfo['imported_by'] }}
                         </p>
                     </div>
-                    <div class="text-right">
+                    <div class="sm:text-right">
                         <div class="text-3xl font-bold">
                             {{ $counts['billsOfLading'] ?? count($createdRecords['billsOfLading'] ?? []) }}
                         </div>
@@ -72,12 +72,12 @@
                     <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
                         <div class="flex items-center justify-between mb-3">
                             <div>
-                                <h5 class="font-medium text-gray-900">📋 Viaje Creado</h5>
+                                <h5 class="font-medium text-gray-900">📋 {{ empty($targetVoyage) ? 'Viaje Creado' : 'Viaje' }}</h5>
                                 <p class="text-sm text-gray-600">{{ $voyage['voyage_number'] }}</p>
                             </div>
                             <div class="text-right">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                    {{ ucfirst($voyage['status']) }}
+                                    {{ \App\Models\Voyage::statusLabel($voyage['status']) }}
                                 </span>
                             </div>
                         </div>
@@ -246,7 +246,7 @@
                                 <dt class="text-sm font-medium text-gray-500">Estado:</dt>
                                 <dd class="text-sm">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                        {{ ucfirst($voyage['status']) }}
+                                        {{ \App\Models\Voyage::statusLabel($voyage['status']) }}
                                     </span>
                                 </dd>
                             </div>

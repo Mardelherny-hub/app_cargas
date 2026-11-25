@@ -62,8 +62,10 @@ trait ResolvesTargetVoyage
 
         $lock = app(AfipVesselLock::class)->inspectAfipVesselLock($companyId, (int) $voyage->id, $vesselId);
         if ($lock['locked']) {
+            $name = \App\Models\Vessel::whereKey($vesselId)->value('name') ?? 'elegida';
+
             throw new DomainException(
-                'La embarcación tiene registros vigentes en AFIP para este viaje: '
+                "La embarcación {$name} tiene registros vigentes en AFIP para este viaje: "
                 . implode(' ', array_column($lock['reasons'], 'message'))
             );
         }

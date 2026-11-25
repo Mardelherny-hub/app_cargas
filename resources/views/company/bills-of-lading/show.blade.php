@@ -49,6 +49,10 @@ if ($user) {
                             Eliminar
                         </button>
                     </form>
+                @elseif(!empty($permissions['deleteBlockedReason']))
+                    <p class="text-xs text-gray-600 max-w-xs">
+                        No se puede eliminar: {{ $permissions['deleteBlockedReason'] }}
+                    </p>
                 @endif
             @endif
         </div>

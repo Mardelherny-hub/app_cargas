@@ -684,7 +684,7 @@ class MscVesselNameParser implements ManifestParserInterface
 
     public function getFormatInfo(): array
     {
-        return ['name' => 'MSC Vessel Name', 'description' => 'Archivo TXT de MSC con conocimientos y contenedores', 'extensions' => ['txt']];
+        return ['name' => 'MSC (texto)', 'description' => 'Archivo TXT de MSC con conocimientos y contenedores', 'extensions' => ['txt']];
     }
 
     public function getDefaultConfig(): array

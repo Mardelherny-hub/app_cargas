@@ -43,6 +43,10 @@ class ResolvesTargetVoyageTest extends TestCase
         Schema::create('companies', function (Blueprint $t) {
             $t->id(); $t->string('legal_name')->nullable(); $t->string('ws_environment')->nullable(); $t->timestamps();
         });
+        Schema::create('vessels', function (Blueprint $t) {
+            $t->id(); $t->string('name');
+        });
+        DB::table('vessels')->insert(['id' => self::LEAD, 'name' => 'LIDER QA']);
         Schema::create('users', function (Blueprint $t) {
             $t->id(); $t->string('name'); $t->string('email'); $t->string('password');
             $t->string('userable_type'); $t->unsignedBigInteger('userable_id'); $t->timestamps();
@@ -162,7 +166,10 @@ class ResolvesTargetVoyageTest extends TestCase
             'soap_action' => 'Ar.Gob.Afip.Dga.wgesregsintia2/RegistrarMicDta', 'external_reference' => '26ARMIF0001',
         ]);
 
-        $this->expectDomainError('26ARMIF0001', ['target_voyage_id' => self::VOYAGE, 'vessel_id' => self::LEAD]);
+        $this->expectDomainError(
+            'La embarcación LIDER QA tiene registros vigentes en AFIP para este viaje: MIC/DTA 26ARMIF0001 registrado en AFIP sin anulación aprobada.',
+            ['target_voyage_id' => self::VOYAGE, 'vessel_id' => self::LEAD]
+        );
     }
 
     public function test_another_vessel_requires_a_convoy(): void

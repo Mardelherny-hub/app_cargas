@@ -835,7 +835,7 @@ class NavsurTextParser implements ManifestParserInterface
         if ($fileHash && $companyId) {
             $existing = ManifestImport::isFileAlreadyImported($fileHash, $companyId);
             if ($existing) {
-                throw new Exception("Este archivo ya fue importado anteriormente (ID: {$existing->id})");
+                throw new Exception($existing->alreadyImportedMessage());
             }
         }
 
@@ -2099,7 +2099,7 @@ protected function findOrCreateContainerType(
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'Navsur Text Format',
+            'name' => 'Navsur (texto)',
             'description' => 'Archivo de texto Navsur con conocimientos y mercadería',
             'extensions' => ['txt'],
             'mime_types' => ['text/plain'],

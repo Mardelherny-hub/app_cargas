@@ -26,7 +26,7 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
                 {{ __('Conocimientos de Embarque') }}
             </h2>
             <p class="mt-1 text-sm text-gray-600">
-                {{ $billsOfLading->total() }} conocimientos en {{ $voyageGroups->count() }} viajes
+                {{ $billsOfLading->total() }} {{ $billsOfLading->total() === 1 ? 'conocimiento' : 'conocimientos' }} en {{ $voyageGroups->count() }} {{ $voyageGroups->count() === 1 ? 'viaje' : 'viajes' }}
             </p>
         </div>
         <div class="mt-4 sm:mt-0 flex space-x-2">
@@ -104,6 +104,13 @@ $voyageGroups = $billsOfLading->groupBy(function($bill) {
                         Eliminar todos los conocimientos de esta embarcación
                     </button>
                 </form>
+            </div>
+        @endif
+
+        @if(!empty($bulkDeleteBlocked))
+            <div class="bg-amber-50 border border-amber-200 rounded-lg mb-6 p-4 text-sm text-amber-900">
+                <span class="font-semibold">No se pueden eliminar los conocimientos de {{ $bulkDeleteBlocked['vessel'] ?? 'esta embarcación' }}.</span>
+                {{ $bulkDeleteBlocked['reason'] }}
             </div>
         @endif
 

@@ -1126,7 +1126,7 @@ protected function extractValue(string $scope, string $label): ?string
         if ($fileHash && $companyId) {
             $existing = ManifestImport::isFileAlreadyImported($fileHash, $companyId);
             if ($existing) {
-                throw new Exception("Este archivo ya fue importado anteriormente (ID: {$existing->id})");
+                throw new Exception($existing->alreadyImportedMessage());
             }
         }
 
@@ -1519,7 +1519,7 @@ protected function extractValue(string $scope, string $label): ?string
     public function getFormatInfo(): array
     {
         return [
-            'name' => 'TFP',
+            'name' => 'TFP (texto)',
             'description' => 'Archivo de texto TFP con conocimientos, contenedores y mercadería',
             'markers' => ['**BL**', '**FIN BL**', '**CONTENEDORES**', '**LINEAS**'],
             'notes' => 'Valores entre /* ... */'

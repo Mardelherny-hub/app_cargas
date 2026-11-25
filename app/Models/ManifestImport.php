@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -154,6 +155,26 @@ class ManifestImport extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Seguimiento de la subida que originó esta importación; conserva el
+     * nombre con el que el usuario eligió el archivo.
+     */
+    public function importTracking(): HasOne
+    {
+        return $this->hasOne(ImportTracking::class, 'manifest_import_id')->latestOfMany();
+    }
+
+    /**
+     * Nombre del archivo tal como lo subió el usuario. file_name es el nombre
+     * interno con el que se guardó (lleva fecha y sufijo aleatorio).
+     */
+    public function getDisplayFileNameAttribute(): string
+    {
+        $original = trim((string) $this->importTracking?->original_name);
+
+        return $original !== '' ? $original : (string) $this->file_name;
     }
 
     /**
@@ -713,6 +734,41 @@ class ManifestImport extends Model
                     ->where('company_id', $companyId)
                     ->successful()
                     ->first();
+    }
+
+    /**
+     * Nombre visible de cada formato de archivo guardado en file_format.
+     */
+    public const FORMAT_LABELS = [
+        'kline' => 'K-Line',
+        'parana' => 'Paraná',
+        'guaran_excel' => 'Guaraní',
+        'login_xml' => 'Login',
+        'tfp' => 'TFP',
+        'navsur' => 'Navsur',
+        'cmsp' => 'CMSP (CUSCAR)',
+        'g2ocean_xml' => 'G2Ocean',
+        'msc_vessel_name' => 'MSC',
+        'don_toyo_excel' => 'Don Toyo',
+    ];
+
+    public function getFormatLabelAttribute(): string
+    {
+        return self::FORMAT_LABELS[$this->file_format] ?? strtoupper((string) $this->file_format);
+    }
+
+    /**
+     * Aviso para el usuario cuando vuelve a subir un archivo ya importado:
+     * cuándo, en qué viaje y qué hacer, sin identificadores internos.
+     */
+    public function alreadyImportedMessage(): string
+    {
+        $when = $this->created_at ? ' el ' . $this->created_at->format('d/m/Y H:i') : '';
+        $voyageNumber = $this->voyage?->voyage_number;
+        $where = $voyageNumber ? " en el viaje {$voyageNumber}" : '';
+
+        return "Este archivo ya fue importado{$when}{$where}. "
+            . 'Si necesita importarlo de nuevo, primero revierta esa importación desde el Historial de Importaciones.';
     }
 
     /**

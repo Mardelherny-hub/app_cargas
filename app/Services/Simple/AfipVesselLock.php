@@ -139,7 +139,7 @@ class AfipVesselLock
             $titles = $this->xmlValues($tx->request_xml, 'idTitTrans');
 
             if ($titles === []) {
-                return "{$tx->method} sin títulos identificables en el XML enviado.";
+                return 'Registro de títulos en AFIP sin títulos identificables en el envío.';
             }
 
             $pending = array_values(array_filter(
@@ -161,8 +161,8 @@ class AfipVesselLock
         }
 
         return $micDtaId !== ''
-            ? "MIC/DTA {$micDtaId} registrado en AFIP sin anulación aprobada ({$tx->method})."
-            : "{$tx->method} sin MIC/DTA identificable y sin anulación aprobada.";
+            ? "MIC/DTA {$micDtaId} registrado en AFIP sin anulación aprobada."
+            : 'MIC/DTA registrado en AFIP sin número identificable y sin anulación aprobada.';
     }
 
     private function titleAnnulled(string $title, Collection $later): bool
