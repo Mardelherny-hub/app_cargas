@@ -5,7 +5,7 @@ namespace App\Services\Parsers;
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, Shipment, ShipmentItem, Vessel, Voyage};
 use App\Services\ClientValidationService;
-use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
+use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ExtractsLabelledNcm, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use Carbon\Carbon;
 use DomainException;
@@ -17,7 +17,7 @@ use Throwable;
 
 class DonToyoExcelParser implements ManifestParserInterface
 {
-    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType;
+    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ExtractsLabelledNcm, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType;
 
     private const HEADERS = [
         'BUQUE' => ['Armador', 'CODIGO IMO BUQUE:', 'VIAJE:', 'IMPO/EXPO'],
@@ -408,26 +408,49 @@ class DonToyoExcelParser implements ManifestParserInterface
         return null;
     }
 
+    /**
+     * NCM del BL. La columna G (dato estructurado) va primero; si no es
+     * identificable, se toma el NCM rotulado en la descripción. Con varios
+     * códigos en la descripción se carga el primero y se avisan los demás.
+     */
     private function sourceNcm(string $number, array $row, array &$warnings): ?string
     {
         $declared = $this->text($row['NCM'] ?? '');
-        // Only explicitly labelled codes: unlabelled numbers may be weights, quantities or references.
-        preg_match_all('/\b(?:NCM|H\.?S\.?\s*CODE)\s*[:#-]?\s*(\d{4}(?:\.\d{2}){1,2})\b/iu',
-            $row['DESCRIPCION MERCADERIA'], $matches);
-        $found = $matches[1] ?? [];
-        if (count($found) > 1) {
-            $warnings[] = "BL {$number}: la descripción contiene varios códigos NCM/HS; el NCM queda vacío.";
-            return null;
-        }
+        $found = array_map(fn ($digits) => $this->dottedNcm($digits),
+            $this->labelledNcmCodes($row['DESCRIPCION MERCADERIA']) ?? []);
+
         if ($declared !== '' && (!preg_match('/^\d{4}\.\d{2,3}$/', $declared) || str_starts_with($declared, '0000.'))) {
-            $warnings[] = "BL {$number}: NCM de la columna G no identificable ({$declared}); queda vacío.";
+            $warnings[] = $found
+                ? "BL {$number}: NCM de la columna G no identificable ({$declared}); se toma el de la descripción ({$found[0]})."
+                : "BL {$number}: NCM de la columna G no identificable ({$declared}); queda vacío.";
             $declared = '';
         }
-        if ($declared !== '' && $found && $found[0] !== $declared) {
-            $warnings[] = "BL {$number}: NCM de la columna G y descripción diferentes; el NCM queda vacío.";
-            return null;
+
+        if ($declared !== '') {
+            // El mismo código con más dígitos en la descripción no es una diferencia.
+            $digits = str_replace('.', '', $declared);
+            $same = fn ($code) => str_starts_with(str_replace('.', '', $code), $digits)
+                || str_starts_with($digits, str_replace('.', '', $code));
+            if ($found && !array_filter($found, $same)) {
+                $warnings[] = "BL {$number}: NCM de la columna G ({$declared}) y de la descripción (" . implode(', ', $found)
+                    . ') diferentes; se cargó el de la columna G.';
+            }
+
+            return $declared;
         }
-        return $declared !== '' ? $declared : ($found[0] ?? null);
+
+        if (count($found) > 1) {
+            $warnings[] = "BL {$number}: la descripción trae varios NCM/HS; se cargó {$found[0]}. Otros códigos: "
+                . implode(', ', array_slice($found, 1)) . '.';
+        }
+
+        return $found[0] ?? null;
+    }
+
+    /** Mismo formato con puntos que la columna G: 0203.29, 8418.40.00 o 3303. */
+    private function dottedNcm(string $digits): string
+    {
+        return implode('.', array_filter([substr($digits, 0, 4), substr($digits, 4, 2), substr($digits, 6, 2)], 'strlen'));
     }
 
     private function sourcePackagingCode(string $number, string $description, array &$warnings): ?string

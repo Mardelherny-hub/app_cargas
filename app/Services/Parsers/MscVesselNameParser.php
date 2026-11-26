@@ -4,7 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, CargoType, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, PackagingType, Port, Shipment, ShipmentItem, Vessel, Voyage};
-use App\Services\Parsers\Concerns\{ExtractsEmbeddedTaxId, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
+use App\Services\Parsers\Concerns\{ExtractsEmbeddedTaxId, ExtractsLabelledNcm, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use DomainException;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +15,7 @@ use Throwable;
 class MscVesselNameParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
+    use ExtractsLabelledNcm;
     use ResolvesClientAddresses;
     use ResolvesExistingClient;
     use ResolvesPorts;
@@ -234,35 +235,15 @@ class MscVesselNameParser implements ManifestParserInterface
     }
 
     /**
-     * NCM/HS rotulado en la descripción (NCM, HS, HS CODE, NCM NO., etc.). Un
-     * número sin rótulo no se toma y la descripción no se modifica. Con varios
-     * códigos distintos se carga el primero y se avisan los demás.
+     * NCM/HS rotulado en la descripción. Con varios códigos distintos se carga
+     * el primero y se avisan los demás.
      */
     private function sourceCommodityCode(string $description, string $billNumber, int $line): ?string
     {
-        $label = '/(?<![\pL\pN_])(?:N\.?C\.?M\.?|H\.?S\.?)(?:[ \t.\-]*(?:CODES?|NO\.?|OF THE GOODS SHIPPED))?(?![\pL\pN_])/iu';
-        if (!preg_match_all($label, $description, $found, PREG_OFFSET_CAPTURE)) {
+        $codes = $this->labelledNcmCodes($description);
+        if ($codes === null) {
             return null;
         }
-
-        $token = '(\d+(?:\.\d+)*)([A-Z])?(?![\pL\pN_]|[.,]\d)';
-        $separator = '(?:[ \t]*(?:[/,;+&-]|\b(?:AND|OR|Y|O)\b)[ \t]*|[ \t]+)';
-        $codes = [];
-        foreach ($found[0] as [$text, $offset]) {
-            $rest = substr($description, $offset + strlen($text));
-            if (!preg_match('~^[ \t]*[:#=.\-]*[ \t]*' . $token . '~iu', $rest, $match)
-                || ($code = $this->ncmDigits($match[1], $match[2] ?? '')) === null) {
-                continue;
-            }
-            do {
-                $codes[] = $code;
-                $rest = substr($rest, strlen($match[0]));
-            } while (preg_match('~^' . $separator . $token . '~iu', $rest, $match)
-                && strlen(str_replace('.', '', $match[1])) >= 6
-                && ($code = $this->ncmDigits($match[1], $match[2] ?? '')) !== null);
-        }
-
-        $codes = array_values(array_unique($codes));
         if ($codes === []) {
             $this->warnings[] = "BL {$billNumber}, línea {$line}: rótulo NCM/HS sin código legible; el código queda vacío.";
 
@@ -274,28 +255,6 @@ class MscVesselNameParser implements ManifestParserInterface
         }
 
         return $codes[0];
-    }
-
-    /**
-     * Dígitos del NCM, sin puntos. Los sobrantes se descartan: 8 o más dígitos
-     * quedan en 8; 6 o 7, en 6; 4 o 5, en 4. Con menos de 4 no hay código. La
-     * letra final de la extensión nacional (8421.39.90.000U) solo se admite
-     * con 10 dígitos o más.
-     */
-    private function ncmDigits(string $raw, string $suffix): ?string
-    {
-        $digits = str_replace('.', '', $raw);
-        $length = strlen($digits);
-        if ($suffix !== '' && $length < 10) {
-            return null;
-        }
-
-        return match (true) {
-            $length >= 8 => substr($digits, 0, 8),
-            $length >= 6 => substr($digits, 0, 6),
-            $length >= 4 => substr($digits, 0, 4),
-            default => null,
-        };
     }
 
     /**

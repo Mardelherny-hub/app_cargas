@@ -351,20 +351,42 @@ class DonToyoExcelParserTest extends TestCase
         return $codes;
     }
 
-    public function test_ncm_uses_source_column_or_unambiguous_label_but_never_guesses_multiple_codes(): void
+    public function test_ncm_prefers_source_column_and_falls_back_to_the_first_labelled_code(): void
     {
         $sheets = $this->sheets();
         $sheets['BLS'][1][6] = '0203.29';
-        $sheets['BLS'][1][16] = 'FROZEN BEEF NCM: 0203.29';
+        $sheets['BLS'][1][16] = 'FROZEN BEEF NCM: 0201.30';
         $sheets['BLS'][2][6] = '0000.000';
         $sheets['BLS'][2][16] = 'TWO CODES NCM: 9506.99 NCM: 9506.98';
 
         $result = $this->import($this->workbook($sheets));
 
         $this->assertTrue($result->success, implode(' | ', $result->errors));
-        $this->assertSame('0203.29', DB::table('shipment_items')->orderBy('id')->value('commodity_code'));
-        $this->assertNull(DB::table('shipment_items')->orderByDesc('id')->value('commodity_code'));
-        $this->assertContains('BL DEMOBL000002: la descripción contiene varios códigos NCM/HS; el NCM queda vacío.', $result->warnings);
+        $this->assertSame(['0203.29', '9506.99'], DB::table('shipment_items')->orderBy('id')->pluck('commodity_code')->all());
+        $this->assertSame(['FROZEN BEEF NCM: 0201.30', 'TWO CODES NCM: 9506.99 NCM: 9506.98'],
+            DB::table('shipment_items')->orderBy('id')->pluck('item_description')->all());
+        foreach ([
+            'BL DEMOBL000001: NCM de la columna G (0203.29) y de la descripción (0201.30) diferentes; se cargó el de la columna G.',
+            'BL DEMOBL000002: NCM de la columna G no identificable (0000.000); se toma el de la descripción (9506.99).',
+            'BL DEMOBL000002: la descripción trae varios NCM/HS; se cargó 9506.99. Otros códigos: 9506.98.',
+        ] as $warning) {
+            $this->assertContains($warning, $result->warnings);
+        }
+    }
+
+    public function test_labelled_description_code_in_other_forms_is_loaded(): void
+    {
+        // Formas tomadas de archivos reales; un número sin rótulo no se toma.
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][16] = 'REFRIGERATOR HS CODE: 84184000 LOT 123456';
+        $sheets['BLS'][2][6] = '0203.29';
+        $sheets['BLS'][2][16] = 'BEEF NCM 0203.29.00';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame(['8418.40.00', '0203.29'], DB::table('shipment_items')->orderBy('id')->pluck('commodity_code')->all());
+        $this->assertSame([], array_values(array_filter($result->warnings, fn ($w) => str_contains($w, 'NCM'))));
     }
 
     public function test_unambiguous_ncm_in_description_is_used_when_source_column_is_empty(): void
