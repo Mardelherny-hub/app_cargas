@@ -440,7 +440,8 @@ class ShipmentItemControllerCompat extends ShipmentItemController
                 );
 
             if (
-                !$hasUnknownContainerPackages
+                !$allContainersEmpty
+                && !$hasUnknownContainerPackages
                 && $totalPackageQuantity != $validated['package_quantity']
             ) {
                 return redirect()->back()
