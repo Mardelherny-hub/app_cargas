@@ -78,6 +78,16 @@ class ShipmentItemEmptyContainerContractTest extends TestCase
             $source
         );
 
+        // Un ítem con todos sus contenedores vacíos no exige que la suma de
+        // bultos por contenedor coincida con el total del ítem, igual que
+        // ya ocurre con el peso.
+        $this->assertStringContainsString(
+            '!$allContainersEmpty'
+            . PHP_EOL
+            . '                && !$hasUnknownContainerPackages',
+            $source
+        );
+
         // El tratamiento histórico de contenedor vacío del Compat se conserva.
         $this->assertStringContainsString(
             "if (\$condition === 'V')",
