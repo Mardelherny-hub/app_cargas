@@ -233,43 +233,69 @@ class MscVesselNameParser implements ManifestParserInterface
             : Container::CONDITION_HOUSE_TO_HOUSE;
     }
 
+    /**
+     * NCM/HS rotulado en la descripción (NCM, HS, HS CODE, NCM NO., etc.). Un
+     * número sin rótulo no se toma y la descripción no se modifica. Con varios
+     * códigos distintos se carga el primero y se avisan los demás.
+     */
     private function sourceCommodityCode(string $description, string $billNumber, int $line): ?string
     {
-        $marker = '/(?<![\pL\pN_])(?:N\.?C\.?M\.?|H\.?S\.?)(?:[ \t]+(?:CODES?|NO\.?|OF THE GOODS SHIPPED))?(?![\pL\pN_])/iu';
-        $segments = preg_split($marker, $description);
-        array_shift($segments);
-        if ($segments === []) {
+        $label = '/(?<![\pL\pN_])(?:N\.?C\.?M\.?|H\.?S\.?)(?:[ \t.\-]*(?:CODES?|NO\.?|OF THE GOODS SHIPPED))?(?![\pL\pN_])/iu';
+        if (!preg_match_all($label, $description, $found, PREG_OFFSET_CAPTURE)) {
             return null;
         }
 
-        $code = '(\d{4}\.\d{2}(?:\.\d{2})?|\d{8}|\d{6})(?![\pL\pN_.]|,\d{1,5}\b)';
-        $separator = '(?:[ \t]*(?:[/,;+-]|\b(?:AND|OR|Y|O)\b|&)[ \t]*|[ \t]+)';
+        $token = '(\d+(?:\.\d+)*)([A-Z])?(?![\pL\pN_]|[.,]\d)';
+        $separator = '(?:[ \t]*(?:[/,;+&-]|\b(?:AND|OR|Y|O)\b)[ \t]*|[ \t]+)';
         $codes = [];
-        $ambiguous = false;
-        foreach ($segments as $segment) {
-            if (!preg_match('/^[ \t]*[:#=]?[ \t]*' . $code . '/iu', $segment, $match)) {
-                $ambiguous = true;
+        foreach ($found[0] as [$text, $offset]) {
+            $rest = substr($description, $offset + strlen($text));
+            if (!preg_match('~^[ \t]*[:#=.\-]*[ \t]*' . $token . '~iu', $rest, $match)
+                || ($code = $this->ncmDigits($match[1], $match[2] ?? '')) === null) {
                 continue;
             }
             do {
-                $codes[] = str_replace('.', '', $match[1]);
-                $segment = substr($segment, strlen($match[0]));
-            } while (preg_match('~^' . $separator . $code . '~iu', $segment, $match));
-
-            if (preg_match('~^' . $separator . '\d[\d.]{3,}~iu', $segment)) {
-                $ambiguous = true;
-            }
+                $codes[] = $code;
+                $rest = substr($rest, strlen($match[0]));
+            } while (preg_match('~^' . $separator . $token . '~iu', $rest, $match)
+                && strlen(str_replace('.', '', $match[1])) >= 6
+                && ($code = $this->ncmDigits($match[1], $match[2] ?? '')) !== null);
         }
 
-        $codes = array_unique($codes);
-        if ($ambiguous || count($codes) !== 1) {
-            $reason = $ambiguous ? 'identificación NCM/HS ambigua' : 'varios códigos NCM/HS diferentes';
-            $this->warnings[] = "BL {$billNumber}, línea {$line}: {$reason}; el código queda vacío.";
+        $codes = array_values(array_unique($codes));
+        if ($codes === []) {
+            $this->warnings[] = "BL {$billNumber}, línea {$line}: rótulo NCM/HS sin código legible; el código queda vacío.";
 
             return null;
         }
+        if (count($codes) > 1) {
+            $this->warnings[] = "BL {$billNumber}, línea {$line}: la descripción trae varios NCM/HS; se cargó {$codes[0]}. "
+                . 'Otros códigos: ' . implode(', ', array_slice($codes, 1)) . '.';
+        }
 
         return $codes[0];
+    }
+
+    /**
+     * Dígitos del NCM, sin puntos. Los sobrantes se descartan: 8 o más dígitos
+     * quedan en 8; 6 o 7, en 6; 4 o 5, en 4. Con menos de 4 no hay código. La
+     * letra final de la extensión nacional (8421.39.90.000U) solo se admite
+     * con 10 dígitos o más.
+     */
+    private function ncmDigits(string $raw, string $suffix): ?string
+    {
+        $digits = str_replace('.', '', $raw);
+        $length = strlen($digits);
+        if ($suffix !== '' && $length < 10) {
+            return null;
+        }
+
+        return match (true) {
+            $length >= 8 => substr($digits, 0, 8),
+            $length >= 6 => substr($digits, 0, 6),
+            $length >= 4 => substr($digits, 0, 4),
+            default => null,
+        };
     }
 
     /**
