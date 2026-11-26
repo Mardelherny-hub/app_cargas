@@ -33,6 +33,7 @@ class MscVesselNameParserTest extends TestCase
         $this->addVessel(self::VESSEL_NAME);
         $this->addContainerTypes(['20GP', '40HC']);
         DB::table('packaging_types')->where('name', 'CONTENEDOR')->update(['code' => 'T']);
+        DB::table('packaging_types')->insert(['code' => 'N', 'name' => 'NO RETORNABLE', 'active' => 1]);
         $this->addClient('EXPORTADORA DEMO SA', '99999999991', self::AR);
         $this->addClient('IMPORTADORA EJEMPLO SRL', '9999991', self::PY);
     }
@@ -195,13 +196,13 @@ class MscVesselNameParserTest extends TestCase
 
         $this->assertTrue($result->success, implode(' | ', $result->errors));
         $this->assertSame([
-            'BL DEMO00000001, línea 2: varios códigos NCM/HS diferentes; el código queda vacío.',
-            'BL DEMO00000001, línea 3: identificación NCM/HS ambigua; el código queda vacío.',
+            'BL DEMO00000001, línea 2: la descripción trae varios NCM/HS; se cargó 841810. Otros códigos: 841850.',
+            'BL DEMO00000001, línea 3: la descripción trae varios NCM/HS; se cargó 732111. Otros códigos: 84146000.',
         ], $result->warnings);
 
         $importedItems = ShipmentItem::with('packagingType')->orderBy('line_number')->get();
         $this->assertSame($descriptions, $importedItems->pluck('item_description')->all());
-        $this->assertSame(['08011100', null, null, null], $importedItems->pluck('commodity_code')->all());
+        $this->assertSame(['08011100', '841810', '732111', null], $importedItems->pluck('commodity_code')->all());
         $this->assertSame(['CT', null, null, null], $importedItems->pluck('packaging_code')->all());
 
         $generator = (new ReflectionClass(SimpleXmlGenerator::class))->newInstanceWithoutConstructor();
@@ -215,8 +216,82 @@ class MscVesselNameParserTest extends TestCase
             $this->assertSame($conditions[$index], $container->container_condition);
             $this->assertSame($conditions[$index], $pivot->container_condition);
             $this->assertSame('L', $container->condition);
-            $this->assertSame('CONTENEDOR', $item->packagingType->name);
-            $this->assertSame($index === 0 ? 'CT' : 'CN', $packagingCode->invoke($generator, $item, 'DEMO00000001', $container));
+            $this->assertSame('NO RETORNABLE', $item->packagingType->name);
+            // NO RETORNABLE no tiene código EDIFACT de 2 caracteres: sin el
+            // código del archivo, el MIC/DTA no tiene embalaje para declarar.
+            if ($index === 0) {
+                $this->assertSame('CT', $packagingCode->invoke($generator, $item, 'DEMO00000001', $container));
+                continue;
+            }
+            try {
+                $packagingCode->invoke($generator, $item, 'DEMO00000001', $container);
+                $this->fail('Se esperaba falta de codTipEmbalaje.');
+            } catch (\Exception $e) {
+                $this->assertStringContainsString('falta codTipEmbalaje EDIFACT de 2 caracteres', $e->getMessage());
+            }
+        }
+    }
+
+    public function test_labelled_commodity_code_is_loaded_from_the_description(): void
+    {
+        // Formas tomadas de archivos MSC reales; textos ficticios.
+        $cases = [
+            'GEARBOX NCM: 8483409090 PARTS OF GEARBOX NCM: 8483900090' => '84834090',
+            'KIDS RIDE ON TOY HS CODE 9503001000' => '95030010',
+            'SPEAKER NCM 85.18.22' => '851822',
+            'CURTAIN FABRIC NCM: 5407 REFERENCIA 1879' => '5407',
+            'BALL BLADDER (NCM :9506.6)' => '9506',
+            'CHRISTMAS TREE NCM NO.9505.10(CHRISTMAS TREE)' => '950510',
+            'GREIGE CLOTH H.S.CODE:5208.12' => '520812',
+            'MIDEA HOOD NCM 8421.39.90.000U AND 8414.60.00.000A' => '84213990',
+            'GALVANIZED WIRE 721720' => null,
+            'TOOLS HS CODE AS PER INVOICE' => null,
+        ];
+        $items = [];
+        foreach (array_keys($cases) as $index => $description) {
+            $items[] = str_replace(
+                'MERCADERIA GENERAL DE PRUEBA',
+                $description,
+                $this->item(sprintf('TSTU%07d', $index + 1), '40', 'HC', '1', '1000,000', '3750,00')
+            );
+        }
+
+        $result = $this->import($this->file($this->bill('DEMO00000001', $items, '10000,000', '37500,00', '10')));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $importedItems = ShipmentItem::orderBy('id')->get();
+        $this->assertSame(array_keys($cases), $importedItems->pluck('item_description')->all());
+        $this->assertSame(array_values($cases), $importedItems->pluck('commodity_code')->all());
+        $this->assertSame([
+            'BL DEMO00000001, línea 1: la descripción trae varios NCM/HS; se cargó 84834090. Otros códigos: 84839000.',
+            'BL DEMO00000001, línea 8: la descripción trae varios NCM/HS; se cargó 84213990. Otros códigos: 84146000.',
+            'BL DEMO00000001, línea 10: rótulo NCM/HS sin código legible; el código queda vacío.',
+        ], $result->warnings);
+    }
+
+    public function test_carrier_service_type_is_not_the_container_condition(): void
+    {
+        // CONDITION trae el tipo de servicio de la naviera; sin H/P propio va House.
+        $services = ['Port to Port', 'Port to Door', 'Door to Port', 'Door to Door', 'CY/CY'];
+        $items = [];
+        foreach ($services as $index => $service) {
+            $items[] = str_replace(
+                $this->line('CONDITION', 'Port to Port'),
+                $this->line('CONDITION', $service),
+                $this->item('TSTU000000' . ($index + 1), '40', 'HC', '1', '1000,000', '3750,00')
+            );
+        }
+
+        $result = $this->import($this->file($this->bill('DEMO00000001', $items, '5000,000', '18750,00', '5')));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $importedItems = ShipmentItem::orderBy('line_number')->get();
+        $this->assertCount(5, $importedItems);
+        foreach ($importedItems as $item) {
+            $pivot = DB::table('container_shipment_item')->where('shipment_item_id', $item->id)->sole();
+            $this->assertSame('H', $item->container_condition, $item->item_description);
+            $this->assertSame('H', Container::findOrFail($pivot->container_id)->container_condition);
+            $this->assertSame('H', $pivot->container_condition);
         }
     }
 

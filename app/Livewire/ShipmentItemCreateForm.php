@@ -745,8 +745,9 @@ class ShipmentItemCreateForm extends Component
                 $containerErrors[] = "Tipo de contenedor es obligatorio";
             }
             
-            if ($container['package_quantity'] <= 0) {
-                $containerErrors[] = "Cantidad de bultos debe ser mayor a 0";
+            // 0 = bultos por contenedor no informados: el total va en el ítem.
+            if ($container['package_quantity'] < 0) {
+                $containerErrors[] = "Cantidad de bultos no puede ser negativa";
             }
             
             if ($container['gross_weight_kg'] <= 0) {
@@ -772,8 +773,10 @@ class ShipmentItemCreateForm extends Component
             }
         }
 
-        // Validar que los totales coincidan con el item
-        if ($totalPackageQuantity != $this->package_quantity) {
+        // Validar que los totales coincidan con el item. Con todos los
+        // contenedores en 0 los bultos solo constan en el ítem.
+        $hasContainerPackages = collect($this->containers)->contains(fn ($c) => $c['package_quantity'] > 0);
+        if ($hasContainerPackages && $totalPackageQuantity != $this->package_quantity) {
             $errors['containers_total'] = "La suma de bultos en contenedores ({$totalPackageQuantity}) debe coincidir con el total del ítem ({$this->package_quantity})";
         }
 
