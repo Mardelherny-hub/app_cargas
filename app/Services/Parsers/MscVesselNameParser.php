@@ -4,7 +4,7 @@ namespace App\Services\Parsers;
 
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, CargoType, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, PackagingType, Port, Shipment, ShipmentItem, Vessel, Voyage};
-use App\Services\Parsers\Concerns\{ExtractsEmbeddedTaxId, RecalculatesNewVoyageTotals, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType};
+use App\Services\Parsers\Concerns\{ExtractsEmbeddedTaxId, ExtractsLabelledNcm, RecalculatesNewVoyageTotals, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesTargetVoyage, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use DomainException;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +16,7 @@ class MscVesselNameParser implements ManifestParserInterface
 {
     use ExtractsEmbeddedTaxId;
     use RecalculatesNewVoyageTotals;
+    use ExtractsLabelledNcm;
     use ResolvesClientAddresses;
     use ResolvesExistingClient;
     use ResolvesPorts;
@@ -185,9 +186,8 @@ class MscVesselNameParser implements ManifestParserInterface
                         throw new DomainException('MSC: bultos, peso o tara fuera de rango.');
                     }
                     if (strtolower($this->value($item, 'GROSS WEIGHT UNIT')) !== 'kgs'
-                        || $this->documentaryCondition($item) === null
                         || !preg_match('/^[A-Z]{4}\d{7}$/D', $this->value($item, 'CONTAINER NR.'))) {
-                        throw new DomainException('MSC: unidad, condición o número de contenedor no soportado.');
+                        throw new DomainException('MSC: unidad o número de contenedor no soportado.');
                     }
                     $this->containerTypeCode($item);
                     $packages += $quantity;
@@ -235,49 +235,37 @@ class MscVesselNameParser implements ManifestParserInterface
             . implode(', ', array_slice(array_keys($suggestions), 0, 3)) . '.');
     }
 
-    private function documentaryCondition(array $item): ?string
+    /**
+     * Condición H/P del contenedor. MSC informa en CONDITION el tipo de
+     * servicio de la naviera (Port to Port, Door to Door, CY/CY, etc.), que
+     * no es la condición H/P: solo una P sola se toma como Port; cualquier
+     * otro valor, o ninguno, va como House.
+     */
+    private function documentaryCondition(array $item): string
     {
-        return match (strtoupper($this->value($item, 'CONDITION'))) {
-            '', 'H', 'HOUSE TO HOUSE' => Container::CONDITION_HOUSE_TO_HOUSE,
-            'P', 'PORT TO PORT' => Container::CONDITION_PORT_TO_PORT,
-            default => null,
-        };
+        return strtoupper($this->value($item, 'CONDITION')) === 'P'
+            ? Container::CONDITION_PORT_TO_PORT
+            : Container::CONDITION_HOUSE_TO_HOUSE;
     }
 
+    /**
+     * NCM/HS rotulado en la descripción. Con varios códigos distintos se carga
+     * el primero y se avisan los demás.
+     */
     private function sourceCommodityCode(string $description, string $billNumber, int $line): ?string
     {
-        $marker = '/(?<![\pL\pN_])(?:N\.?C\.?M\.?|H\.?S\.?)(?:[ \t]+(?:CODES?|NO\.?|OF THE GOODS SHIPPED))?(?![\pL\pN_])/iu';
-        $segments = preg_split($marker, $description);
-        array_shift($segments);
-        if ($segments === []) {
+        $codes = $this->labelledNcmCodes($description);
+        if ($codes === null) {
             return null;
         }
-
-        $code = '(\d{4}\.\d{2}(?:\.\d{2})?|\d{8}|\d{6})(?![\pL\pN_.]|,\d{1,5}\b)';
-        $separator = '(?:[ \t]*(?:[/,;+-]|\b(?:AND|OR|Y|O)\b|&)[ \t]*|[ \t]+)';
-        $codes = [];
-        $ambiguous = false;
-        foreach ($segments as $segment) {
-            if (!preg_match('/^[ \t]*[:#=]?[ \t]*' . $code . '/iu', $segment, $match)) {
-                $ambiguous = true;
-                continue;
-            }
-            do {
-                $codes[] = str_replace('.', '', $match[1]);
-                $segment = substr($segment, strlen($match[0]));
-            } while (preg_match('~^' . $separator . $code . '~iu', $segment, $match));
-
-            if (preg_match('~^' . $separator . '\d[\d.]{3,}~iu', $segment)) {
-                $ambiguous = true;
-            }
-        }
-
-        $codes = array_unique($codes);
-        if ($ambiguous || count($codes) !== 1) {
-            $reason = $ambiguous ? 'identificación NCM/HS ambigua' : 'varios códigos NCM/HS diferentes';
-            $this->warnings[] = "BL {$billNumber}, línea {$line}: {$reason}; el código queda vacío.";
+        if ($codes === []) {
+            $this->warnings[] = "BL {$billNumber}, línea {$line}: rótulo NCM/HS sin código legible; el código queda vacío.";
 
             return null;
+        }
+        if (count($codes) > 1) {
+            $this->warnings[] = "BL {$billNumber}, línea {$line}: la descripción trae varios NCM/HS; se cargó {$codes[0]}. "
+                . 'Otros códigos: ' . implode(', ', array_slice($codes, 1)) . '.';
         }
 
         return $codes[0];
@@ -446,9 +434,12 @@ class MscVesselNameParser implements ManifestParserInterface
             if (!$cargoType) {
                 throw new DomainException('MSC: falta el tipo de carga CON001 activo en el catálogo.');
             }
-            $packagingTypeId = PackagingType::where('name', 'CONTENEDOR')->where('active', true)->value('id');
+            // El embalaje del archivo no tiene equivalente en el catálogo: el ítem
+            // va NO RETORNABLE, igual que K-Line y Guaraní. El código EDIFACT del
+            // archivo se conserva en packaging_code.
+            $packagingTypeId = PackagingType::where('code', 'N')->where('active', true)->value('id');
             if ($packagingTypeId === null) {
-                throw new DomainException('MSC: falta el tipo de embalaje activo CONTENEDOR en el catálogo.');
+                throw new DomainException('MSC: falta el tipo de embalaje activo NO RETORNABLE (N) en el catálogo.');
             }
             $types = [];
             foreach ($data as $bill) {
