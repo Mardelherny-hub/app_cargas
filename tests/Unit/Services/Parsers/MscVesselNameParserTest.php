@@ -33,6 +33,7 @@ class MscVesselNameParserTest extends TestCase
         $this->addVessel(self::VESSEL_NAME);
         $this->addContainerTypes(['20GP', '40HC']);
         DB::table('packaging_types')->where('name', 'CONTENEDOR')->update(['code' => 'T']);
+        DB::table('packaging_types')->insert(['code' => 'N', 'name' => 'NO RETORNABLE', 'active' => 1]);
         $this->addClient('EXPORTADORA DEMO SA', '99999999991', self::AR);
         $this->addClient('IMPORTADORA EJEMPLO SRL', '9999991', self::PY);
     }
@@ -215,8 +216,19 @@ class MscVesselNameParserTest extends TestCase
             $this->assertSame($conditions[$index], $container->container_condition);
             $this->assertSame($conditions[$index], $pivot->container_condition);
             $this->assertSame('L', $container->condition);
-            $this->assertSame('CONTENEDOR', $item->packagingType->name);
-            $this->assertSame($index === 0 ? 'CT' : 'CN', $packagingCode->invoke($generator, $item, 'DEMO00000001', $container));
+            $this->assertSame('NO RETORNABLE', $item->packagingType->name);
+            // NO RETORNABLE no tiene código EDIFACT de 2 caracteres: sin el
+            // código del archivo, el MIC/DTA no tiene embalaje para declarar.
+            if ($index === 0) {
+                $this->assertSame('CT', $packagingCode->invoke($generator, $item, 'DEMO00000001', $container));
+                continue;
+            }
+            try {
+                $packagingCode->invoke($generator, $item, 'DEMO00000001', $container);
+                $this->fail('Se esperaba falta de codTipEmbalaje.');
+            } catch (\Exception $e) {
+                $this->assertStringContainsString('falta codTipEmbalaje EDIFACT de 2 caracteres', $e->getMessage());
+            }
         }
     }
 
