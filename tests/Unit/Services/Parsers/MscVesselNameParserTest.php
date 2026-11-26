@@ -220,6 +220,32 @@ class MscVesselNameParserTest extends TestCase
         }
     }
 
+    public function test_carrier_service_type_is_not_the_container_condition(): void
+    {
+        // CONDITION trae el tipo de servicio de la naviera; sin H/P propio va House.
+        $services = ['Port to Port', 'Port to Door', 'Door to Port', 'Door to Door', 'CY/CY'];
+        $items = [];
+        foreach ($services as $index => $service) {
+            $items[] = str_replace(
+                $this->line('CONDITION', 'Port to Port'),
+                $this->line('CONDITION', $service),
+                $this->item('TSTU000000' . ($index + 1), '40', 'HC', '1', '1000,000', '3750,00')
+            );
+        }
+
+        $result = $this->import($this->file($this->bill('DEMO00000001', $items, '5000,000', '18750,00', '5')));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $importedItems = ShipmentItem::orderBy('line_number')->get();
+        $this->assertCount(5, $importedItems);
+        foreach ($importedItems as $item) {
+            $pivot = DB::table('container_shipment_item')->where('shipment_item_id', $item->id)->sole();
+            $this->assertSame('H', $item->container_condition, $item->item_description);
+            $this->assertSame('H', Container::findOrFail($pivot->container_id)->container_condition);
+            $this->assertSame('H', $pivot->container_condition);
+        }
+    }
+
     public function test_import_uses_resolved_consignee_only_when_notify_is_absent(): void
     {
         $this->addClient('NOTIFICATARIO DEMO SRL', '9999992', self::PY);

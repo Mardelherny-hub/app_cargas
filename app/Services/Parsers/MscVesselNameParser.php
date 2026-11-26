@@ -171,9 +171,8 @@ class MscVesselNameParser implements ManifestParserInterface
                         throw new DomainException('MSC: bultos, peso o tara fuera de rango.');
                     }
                     if (strtolower($this->value($item, 'GROSS WEIGHT UNIT')) !== 'kgs'
-                        || $this->documentaryCondition($item) === null
                         || !preg_match('/^[A-Z]{4}\d{7}$/D', $this->value($item, 'CONTAINER NR.'))) {
-                        throw new DomainException('MSC: unidad, condición o número de contenedor no soportado.');
+                        throw new DomainException('MSC: unidad o número de contenedor no soportado.');
                     }
                     $this->containerTypeCode($item);
                     $packages += $quantity;
@@ -221,13 +220,17 @@ class MscVesselNameParser implements ManifestParserInterface
             . implode(', ', array_slice(array_keys($suggestions), 0, 3)) . '.');
     }
 
-    private function documentaryCondition(array $item): ?string
+    /**
+     * Condición H/P del contenedor. MSC informa en CONDITION el tipo de
+     * servicio de la naviera (Port to Port, Door to Door, CY/CY, etc.), que
+     * no es la condición H/P: solo una P sola se toma como Port; cualquier
+     * otro valor, o ninguno, va como House.
+     */
+    private function documentaryCondition(array $item): string
     {
-        return match (strtoupper($this->value($item, 'CONDITION'))) {
-            '', 'H', 'HOUSE TO HOUSE' => Container::CONDITION_HOUSE_TO_HOUSE,
-            'P', 'PORT TO PORT' => Container::CONDITION_PORT_TO_PORT,
-            default => null,
-        };
+        return strtoupper($this->value($item, 'CONDITION')) === 'P'
+            ? Container::CONDITION_PORT_TO_PORT
+            : Container::CONDITION_HOUSE_TO_HOUSE;
     }
 
     private function sourceCommodityCode(string $description, string $billNumber, int $line): ?string
