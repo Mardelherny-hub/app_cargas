@@ -3052,6 +3052,9 @@ class CmspEdiParser implements ManifestParserInterface
                     'volume_m3' => $this->volumenContenedor($itemData),
                     'verified_gross_mass_kg' => $this->verifiedGrossMassForContainer($containerNumber),
                     'source_seals' => $this->equipmentSourceSeals($containerNumber),
+                    // Condición de este viaje: CUSCAR no informa casa/muelle, va
+                    // House. El contenedor existente no se modifica.
+                    'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
                 ]);
             }
 
@@ -3109,6 +3112,7 @@ class CmspEdiParser implements ManifestParserInterface
                 'volume_m3' => 0,
                 'verified_gross_mass_kg' => null,
                 'source_seals' => $this->equipmentSourceSeals($containerNumber),
+                'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
             ]);
 
             $this->stats['processed_containers']++;
@@ -3256,6 +3260,7 @@ class CmspEdiParser implements ManifestParserInterface
             'volume_m3' => $this->volumenContenedor($itemData),
             'verified_gross_mass_kg' => $this->verifiedGrossMassForContainer($containerNumber),
             'source_seals' => $this->equipmentSourceSeals($containerNumber),
+            'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
         ]);
 
         $this->stats['processed_containers']++;

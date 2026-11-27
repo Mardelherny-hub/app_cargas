@@ -749,6 +749,7 @@ class SimpleXmlGenerator
                     // === CONTENEDORES (todos, llenos y vacíos) ===
                     $allContainersLinked = $allContainers->merge($emptyContainers);
                     $linkSeals = $this->linkSealsByContainer($allContainersLinked);
+                    $linkConditions = $this->linkConditionByContainer($allContainersLinked, 'RegistrarTitEnvios');
                     $allContainersUnique = $allContainersLinked->unique('container_number');
                     
                     if ($allContainersUnique->isNotEmpty()) {
@@ -758,7 +759,8 @@ class SimpleXmlGenerator
                                 $w,
                                 $container,
                                 'RegistrarTitEnvios',
-                                $linkSeals[trim((string) $container->container_number)] ?? []
+                                $linkSeals[trim((string) $container->container_number)] ?? [],
+                                $linkConditions[trim((string) $container->container_number)] ?? null
                             );
                         }
                         $w->endElement(); // contenedores
@@ -1230,21 +1232,54 @@ class SimpleXmlGenerator
     }
 
     /**
+     * Condición H/P que los archivos declararon en los vínculos de cada
+     * contenedor con los conocimientos de este XML, por número de contenedor.
+     * Si los vínculos de un mismo contenedor no coinciden, no se elige una.
+     *
+     * @return array<string, string>
+     */
+    private function linkConditionByContainer(\Illuminate\Support\Collection $containers, string $context): array
+    {
+        $byNumber = [];
+
+        foreach ($containers as $container) {
+            $condition = strtoupper(trim((string) ($container->pivot?->container_condition ?? '')));
+            if ($condition !== '') {
+                $byNumber[trim((string) $container->container_number)][$condition] = $condition;
+            }
+        }
+
+        foreach ($byNumber as $number => $conditions) {
+            if (count($conditions) > 1) {
+                throw new \Exception(
+                    "{$context}: el contenedor {$number} tiene condición H/P distinta entre sus conocimientos ("
+                    . implode(', ', $conditions) . ').'
+                );
+            }
+        }
+
+        return array_map(fn (array $conditions) => reset($conditions), $byNumber);
+    }
+
+    /**
      * $linkSeals: precintos del vínculo con el conocimiento de este viaje. Si
      * no hay, se usan los campos del contenedor como respaldo.
+     * $linkCondition: condición H/P del vínculo con este viaje; sin ella, la
+     * del contenedor.
      */
     private function writeMicDtaContainer(
         \XMLWriter $w,
         $container,
         string $context,
-        array $linkSeals = []
+        array $linkSeals = [],
+        ?string $linkCondition = null
     ): void {
         $number = trim((string) $container->container_number);
         $measure = trim((string) (
             $container->argentina_container_code
             ?: $container->containerType?->iso_code
         ));
-        $condition = strtoupper(trim((string) $container->container_condition));
+        $condition = strtoupper(trim((string) ($linkCondition ?? $container->container_condition)));
 
         if ($number === '' || mb_strlen($number) > 16) {
             throw new \Exception(
@@ -1661,6 +1696,7 @@ class SimpleXmlGenerator
             $w->endElement(); // envios
 
             $linkSeals = $this->linkSealsByContainer($allContainers);
+            $linkConditions = $this->linkConditionByContainer($allContainers, 'RegistrarEnvios');
             $uniqueContainers = $allContainers
                 ->unique('container_number')
                 ->values();
@@ -1671,7 +1707,8 @@ class SimpleXmlGenerator
                         $w,
                         $container,
                         'RegistrarEnvios',
-                        $linkSeals[trim((string) $container->container_number)] ?? []
+                        $linkSeals[trim((string) $container->container_number)] ?? [],
+                        $linkConditions[trim((string) $container->container_number)] ?? null
                     );
                 }
                 $w->endElement();
