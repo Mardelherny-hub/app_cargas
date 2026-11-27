@@ -67,3 +67,38 @@ Los cuatro avisos de razón social en A corresponden a consignatario y notificat
 - `/home/victor/qa_trazabilidad_20261127/comparacion-a-9863-vs-d96.json` — SHA-256 `256f3718655701c1bf41cf6df8e523d9cfaa17b034e8b9bed94516d79737a772`.
 
 Estos JSON contienen datos de clientes y BL de la copia de Stage, **no se suben a GitHub**; las cifras y casos concretos aquí consignados son los respaldos auditables. No se publican credenciales ni XML con información privada.
+
+
+## Anexo — QA del delta de domicilios `c8692bb7` · 27/11/2026
+
+**Alcance:** exclusivamente `d96a04285bc9c7f324823ae6342f669aa89c4381` → `c8692bb7e6d48315fe9e800669fc9c1aeddb059c` en la rama exacta `fix/trazabilidad-aduana-b`. Contrato: retirar etiqueta e identificador fiscal alfanumérico completos sin perder texto del domicilio. Leídos el diff, `ResolvesClientAddresses`, el flujo real `CmspEdiParserCompat`, relaciones y campos de contactos antes de invocarlos. El parte de entrega todavía enumera hasta d96; el quinto BL se identificó independientemente en la muestra original, no se atribuye a una lista publicada inexistente.
+
+**Dictamen del delta: FAVORABLE para limpieza de la dirección importada.** No equivale a aprobar los puntos abiertos del informe anterior ni a saneamiento de fichas históricas. En esta base las cinco direcciones limpias quedan como contactos específicos **inactivos** (`use_specific_data=false`); los maestros existentes no cambian. En LOGICITY y JIANGSU, el domicilio maestro aún contiene respectivamente `H` y `MA22XL4D1N`. No se afirma que la dirección efectiva de pantalla o XML se haya sustituido: no se probó navegador/XML en este delta.
+
+### Comparación solicitada
+
+La tabla completa con texto literal del archivo (NAD+CZ decodificado), antes y después está en evidencia privada `tabla-domicilios.md`; no se publican domicilios fiscales completos en GitHub. Comparación de dirección específica guardada, o maestro cuando no existía específica:
+
+| BL | Antes → después | Texto real del domicilio |
+|---|---|---|
+| HLCUCA4260448241 | Residuo final `G` → eliminado | Completo, incluido NO.07-01/02 y código postal |
+| HLCUCA4260462449 (quinto) | Residuo final `G` → eliminado | Completo; mismo NAD de Midea que el anterior |
+| HLCUNK2251136455 | `THE LEGAL/ G` → eliminado | Completo, incluido NR.07-01/02. y 069545 SINGAPORE |
+| HLCUSHA2601HANL6 | Residuo final `H` → eliminado | Completo; conserva RM451, bloque, calle, ciudad y ambos teléfonos T/F |
+| HLCUTA12603GCLH2 | Residuo `MA22XL4D1N` → eliminado | Completo; conserva LTD., ADD, calle, distrito y ciudad |
+
+`THE LEGAL/ G` no es una dirección: el original trae `THE LEGAL/TAX ID:200800970G`. El nuevo regex retira esa etiqueta fiscal íntegra y su identificador. El teléfono TEL de los dos primeros ya se descartaba con el padre; no es una pérdida nueva. La normalización de espacios y la coma final de JIANGSU ya existían.
+
+### Pruebas exactas y preservación
+
+- Dos worktrees detached limpios propios, con `.env` privado de QA y autoload independiente; sin modificar checkout principal ni worktrees ajenos.
+- Muestra real `CAREI-2506AHL.1`, SHA-256 `669ec80d42b3ef578e49d0e51448bb320492ec5569fdcfa33204a6c941216d63`, inventariada en `inventario.json`.
+- `DB_CONNECTION=sqlite DB_DATABASE=:memory: php -d allow_url_fopen=0 artisan test tests/Unit/Services/Parsers/ResolvesClientAddressesTest.php tests/Unit/Services/Parsers/CmspEdiParserClientIdentityTest.php`: **48 tests, 131 aserciones, cero fallos**, con avisos de deprecación `PDO::MYSQL_ATTR_SSL_CA` del entorno. Incluye control negativo de número alfanumérico real de calle.
+- `php -l /var/www/html/pruebas_importacion/WORK-A-taxaddr-c8692bb7-20261127/qa.php`: sin errores.
+- `php -d allow_url_fopen=0 -d disable_classes=SoapClient /var/www/html/pruebas_importacion/WORK-A-taxaddr-c8692bb7-20261127/qa.php /var/www/html/_worktrees/app_cargas/app_cargas_work_taxaddr_d96a0428_20261127 before`.
+- Mismo comando con raíz `app_cargas_work_taxaddr_c8692bb7_20261127` y argumento `after`.
+- Importación real MySQL A: **31 BL / 91 ítems en ambas**. Comparación de los 31 cargadores: solo cambian las direcciones específicas de los cinco BL enumerados; fichas maestras, identidad fiscal y advertencias iguales entre corridas. El cambio no corrige la extracción preexistente de tax_id alfanumérico; se evalúa limpieza del domicilio.
+- Cada importación dentro de transacción exterior con rollback; inserción DML del catálogo 45R5 también dentro de esa transacción, sin DDL ni registro de migración. **57 tablas**, conteos y hashes iguales en las cuatro instantáneas. SHA-256 de cada archivo de instantánea: `0d4a446bd57cb0d41d910f4d2daee6b2f6a11188a289bc04fc616df1e9cfa886`.
+- Sin WSAA, certificados, SOAP ni envío; HTTP externo impedido por arnés y wrappers de red deshabilitados. Sin Stage, B, producción, restores ni correcciones de código/datos.
+
+Evidencia privada: `/var/www/html/pruebas_importacion/WORK-A-taxaddr-c8692bb7-20261127/` (`qa.php`, `unit-tests.log`, `tabla-domicilios.md`, resultados e instantáneas). `before-result.json` SHA-256 `53c516cbf65db4280fa518a74a15b9de3471bbf7c73a4c29fefacab0e2df4e96`; `after-result.json` SHA-256 `829482952eeb2f6be02926c256ae80839ce5c4a3b0d2dcf3588bc9a245b4cc99`.
