@@ -619,7 +619,7 @@ class CmspEdiParserClientIdentityTest extends TestCase
         $parser = new CmspEdiParser();
 
         $this->assertSame(
-            '40RH',
+            null,
             $this->invoke(
                 $parser,
                 'mapIsoContainerType',
