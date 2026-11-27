@@ -24,12 +24,12 @@ trait ExtractsEmbeddedTaxId
         // Prefijos conocidos. Los CUSCAR reales también usan variantes
         // RUC NO, R.U.C, TAX-, TAX NO, TAX ID NUMBER y TAXID1; MSC usa TAX.ID.
         // El "1" de TAXID1 es parte de la etiqueta solo si no sigue otro dígito.
-        $prefixes = 'RUT\s*\/\s*VAT|RUT|RUC\s*\/\s*TAX\s?ID|TAX\s*\.?\s*ID(?:1(?!\d))?|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
+        $prefixes = 'RUT\s*\/\s*VAT|RUT|RUC\s*(?:\/\s*TAX\s?ID|\(\s*TAX\s*ID\s*\))|TAX\s*\.?\s*ID(?:1(?!\d))?|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
         $qualifier = '(?:\s*(?:NUMBER|NBR\.?|NRO\.?|NO\.?))?';
 
         // No se acepta un número sin marcador fiscal explícito.
         $pattern = '/(?:' . $prefixes . ')' . $qualifier
-            . '\s*[:#.?-]*\s*([0-9][0-9.\-\/]{5,})/i';
+            . '\s*[:#.?+-]*\s*([0-9][0-9.\-\/]{5,})/i';
 
         if (!preg_match($pattern, $text, $m)) {
             return null;
@@ -58,9 +58,9 @@ trait ExtractsEmbeddedTaxId
             return $text;
         }
 
-        $prefixes = 'RUT\s*\/\s*VAT|RUT|RUC\s*\/\s*TAX\s?ID|TAX\s*\.?\s*ID(?:1(?!\d))?|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
+        $prefixes = 'RUT\s*\/\s*VAT|RUT|RUC\s*(?:\/\s*TAX\s?ID|\(\s*TAX\s*ID\s*\))|TAX\s*\.?\s*ID(?:1(?!\d))?|TAX|VAT|R\.?\s*U\.?\s*C\.?|RUC|CUIT(?:\s*NBR)?|CNPJ|NIT';
         $pattern = '/[\s,;\-]*\b(?:' . $prefixes . ')(?:\s*(?:NUMBER|NBR\.?|NRO\.?|NO\.?))?'
-            . '\s*[:#.?-]*\s*([0-9][0-9.\-\/]{5,})/i';
+            . '\s*[:#.?+-]*\s*([0-9][0-9.\-\/]{5,})/i';
 
         $clean = preg_replace_callback(
             $pattern,

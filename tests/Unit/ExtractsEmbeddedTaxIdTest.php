@@ -15,6 +15,7 @@ class ExtractsEmbeddedTaxIdTest extends TestCase
         parent::setUp();
         $this->helper = new class {
             use ExtractsEmbeddedTaxId;
+            public function remove(string $text, string $tax): string { return $this->removeEmbeddedTaxId($text, $tax); }
             public function extract(?string $t): ?string { return $this->extractEmbeddedTaxId($t); }
             public function resolve(?string $s, ?string $n = null, ?string $a = null): ?string {
                 return $this->resolveTaxId($s, $n, $a);
@@ -26,6 +27,14 @@ class ExtractsEmbeddedTaxIdTest extends TestCase
     public function test_extraccion_tax_embebido(?string $entrada, ?string $esperado): void
     {
         $this->assertSame($esperado, $this->helper->extract($entrada));
+    }
+
+    public function test_ruc_variants_are_extracted_and_removed_from_party_text(): void
+    {
+        foreach (['RUC+80013366-8' => '800133668', 'RUC (TAX ID): 80116598-9' => '801165989'] as $source => $tax) {
+            $this->assertSame($tax, $this->helper->extract($source));
+            $this->assertSame('ASUNCION PARAGUAY', $this->helper->remove("ASUNCION PARAGUAY {$source}", $tax));
+        }
     }
 
     public static function casosExtract(): array

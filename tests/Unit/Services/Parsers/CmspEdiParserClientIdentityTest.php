@@ -86,6 +86,16 @@ class CmspEdiParserClientIdentityTest extends TestCase
         );
     }
 
+    public function test_ruc_labels_from_the_manifests_preserve_the_document_type(): void
+    {
+        foreach (['RUC+80013366-8' => '800133668', 'RUC (TAX ID)?: 80116598-9' => '801165989'] as $text => $id) {
+            foreach ([new CmspEdiParser(), new CmspEdiParserCompat()] as $parser) {
+                $method = new ReflectionMethod($parser, 'resolvePartyTaxIdentity');
+                $this->assertSame(['tax_id' => $id, 'tax_type' => 'RUC'], $method->invoke($parser, ['name' => $text]));
+            }
+        }
+    }
+
     public function test_explicit_cuit_is_preserved_as_cuit(): void
     {
         $parser = new CmspEdiParser();

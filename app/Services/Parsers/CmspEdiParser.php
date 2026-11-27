@@ -3482,6 +3482,8 @@ class CmspEdiParser implements ManifestParserInterface
         );
     }
 
+    protected const EXPLICIT_RUC_PATTERN = '/\bR\.?\s*U\.?\s*C\.?\b\s*(?:\(\s*TAX\s*ID\s*\)\s*)?[+#:?.-]*\s*([0-9][0-9.\/-]{5,20})/iu';
+
     /**
      * Buscar o crear cliente
      */
@@ -3498,7 +3500,7 @@ class CmspEdiParser implements ManifestParserInterface
         $patterns = [
             'CUIT' => '/\bCUIT\b\s*(?:(?:NBR|NRO|Nº|N°)\.?\s*)?[:#?.-]*\s*([0-9][0-9.\/-]{5,20})/iu',
             'CNPJ' => '/\bCNPJ\b\s*[:#?.-]*\s*([0-9][0-9.\/-]{5,20})/iu',
-            'RUC' => '/\bR\.?\s*U\.?\s*C\.?\b\s*[:#?.-]*\s*([0-9][0-9.\/-]{5,20})/iu',
+            'RUC' => self::EXPLICIT_RUC_PATTERN,
             'NIT' => '/\bNIT\b\s*[:#?.-]*\s*([0-9][0-9.\/-]{5,20})/iu',
         ];
 
