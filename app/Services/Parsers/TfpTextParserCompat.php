@@ -226,6 +226,10 @@ class TfpTextParserCompat extends TfpTextParser
             $description
         );
 
+        if ($packagesRaw === '' && $hasContainers && $isEmptyContainerItem) {
+            $packagesRaw = '0';
+        }
+
         if (
             $packagesRaw === ''
             || !is_numeric($packagesRaw)
