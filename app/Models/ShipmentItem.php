@@ -96,7 +96,7 @@ class ShipmentItem extends Model
                     (float) $bill
                         ->shipmentItems()
                         ->sum('gross_weight_kg'),
-                    2
+                    3
                 );
             }
 
@@ -242,7 +242,7 @@ class ShipmentItem extends Model
      */
     protected $casts = [
         // Decimal fields
-        'gross_weight_kg' => 'decimal:2',
+        'gross_weight_kg' => 'decimal:3',
         'net_weight_kg' => 'decimal:2',
         'volume_m3' => 'decimal:3',
         'declared_value' => 'decimal:2',

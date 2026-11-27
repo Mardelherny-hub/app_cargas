@@ -106,14 +106,18 @@ final class HidroviaTransshipmentDistributionValidator
         }
     }
 
-    /** Conserva dos decimales, sin sumar cantidades mediante float. */
+    /**
+     * Conserva dos decimales, sin sumar cantidades mediante float. El peso del
+     * ítem se guarda con tres: se acepta si el tercero es 0.
+     */
     private function weightInHundredths(mixed $value, string $location): int
     {
         $value = trim((string) $value);
-        if (!preg_match('/^\d+(?:\.\d{1,2})?$/D', $value)) {
+        if (!preg_match('/^\d+(?:\.\d{1,2}0?)?$/D', $value)) {
             $this->reject("{$location}: peso bruto inválido (máximo dos decimales).");
         }
         [$whole, $fraction] = array_pad(explode('.', $value, 2), 2, '');
+        $fraction = substr($fraction, 0, 2);
         if (strlen(ltrim($whole, '0')) > 10) {
             $this->reject("{$location}: peso bruto fuera de rango.");
         }

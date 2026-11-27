@@ -877,7 +877,7 @@
                         <label for="gross_weight_kg" class="block text-sm font-medium text-gray-700">
                             Peso Bruto (kg) <span class="text-red-500">*</span>
                         </label>
-                        <input wire:model="gross_weight_kg" type="number" id="gross_weight_kg" step="0.01" min="0.01" required
+                        <input wire:model="gross_weight_kg" type="number" id="gross_weight_kg" step="0.001" min="0.01" required
                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('gross_weight_kg') border-red-300 @enderror">
                         @error('gross_weight_kg')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>

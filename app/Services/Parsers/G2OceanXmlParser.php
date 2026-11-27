@@ -836,7 +836,7 @@ class G2OceanXmlParser implements ManifestParserInterface
 
         return round(
             (float) $weightMt * 1000,
-            2
+            3
         );
     }
 

@@ -981,7 +981,7 @@
                         <label for="gross_weight_kg" class="block text-sm font-medium text-gray-700">
                             Peso Bruto (kg) <span class="text-red-500">*</span>
                         </label>
-                        <input wire:model="gross_weight_kg" type="number" step="0.01" id="gross_weight_kg" min="0" required
+                        <input wire:model="gross_weight_kg" type="number" step="0.001" id="gross_weight_kg" min="0" required
                                @readonly($hasItems)
                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @if($hasItems) bg-gray-100 cursor-not-allowed @endif @error('gross_weight_kg') border-red-300 @enderror">
                         @if($hasItems)

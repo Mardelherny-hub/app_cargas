@@ -270,10 +270,12 @@ final class HidroviaTransshipmentMultiEnvioXmlGenerator
     private function hundredths(mixed $value): int
     {
         $value = trim((string) $value);
-        if (!preg_match('/^\d+(?:\.\d{1,2})?$/D', $value)) {
+        // El peso del ítem se guarda con tres decimales: se acepta si el tercero es 0.
+        if (!preg_match('/^\d+(?:\.\d{1,2}0?)?$/D', $value)) {
             throw new InvalidArgumentException('El peso debe ser positivo y tener como máximo dos decimales.');
         }
         [$whole, $fraction] = array_pad(explode('.', $value, 2), 2, '');
+        $fraction = substr($fraction, 0, 2);
         if (strlen(ltrim($whole, '0')) > 10) {
             throw new InvalidArgumentException('El peso supera el rango permitido.');
         }

@@ -1963,7 +1963,7 @@ class CmspEdiParser implements ManifestParserInterface
             array_key_exists('gross_weight_kg', $containerGroup)
             && $containerGroup['gross_weight_kg'] !== null
         ) {
-            return round((float) $containerGroup['gross_weight_kg'], 2);
+            return round((float) $containerGroup['gross_weight_kg'], 3);
         }
 
         $logicalItems = [];
@@ -2031,7 +2031,7 @@ class CmspEdiParser implements ManifestParserInterface
             $billNumber
         );
 
-        return round($total, 2);
+        return round($total, 3);
     }
 
     /**

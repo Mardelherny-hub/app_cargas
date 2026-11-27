@@ -411,7 +411,7 @@
                             <input type="number" 
                                    name="containers[{{ $index }}][gross_weight_kg]" 
                                    value="{{ old('containers.'.$index.'.gross_weight_kg', $container['gross_weight_kg']) }}"
-                                   step="0.01"
+                                   step="0.001"
                                    min="0"
                                    class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 container-gross-weight"
                                    placeholder="{{ $allowsUnknownContainerDistribution ? 'No informado' : '1000.00' }}"
@@ -541,7 +541,7 @@
                                        id="gross_weight_kg" 
                                        value="{{ old('gross_weight_kg', $shipmentItem->gross_weight_kg) }}"
                                        min="0"
-                                       step="0.01"
+                                       step="0.001"
                                        required
                                        class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 @error('gross_weight_kg') border-red-300 @enderror">
                                 @error('gross_weight_kg')

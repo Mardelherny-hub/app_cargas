@@ -188,7 +188,7 @@ class BillOfLading extends Model
         'original_release_date' => 'datetime',
         
         // Decimales
-        'gross_weight_kg' => 'decimal:2',
+        'gross_weight_kg' => 'decimal:3',
         'net_weight_kg' => 'decimal:2',
         'volume_m3' => 'decimal:3',
         'freight_amount' => 'decimal:2',
@@ -967,7 +967,7 @@ class BillOfLading extends Model
         // Actualizar el BillOfLading
         $this->update([
             'total_packages' => $totalPackages,
-            'gross_weight_kg' => round($grossWeight, 2),
+            'gross_weight_kg' => round($grossWeight, 3),
             'net_weight_kg' => round($netWeight, 2),
             'volume_m3' => round($volume, 3),
             'container_count' => $items->count(),

@@ -310,7 +310,7 @@
                                 <label for="bl_gross_weight_kg" class="block text-sm font-medium text-gray-700 mb-1">
                                     Peso Bruto (kg) <span class="text-red-500">*</span>
                                 </label>
-                                <input wire:model="bl_gross_weight_kg" type="number" step="0.01" min="0.01" id="bl_gross_weight_kg"
+                                <input wire:model="bl_gross_weight_kg" type="number" step="0.001" min="0.01" id="bl_gross_weight_kg"
                                     class="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm @error('bl_gross_weight_kg') border-red-300 @enderror">
                                 @error('bl_gross_weight_kg')
                                     <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
@@ -662,7 +662,7 @@
                                     <label for="gross_weight_kg" class="block text-sm font-medium text-gray-700">
                                         Peso Bruto (kg) <span class="text-red-500">*</span>
                                     </label>
-                                    <input wire:model="gross_weight_kg" type="number" step="0.01" min="0.01" id="gross_weight_kg"
+                                    <input wire:model="gross_weight_kg" type="number" step="0.001" min="0.01" id="gross_weight_kg"
                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                                         placeholder="2000.00">
                                     @error('gross_weight_kg')
@@ -960,7 +960,7 @@
                                                         <label class="block text-sm font-medium text-gray-700">
                                                             Peso Bruto (kg) <span class="text-red-500">*</span>
                                                         </label>
-                                                        <input wire:model="containers.{{ $index }}.gross_weight_kg" type="number" step="0.01" min="0.01"
+                                                        <input wire:model="containers.{{ $index }}.gross_weight_kg" type="number" step="0.001" min="0.01"
                                                             class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
                                                             placeholder="1000.00">
                                                     </div>

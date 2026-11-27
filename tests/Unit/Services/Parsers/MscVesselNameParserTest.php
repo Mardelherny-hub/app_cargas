@@ -383,6 +383,28 @@ class MscVesselNameParserTest extends TestCase
         $this->assertSame('99999999991', $party['tax_id']);
     }
 
+    public function test_third_weight_decimal_reaches_the_declared_weight(): void
+    {
+        $result = $this->import($this->file($this->bill('DEMO00000001', [
+            $this->item('TSTU0000001', '40', 'HC', '1', '1893,748', '3750,00'),
+            $this->item('TSTU0000002', '20', 'DV', '1', '5115,615', '2150,00'),
+        ], '7009,363', '5900,00', '2')));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $items = ShipmentItem::orderBy('line_number')->get();
+        $this->assertSame(['1893.748', '5115.615'], $items->pluck('gross_weight_kg')->all());
+        $this->assertSame('7009.363', \App\Models\BillOfLading::sole()->gross_weight_kg);
+        $this->assertSame(
+            ['1893.748', '5115.615'],
+            DB::table('container_shipment_item')->orderBy('shipment_item_id')->pluck('gross_weight_kg')
+                ->map(fn ($w) => number_format((float) $w, 3, '.', ''))->all()
+        );
+
+        // El ítem editado recalcula el total del BL sin perder el tercer decimal.
+        $items[0]->update(['gross_weight_kg' => 1893.749]);
+        $this->assertSame('7009.364', \App\Models\BillOfLading::sole()->gross_weight_kg);
+    }
+
     public function test_file_seals_reach_the_shipper_seal_read_by_micdta(): void
     {
         $content = $this->bill('DEMO00000001', [
