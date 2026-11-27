@@ -2,7 +2,7 @@
 
 **Fecha:** 27/11/2026. **Responsable del control:** QA independiente. **Sin envío a Aduana, sin deploy, sin correcciones de código.**
 
-**Dictamen:** **NO APROBADO / ACEPTACIÓN ABIERTA**, por falta de evidencia funcional completa. Este parte no reemplaza la aceptación en navegador ni constituye un gate PASS.
+**Dictamen:** **NO APROBADO / ACEPTACIÓN ABIERTA**, por imposibilidad de dar de alta las embarcaciones con los datos reales de las fuentes y falta de evidencia funcional completa. Este parte no reemplaza la aceptación en navegador ni constituye un gate PASS.
 
 ## Preparación y trazabilidad comprobada
 
@@ -11,30 +11,31 @@
 - Copia actual de Stage extraída por SSH en **solo lectura**, sin dejar archivos en Stage y con `mysqldump --single-transaction`: `/home/victor/qa_stage_20261127/stage_cargas_20261127.sql`; 26.711.720 bytes, `Dump completed` verificado, SHA-256 `2a5cc7536c9d1034d3357a7ce3dc777acf829e85f8903f1c7d95fb3cf922e164`.
 - Stage actual: base `cargas`. En A se restauró ese dump en `app_cargas_pruebas`, sin tocar B. Conteos posteriores: 7 viajes, 7 cargas, 276 conocimientos, 597 clientes, 53 embarcaciones.
 - Empresa id 1008: `Nabsa SA`. Usuario real id 20: `Leandro` asociado a empresa 1008 (identidad comprobada, **no se inició sesión con sus credenciales**).
-- **Bloqueo confirmado de datos de Stage:** ninguna embarcación del catálogo se llama `Observador`, `CARE I` ni `CONAY I` (consulta `vessels` en copia de Stage; Nabsa 1008 tiene 22 embarcaciones, ninguna de esas tres). No se crearon fichas ficticias para simular aceptación.
-- Playwright/Chromium real probado en `http://127.0.0.1:8004/login` sobre ese SHA. Falló inicialmente con 500 por `Vite manifest not found` del entorno local; se ejecutó `npm ci` + `npm run build` **solo** para preparar assets locales. Nueva carga del login: HTTP 200, 1 formulario y 4 inputs. No había sesión autenticada como Leandro, por lo que **no hay capturas de los flujos protegidos**. Captura disponible: [acceso sin sesión](evidencias/2026-11-27-etapa2-login-sin-sesion.png).
+- **Bloqueo confirmado de datos de Stage:** no existe `OBSERVADOR`, `CARE I` ni `CONAY I` tras buscar en todas las empresas por `LIKE` y por nombre sin espacios (`REPLACE`). Nabsa 1008 posee 22 embarcaciones. No se crearon fichas ficticias para simular aceptación.
+- **Ampliación del control del 27/11:** se reutilizó el puente de QA documentado en `docs/partes/2026-11-25-work.md` §13 (HttpKernel real, `Auth::guard()->setUser` del usuario existente Leandro, transacción exterior MySQL y rollback). Se navegó autenticado como Leandro/Nabsa con Chromium/Playwright por `127.0.0.1:8774`, sin alterar contraseña de usuarios ni instalar acceso en Stage. **No certifica el flujo de login normal**, pero sí la visualización autenticada de las rutas que se abrieron. Resultado del puente: `preserved=true`, 57 tablas iguales antes/después. Capturas [embarcaciones](evidencias/2026-11-27-etapa2-vessels-before.png), [alta de embarcación](evidencias/2026-11-27-etapa2-vessel-create.png), [CARE I incompleta](evidencias/2026-11-27-etapa2-01-alta-care-incompleta.png), [importar manifiesto](evidencias/2026-11-27-etapa2-02-importacion-pantalla.png).
+- Playwright/Chromium real probado en `http://127.0.0.1:8004/login` sobre ese SHA. Falló inicialmente con 500 por `Vite manifest not found` del entorno local; se ejecutó `npm ci` + `npm run build` **solo** para preparar assets locales. Nueva carga del login: HTTP 200, 1 formulario y 4 inputs. La pantalla inicial no usó sesión; luego se abrió una **sesión QA de Leandro dentro del puente local**, y se capturaron los formularios protegidos de embarcaciones e importación. No se ejecutaron transacciones de importación de manifiestos. Captura disponible: [acceso sin sesión](evidencias/2026-11-27-etapa2-login-sin-sesion.png).
 - No se invocaron WSAA, métodos de envío ni generación de transacciones aduaneras.
 
 ## PARTE A — Alcance literal de etapa 2 (fuente: `docs/PLAN-IMPORTACION-VIAJES-EXISTENTES.md`, §1)
 
-**Regla de este control:** sin captura del comportamiento en pantalla de la sesión correspondiente, estado **ABIERTO**. Un test de parser o una consulta SQL no equivalen a aprobación visual. No se encontraron los tres buques en el catálogo actual de Stage.
+**Regla de este control:** una captura parcial del formulario **no equivale** a una captura de operación completada. Los puntos siguen **ABIERTOS** cuando no existe demostración literal en pantalla. El acceso de QA se resolvió, pero el alta por UI de las embarcaciones depende de campos obligatorios que las fuentes consultadas no informan.
 
 | Punto | Frase textual del alcance | Captura de cumplimiento | Dictamen | Motivo comprobado |
 |---|---|---|---|---|
-| 1 | Al importar, se elige entre **crear viaje nuevo** o **agregar a un viaje existente**, sea manual o importado, con cualquiera de los 10 formatos. | — (no obtenida) | **ABIERTO** | No hay sesión de Leandro ni captura del circuito en pantalla. |
-| 2 | El sistema **propone la embarcación** según el archivo y el usuario la confirma o la cambia. | — (no obtenida) | **ABIERTO** | No hay sesión de Leandro ni captura del circuito en pantalla. |
-| 3 | Si se agrega otra embarcación a un viaje simple, se ofrece **convertirlo en convoy** y se elige el líder. El líder puede ir sin carga y sin archivo (por ejemplo, el remolcador Observador). | — (no obtenida) | **ABIERTO** | No están Observador, CARE I ni CONAY I en el catálogo copiado de Stage; tampoco hay captura de convoy. |
-| 4 | Si la embarcación ya tiene carga en el convoy, se suman los conocimientos. Si no tiene, se le crea su carga. | — (no obtenida) | **ABIERTO** | No hay sesión de Leandro ni captura del circuito en pantalla. |
-| 5 | Los **conocimientos repetidos** se saltean y se informan al terminar. | — (no obtenida) | **ABIERTO** | No hay sesión de Leandro ni captura del circuito en pantalla. |
-| 6 | **Revertir** solo lo agregado o el viaje completo. | — (no obtenida) | **ABIERTO** | No hay sesión de Leandro ni captura del circuito en pantalla. |
-| 7 | **Eliminar un conocimiento en un paso**, con sus ítems y contenedores, de a uno o todos los de una embarcación. | — (no obtenida) | **ABIERTO** | No hay sesión de Leandro ni captura del circuito en pantalla. |
-| 8 | **Regla de bloqueo:** nada de lo anterior se permite si la embarcación tiene títulos o MIC/DTA vigentes en AFIP. | — (no obtenida) | **ABIERTO** | No hay sesión de Leandro ni captura del circuito en pantalla. |
-| Criterio de aceptación | se arma el convoy Observador + CARE I + CONAY I agregando sus archivos, incluidos los dos de CARE I (CUSCAR y TXT), y se revierte un agregado sin afectar el resto del viaje. | — (no obtenida) | **ABIERTO** | No están Observador, CARE I ni CONAY I en el catálogo copiado de Stage; tampoco hay captura de convoy. |
+| 1 | Al importar, se elige entre **crear viaje nuevo** o **agregar a un viaje existente**, sea manual o importado, con cualquiera de los 10 formatos. | [Formulario de importación](evidencias/2026-11-27-etapa2-02-importacion-pantalla.png) — opciones visibles, no se ejecutaron los 10 formatos | **ABIERTO** | Hay captura de acceso de Leandro a los formularios, pero no del ciclo funcional completo: faltan las tres embarcaciones. |
+| 2 | El sistema **propone la embarcación** según el archivo y el usuario la confirma o la cambia. | [Formulario de importación](evidencias/2026-11-27-etapa2-02-importacion-pantalla.png) — selección visible, pero no se verificó propuesta automática | **ABIERTO** | Hay captura de acceso de Leandro a los formularios, pero no del ciclo funcional completo: faltan las tres embarcaciones. |
+| 3 | Si se agrega otra embarcación a un viaje simple, se ofrece **convertirlo en convoy** y se elige el líder. El líder puede ir sin carga y sin archivo (por ejemplo, el remolcador Observador). | [Listado](evidencias/2026-11-27-etapa2-vessels-before.png) y [alta](evidencias/2026-11-27-etapa2-vessel-create.png); sin convoy creado | **ABIERTO** | No están Observador, CARE I ni CONAY I en el catálogo; el alta de CARE I por formulario exige datos no presentes en los archivos, y no existe captura de convoy. |
+| 4 | Si la embarcación ya tiene carga en el convoy, se suman los conocimientos. Si no tiene, se le crea su carga. | — (no obtenida) | **ABIERTO** | Hay captura de acceso de Leandro a los formularios, pero no del ciclo funcional completo: faltan las tres embarcaciones. |
+| 5 | Los **conocimientos repetidos** se saltean y se informan al terminar. | — (no obtenida) | **ABIERTO** | Hay captura de acceso de Leandro a los formularios, pero no del ciclo funcional completo: faltan las tres embarcaciones. |
+| 6 | **Revertir** solo lo agregado o el viaje completo. | — (no obtenida) | **ABIERTO** | Hay captura de acceso de Leandro a los formularios, pero no del ciclo funcional completo: faltan las tres embarcaciones. |
+| 7 | **Eliminar un conocimiento en un paso**, con sus ítems y contenedores, de a uno o todos los de una embarcación. | — (no obtenida) | **ABIERTO** | Hay captura de acceso de Leandro a los formularios, pero no del ciclo funcional completo: faltan las tres embarcaciones. |
+| 8 | **Regla de bloqueo:** nada de lo anterior se permite si la embarcación tiene títulos o MIC/DTA vigentes en AFIP. | — (no obtenida) | **ABIERTO** | Hay captura de acceso de Leandro a los formularios, pero no del ciclo funcional completo: faltan las tres embarcaciones. |
+| Criterio de aceptación | se arma el convoy Observador + CARE I + CONAY I agregando sus archivos, incluidos los dos de CARE I (CUSCAR y TXT), y se revierte un agregado sin afectar el resto del viaje. | [Alta CARE I bloqueada](evidencias/2026-11-27-etapa2-01-alta-care-incompleta.png) — sin convoy | **ABIERTO** | No están Observador, CARE I ni CONAY I en el catálogo; el alta de CARE I por formulario exige datos no presentes en los archivos, y no existe captura de convoy. |
 
 ### Observaciones bloqueantes diferenciadas de defectos de producto
 
-1. **Datos de aceptación no disponibles en Stage:** faltan las tres embarcaciones exactas. No se presume que sea defecto del parser ni de la release; requiere aclarar si deben existir previamente o crearse desde un flujo autorizado.
-2. **No hay sesión Playwright autorizada del usuario Leandro:** la pantalla de login local funciona, pero no se probó el recorrido autenticado ni se obtuvieron capturas de las operaciones de etapa 2.
+1. **Alta previa del operador comprobada:** faltan las tres embarcaciones exactas en la copia local. Se abrió **Crear Embarcación** como Leandro. Para `CARE I`, la fuente TXT declara `VESSEL NAME = CARE I`, `IMO = N` (no es IMO utilizable); para `CONAY I`, `VESSEL NAME = CONAY I`, `IMO = N`. El CUSCAR de CARE I identifica `CARE I` en TDT. No se encontraron matrícula, bandera, propietario, longitud, manga, calado, puntal ni capacidad de la embarcación declarados de manera inequívoca en estos archivos. `OBSERVADOR` no tiene archivo. La pantalla exige esos ocho campos, además del nombre y tipo. El navegador rechazó el envío de CARE I con `Completa este campo`/`Selecciona un elemento de la lista` en los ocho campos; no se creó nada. **No inventar datos del operador**, aun en una copia local. El alta de las tres fichas debe preceder la aceptación.
+2. **Sesión de QA de Leandro resuelta:** puente local probado, sin contraseña, con cookies/contexto del navegador y `Auth::guard()->setUser` por solicitud; **no constituye prueba de autenticación normal**. Se vieron `/company/vessels`, `/company/vessels/create` y `/company/manifests/import`. **Falta recorrer el circuito real**, bloqueado por el alta incompleta.
 3. **No se evaluaron campos de los BL agregados**, ni textos de pantalla, español, vista angosta, bloqueo AFIP, lista de BL antes/después, reversión, duplicados o borrado múltiple. Siguen **ABIERTOS** por falta de evidencia, no por fallo reproducido.
 
 ## PARTE B — Contrato AFIP y disponibilidad en el convoy
@@ -278,11 +279,11 @@ El método `RegistrarConvoy` usa `idMicDtaRemol` e identificadores `idMicDta`, q
 
 ### Datos solicitados al operador y defectos
 
-No se pudieron completar en pantalla las fechas, destinaciones o CUIT de consignatarios: **no se abrió el recorrido autenticado y faltan los buques del convoy**. No se agregan valores supuestos, fechas ficticias, CUIT inventados ni XML simulados como evidencia. Un campo marcado «FALTA» exige haber comprobado su fuente real; un «FORMATO INCORRECTO» exige un valor y el límite específico verificado. Ninguna de ambas clasificaciones puede atribuirse en esta etapa.
+No se pudieron completar en pantalla las fechas, destinaciones o CUIT de consignatarios: **se abrió el recorrido autenticado hasta los formularios de embarcaciones e importación, pero la falta de datos técnicos para crear las tres fichas impidió construir el convoy**. No se agregan valores supuestos, fechas ficticias, CUIT inventados ni XML simulados como evidencia. Un campo marcado «FALTA» exige haber comprobado su fuente real; un «FORMATO INCORRECTO» exige un valor y el límite específico verificado. Ninguna de ambas clasificaciones puede atribuirse en esta etapa.
 
 ### Recomendación de gate
 
-**HOLD etapa 2 para Stage:** volver a correr el ensayo con las tres embarcaciones cargadas legítimamente o con un criterio autorizado de alta, sesión real de Leandro y capturas de cada paso; luego completar por campo la matriz AFIP con datos persistidos y XML offline. No corregir ni desplegar en base a esta revisión parcial.
+**HOLD etapa 2 para Stage:** volver a correr el ensayo cuando se cuente con los campos técnicos verificables para dar de alta las tres embarcaciones legítimamente por la interfaz, con el puente QA de Leandro y capturas de cada paso; luego completar por campo la matriz AFIP con datos persistidos y XML offline. No corregir ni desplegar en base a esta revisión parcial.
 
 ## Archivos locales privados (no se comittean)
 
@@ -586,3 +587,14 @@ Releídos WSDL de1109c11b y manual completo **Manual-del-Usuario-para-Registro-A
 **Pendiente de Víctor:** indicar la ubicación de las fichas reales de Observador, CARE I y CONAY I o sus datos reales para cargarlas en A. La pregunta está planteada en este hilo. No se solicita permiso de nuevo para el QA ya autorizado; faltan datos concretos necesarios para ejecutar su criterio.
 
 **Gate: HOLD / NO APROBADO.** El acceso visual ya no es el bloqueo: hay pantalla real como Leandro y evidencia de detección. Falta el catálogo exacto. No se realizó el convoy, sus reversiones, la carga manual fiscal ni los XML de ese convoy; tampoco se afirma que esos pasos hayan fallado. Sin deploy de etapa2, sin producción/B y sin modificar Stage.
+
+
+## Addendum de la retoma por navegador (27/11)
+
+Se comprobó la capacidad del puente local de QA (como en §13 del parte del 25/11) con Leandro/Nabsa. La búsqueda de embarcaciones se hizo en **todas** las empresas y normalizando espacios; cero coincidencias de OBSERV, CARE o CONAY.
+
+El alta **es una operación previa del operador**. El formulario real muestra campos obligatorios que las dos muestras TXT no proporcionan: `registration_number`, `flag_country_id`, `vessel_owner_id`, `length_meters`, `beam_meters`, `draft_meters`, `depth_meters` y `cargo_capacity_tons`. Se ingresó únicamente el nombre CARE I y se observó su validación del navegador **sin enviar datos de alta**. Para Observador no existe archivo con esos ocho datos. No se completaron con ceros, valores de otra embarcación ni suposiciones sobre país o propietario.
+
+La pantalla de importación **sí muestra** el selector de embarcación, `Crear viaje nuevo` y `Agregar a un viaje existente`, y el texto de control de coincidencia `VESSEL NAME` para MSC. Esto acredita la existencia de controles visuales, **no su funcionamiento completo**. No se completó una importación ni se aprobaron las frases literales.
+
+Las cuatro capturas de esta retoma están vinculadas arriba. **Rollback de la transacción exterior confirmado**, `preserved=true` en las 57 tablas; A sigue conteniendo la copia de Stage como punto de partida, sin las tres fichas añadidas.
