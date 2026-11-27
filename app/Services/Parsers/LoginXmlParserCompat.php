@@ -137,10 +137,6 @@ class LoginXmlParserCompat extends LoginXmlParser
             $context
         );
 
-        $bill->specificContacts()
-            ->where('use_specific_data', true)
-            ->update(['use_specific_data' => false]);
-
         $permiso = $this->extractPermisoEmbarqueFromDescription(
             $blData['cargo_description'] ?? null
         );

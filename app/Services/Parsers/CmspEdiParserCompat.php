@@ -53,29 +53,6 @@ class CmspEdiParserCompat extends CmspEdiParser
     }
 
     /**
-     * Conserva la dirección específica informada por el archivo dentro del
-     * conocimiento, pero no la activa automáticamente. El operador decide si
-     * corresponde usarla para ese conocimiento.
-     */
-    protected function resolveSpecificAddress(
-        ?Client $client,
-        ?string $fileAddress,
-        string $role
-    ): ?array {
-        $specific = parent::resolveSpecificAddress(
-            $client,
-            $fileAddress,
-            $role
-        );
-
-        if ($specific !== null) {
-            $specific['use_specific_data'] = false;
-        }
-
-        return $specific;
-    }
-
-    /**
      * CUSCAR describe la ruta física (LOC+9 / LOC+11), no el sentido comercial
      * de la operación para esta aplicación. Dos archivos de importación y
      * exportación pueden declarar la misma ruta, por lo que no se infiere el

@@ -4,6 +4,7 @@ namespace Tests\Unit\Services\Parsers;
 
 use App\Models\Client;
 use App\Models\ClientContactData;
+use App\Services\Parsers\Concerns\ExtractsEmbeddedTaxId;
 use App\Services\Parsers\Concerns\ResolvesClientAddresses;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Mockery;
@@ -18,7 +19,7 @@ class ResolvesClientAddressesTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_imported_different_address_is_preserved_but_not_activated(): void
+    public function test_imported_different_address_is_kept_active_on_the_bill(): void
     {
         $primary = new ClientContactData();
         $primary->id = 321;
@@ -50,7 +51,8 @@ class ResolvesClientAddressesTest extends TestCase
         $this->assertNotNull($result);
         $this->assertSame(321, $result['client_contact_data_id']);
         $this->assertSame('consignee', $result['role']);
-        $this->assertFalse($result['use_specific_data']);
+        $this->assertTrue($result['use_specific_data']);
+        $this->assertNull($result['specific_company_name']);
         $this->assertSame(
             'AV. DEL LIBERTADOR 1500, BUENOS AIRES',
             $result['specific_address_line_1']
@@ -173,6 +175,70 @@ class ResolvesClientAddressesTest extends TestCase
         );
     }
 
+    private function clientWithPrimary(string $address, string $name, ?string $taxId = null): Client
+    {
+        $primary = new ClientContactData();
+        $primary->id = 777;
+        $primary->address_line_1 = $address;
+
+        $relation = Mockery::mock(HasMany::class);
+        $relation->shouldReceive('where')->with('is_primary', true)->andReturnSelf();
+        $relation->shouldReceive('first')->andReturn($primary);
+
+        $client = Mockery::mock(Client::class)->makePartial();
+        $client->shouldReceive('contactData')->andReturn($relation);
+        $client->legal_name = $name;
+        $client->commercial_name = $name;
+        $client->tax_id = $taxId;
+
+        return $client;
+    }
+
+    public function test_bill_keeps_its_own_name_when_it_differs_from_the_client_card(): void
+    {
+        $client = $this->clientWithPrimary('CHILE 801, BUENOS AIRES', 'EXPORTADORA DEMO', '99999999991');
+
+        $result = $this->resolver()->resolve(
+            $client,
+            'Chile 801, Buenos Aires',
+            'shipper',
+            'EXPORTADORA DEMO SOCIEDAD ANONIMA'
+        );
+
+        $this->assertNotNull($result);
+        $this->assertTrue($result['use_specific_data']);
+        $this->assertSame('EXPORTADORA DEMO SOCIEDAD ANONIMA', $result['specific_company_name']);
+        $this->assertNull($result['specific_address_line_1']);
+    }
+
+    public function test_bill_name_without_the_resolved_tax_id_matching_the_card_is_not_specific(): void
+    {
+        $client = $this->clientWithPrimary('CHILE 801, BUENOS AIRES', 'LOGISTICA FICTICIA S.A.', '999999930');
+
+        $this->assertNull($this->resolver()->resolve(
+            $client,
+            'CHILE 801, BUENOS AIRES',
+            'consignee',
+            "logistica ficticia s.a. TAX.ID:99999993-0\nCHILE 801"
+        ));
+    }
+
+    public function test_bill_keeps_name_and_address_when_both_differ(): void
+    {
+        $client = $this->clientWithPrimary('CUIT 30-00000000-0', 'DEMO ARGENTINA', '30000000000');
+
+        $result = $this->resolver()->resolve(
+            $client,
+            'AV. EJEMPLO 1500, BUENOS AIRES',
+            'shipper',
+            'DEMO SHIPPING COMPANY SA'
+        );
+
+        $this->assertSame('DEMO SHIPPING COMPANY SA', $result['specific_company_name']);
+        $this->assertSame('AV. EJEMPLO 1500, BUENOS AIRES', $result['specific_address_line_1']);
+        $this->assertTrue($result['use_specific_data']);
+    }
+
     public function test_same_address_does_not_create_specific_contact(): void
     {
         $primary = new ClientContactData();
@@ -208,17 +274,20 @@ class ResolvesClientAddressesTest extends TestCase
     private function resolver(): object
     {
         return new class {
+            use ExtractsEmbeddedTaxId;
             use ResolvesClientAddresses;
 
             public function resolve(
                 Client $client,
                 ?string $fileAddress,
-                string $role
+                string $role,
+                ?string $fileName = null
             ): ?array {
                 return $this->resolveSpecificAddress(
                     $client,
                     $fileAddress,
-                    $role
+                    $role,
+                    $fileName
                 );
             }
 

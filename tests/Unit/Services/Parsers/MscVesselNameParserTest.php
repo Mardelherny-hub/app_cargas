@@ -352,6 +352,37 @@ class MscVesselNameParserTest extends TestCase
         $this->assertSame('999999941', (string) $notify->tax_id);
     }
 
+    public function test_bill_keeps_the_file_name_and_address_and_micdta_uses_them(): void
+    {
+        // Ficha previa del remitente con otro nombre y sin domicilio real.
+        $clientId = DB::table('clients')->where('tax_id', '99999999991')->value('id');
+        DB::table('clients')->where('id', $clientId)->update(['legal_name' => 'DEMO ARGENTINA', 'commercial_name' => 'DEMO ARGENTINA']);
+        DB::table('client_contact_data')->insert([
+            'client_id' => $clientId, 'is_primary' => 1, 'active' => 1, 'address_line_1' => 'CUIT 99-99999999-1',
+        ]);
+        $content = str_replace(
+            $this->line('SHIPPER', 'EXPORTADORA DEMO SA'),
+            $this->line('SHIPPER', 'EXPORTADORA DEMO SA TAX ID: 99999999991'),
+            $this->bill('DEMO00000001', [
+                $this->item('TSTU0000001', '40', 'HC', '1', '1000,000', '3750,00'),
+            ], '1000,000', '3750,00', '1')
+        );
+
+        $result = $this->import($this->file($content));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $bill = \App\Models\BillOfLading::with('shipper')->sole();
+        $this->assertSame($clientId, $bill->shipper_id);
+        $this->assertSame('DEMO ARGENTINA', $bill->shipper->legal_name);
+        $this->assertSame('CUIT 99-99999999-1', DB::table('client_contact_data')->where('client_id', $clientId)->value('address_line_1'));
+
+        $generator = (new ReflectionClass(SimpleXmlGenerator::class))->newInstanceWithoutConstructor();
+        $party = (new ReflectionMethod($generator, 'micDtaPartyData'))->invoke($generator, $bill, 'shipper', $bill->shipper);
+        $this->assertSame('EXPORTADORA DEMO SA', $party['name']);
+        $this->assertSame('CALLE FICTICIA 100, CIUDAD DEMO', $party['address_line_1']);
+        $this->assertSame('99999999991', $party['tax_id']);
+    }
+
     public function test_file_seals_reach_the_shipper_seal_read_by_micdta(): void
     {
         $content = $this->bill('DEMO00000001', [

@@ -808,8 +808,8 @@ protected function extractValue(string $scope, string $label): ?string
         // Dirección del cliente: persistir en ficha (cliente nuevo/sin dirección)
         // o guardar dirección específica del conocimiento (cliente existente con dirección distinta).
         $parties = [
-            ['client' => $shipper,   'addr' => $data['cargador_domicilio'] ?? null,      'role' => 'shipper'],
-            ['client' => $consignee, 'addr' => $data['consignatario_domicilio'] ?? null, 'role' => 'consignee'],
+            ['client' => $shipper,   'addr' => $data['cargador_domicilio'] ?? null,      'role' => 'shipper',   'name' => $shipperName],
+            ['client' => $consignee, 'addr' => $data['consignatario_domicilio'] ?? null, 'role' => 'consignee', 'name' => $consigneeName],
         ];
 
         if ($notify !== null) {
@@ -817,12 +817,13 @@ protected function extractValue(string $scope, string $label): ?string
                 'client' => $notify,
                 'addr' => $data['notificatario_domicilio'] ?? $notifyExtraAddr,
                 'role' => 'notify_party',
+                'name' => $notifyExtraAddr !== null ? $consigneeName : $notifyName,
             ];
         }
 
         foreach ($parties as $p) {
             $this->persistClientAddress($p['client'], $p['addr']);
-            if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'])) {
+            if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'], $p['name'])) {
                 $bill->specificContacts()->create($c);
             }
         }

@@ -673,20 +673,20 @@ class ParanaExcelParser implements ManifestParserInterface
         // o guardar dirección específica del conocimiento (cliente existente con dirección distinta).
         $shipperAddr = $data['SHIPPER_ADDRESS1'] ?? null;
         $this->persistClientAddress($shipper, $shipperAddr);
-        if ($c = $this->resolveSpecificAddress($shipper, $shipperAddr, 'shipper')) {
+        if ($c = $this->resolveSpecificAddress($shipper, $shipperAddr, 'shipper', $data['SHIPPER_NAME'] ?? null)) {
             $bill->specificContacts()->create($c);
         }
 
         $consigneeAddr = $data['CONSIGNEE_ADDRESS1'] ?? null;
         $this->persistClientAddress($consignee, $consigneeAddr);
-        if ($c = $this->resolveSpecificAddress($consignee, $consigneeAddr, 'consignee')) {
+        if ($c = $this->resolveSpecificAddress($consignee, $consigneeAddr, 'consignee', $data['CONSIGNEE_NAME'] ?? null)) {
             $bill->specificContacts()->create($c);
         }
 
         if ($notifyParty) {
             $notifyAddr = $data['NOTIFY_PARTY_ADDRESS1'] ?? null;
             $this->persistClientAddress($notifyParty, $notifyAddr);
-            if ($c = $this->resolveSpecificAddress($notifyParty, $notifyAddr, 'notify_party')) {
+            if ($c = $this->resolveSpecificAddress($notifyParty, $notifyAddr, 'notify_party', $notifyPartyName)) {
                 $bill->specificContacts()->create($c);
             }
         }

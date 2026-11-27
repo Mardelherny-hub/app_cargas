@@ -76,7 +76,7 @@ class ParanaNotifyPartyPersistenceTest extends TestCase
             protected function determinateCargoTypeId(array $data): int { return 1; }
             protected function determinatePackagingTypeId(array $data): int { return 1; }
             protected function persistClientAddress(?Client $client, ?string $address): bool { return false; }
-            protected function resolveSpecificAddress(?Client $client, ?string $address, string $role): ?array { return null; }
+            protected function resolveSpecificAddress(?Client $client, ?string $address, string $role, ?string $fileName = null): ?array { return null; }
         };
         $voyage = (new Voyage())->forceFill(['id' => 1, 'company_id' => 1008]);
         $shipment = (new Shipment())->forceFill(['id' => 11, 'voyage_id' => 1]);

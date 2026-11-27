@@ -2447,7 +2447,8 @@ class CmspEdiParser implements ManifestParserInterface
         if ($specific = $this->resolveSpecificAddress(
             $shipper,
             $shipperData['address'] ?? null,
-            'shipper'
+            'shipper',
+            $shipperData['name'] ?? null
         )) {
             $bill->specificContacts()->create($specific);
         }
@@ -2455,7 +2456,8 @@ class CmspEdiParser implements ManifestParserInterface
         if ($specific = $this->resolveSpecificAddress(
             $consignee,
             $consigneeData['address'] ?? null,
-            'consignee'
+            'consignee',
+            $consigneeData['name'] ?? null
         )) {
             $bill->specificContacts()->create($specific);
         }
@@ -2463,7 +2465,8 @@ class CmspEdiParser implements ManifestParserInterface
         if ($notifyParty && ($specific = $this->resolveSpecificAddress(
             $notifyParty,
             $notifyData['address'] ?? null,
-            'notify_party'
+            'notify_party',
+            $notifyData['name'] ?? null
         ))) {
             $bill->specificContacts()->create($specific);
         }

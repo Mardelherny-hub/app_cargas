@@ -12,11 +12,11 @@ use Illuminate\Support\Facades\Log;
  *     - Si NO hay contacto primario -> crea uno con is_primary = true.
  *
  * ETAPA 2 - resolveSpecificAddress():
- *   Si el cliente YA tiene dirección y la del archivo difiere (normalizada),
- *   devuelve el array para $bl->specificContacts()->create([...]) con la
- *   dirección específica de ese conocimiento, para ese rol. La dirección se
- *   conserva, pero queda inactiva: el operador decide si debe utilizarse.
- *   Si no hay diferencia, devuelve null.
+ *   Si el nombre o la dirección del archivo difieren (normalizados) de la
+ *   ficha del cliente, devuelve el array para $bl->specificContacts()->create()
+ *   con el nombre y la dirección propios de ese conocimiento, para ese rol.
+ *   Quedan activos: el conocimiento y su declaración usan lo que dice el
+ *   archivo, sin modificar la ficha del cliente. Si no difieren, null.
  *
  * NOTA: el vínculo del contacto primario es client_contact_data.is_primary,
  * NO clients.primary_contact_data_id (esa columna no existe en la tabla).
@@ -85,49 +85,78 @@ trait ResolvesClientAddresses
         return true;
     }
     /**
-     * ETAPA 2: si el cliente ya tiene dirección y la del archivo difiere,
-     * devuelve el array para crear la dirección específica del BL en ese rol.
-     * El dato se conserva sin activarlo automáticamente.
+     * ETAPA 2: si el nombre o la dirección del archivo difieren de la ficha,
+     * devuelve el array para crear los datos propios del BL en ese rol.
      */
-    protected function resolveSpecificAddress(?Client $client, ?string $fileAddress, string $role): ?array
-    {
+    protected function resolveSpecificAddress(
+        ?Client $client,
+        ?string $fileAddress,
+        string $role,
+        ?string $fileName = null
+    ): ?array {
         if (!$client) {
             return null;
         }
         $fileAddress = $this->cleanFileAddress($fileAddress);
         $fileAddress = $this->removeLeadingKnownTaxId($client, $fileAddress);
         $fileNorm = $this->normalizeAddress($fileAddress);
-        if ($fileNorm === '') {
-            return null;
-        }
+        $billName = $this->billPartyName($client, $fileName);
 
-        // Contacto primario del cliente (la dirección "oficial" que estamos comparando).
+        // Contacto primario del cliente: la ficha contra la que se compara y a la
+        // que se cuelgan los datos propios del conocimiento.
         $primary = $client->contactData()->where('is_primary', true)->first()
             ?? $client->contactData()->first();
 
-        // Sin contacto en la ficha no hay contra qué comparar ni a qué colgar la específica.
         if (!$primary) {
             return null;
         }
 
         $storedNorm = $this->normalizeAddress($primary->address_line_1);
-        if ($storedNorm === '') {
-            return null;
-        }
-        if ($storedNorm === $fileNorm) {
+        $addressDiffers = $fileNorm !== '' && $storedNorm !== '' && $storedNorm !== $fileNorm;
+        $nameDiffers = $billName !== null;
+
+        if (!$addressDiffers && !$nameDiffers) {
             return null;
         }
 
-        // Difieren -> conservar como dirección específica del BL, pero inactiva.
-        // Ningún importador debe decidir por el operador que esa dirección sustituya
-        // automáticamente a la dirección principal del cliente.
         return [
             'client_contact_data_id'  => $primary->id,
             'role'                    => $role,
-            'use_specific_data'       => false,
-            'specific_address_line_1' => trim($fileAddress),
+            'use_specific_data'       => true,
+            'specific_company_name'   => $billName,
+            'specific_address_line_1' => $addressDiffers ? trim($fileAddress) : null,
             'created_by_user_id'      => auth()->id(),
         ];
+    }
+
+    /**
+     * Nombre de la parte tal como lo trae el conocimiento, cuando difiere del
+     * de la ficha. Se toma el primer renglón y se quita la identificación
+     * fiscal ya resuelta del cliente. null si coincide o no viene.
+     */
+    protected function billPartyName(Client $client, ?string $fileName): ?string
+    {
+        if ($fileName === null) {
+            return null;
+        }
+        $lines = preg_split('/\R/u', trim(str_replace(['/*', '*/'], '', $fileName)));
+        $name = trim((string) ($lines[0] ?? ''));
+        $taxId = (string) $client->tax_id;
+        if ($taxId !== '' && method_exists($this, 'removeEmbeddedTaxId')) {
+            $name = $this->removeEmbeddedTaxId($name, $taxId);
+        }
+        $name = trim((string) preg_replace('/\s+/u', ' ', $name), " ,;:-");
+        if ($name === '') {
+            return null;
+        }
+        $normalized = $this->normalizeAddress($name);
+        foreach ([$client->legal_name, $client->commercial_name] as $stored) {
+            if ($this->normalizeAddress($stored) === $normalized) {
+                return null;
+            }
+        }
+
+        return mb_substr($name, 0, 255);
     }
     /**
      * Dirección registrada del cliente (address_line_1 del contacto primario),

@@ -1201,7 +1201,8 @@ class G2OceanXmlParser implements ManifestParserInterface
             $c = $this->resolveSpecificAddress(
                 $shipper,
                 $blData['shipper']['address'] ?? null,
-                'shipper'
+                'shipper',
+                $blData['shipper']['name'] ?? null
             )
         ) {
             $bill->specificContacts()->create($c);
@@ -1216,7 +1217,8 @@ class G2OceanXmlParser implements ManifestParserInterface
             $c = $this->resolveSpecificAddress(
                 $consignee,
                 $blData['consignee']['address'] ?? null,
-                'consignee'
+                'consignee',
+                $blData['consignee']['name'] ?? null
             )
         ) {
             $bill->specificContacts()->create($c);
@@ -1232,7 +1234,8 @@ class G2OceanXmlParser implements ManifestParserInterface
                 $c = $this->resolveSpecificAddress(
                     $notify,
                     $blData['notify']['address'] ?? null,
-                    'notify_party'
+                    'notify_party',
+                    $blData['notify']['name'] ?? null
                 )
             ) {
                 $bill->specificContacts()->create($c);

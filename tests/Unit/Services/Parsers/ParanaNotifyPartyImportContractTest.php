@@ -41,7 +41,7 @@ class ParanaNotifyPartyImportContractTest extends TestCase
         $this->assertStringContainsString("\$data['NOTIFY_PARTY_COUNTRY']", $method);
         $this->assertStringContainsString("'notify_party_id' => \$notifyParty?->id", $method);
         $this->assertStringContainsString("\$this->persistClientAddress(\$notifyParty, \$notifyAddr)", $method);
-        $this->assertStringContainsString("\$this->resolveSpecificAddress(\$notifyParty, \$notifyAddr, 'notify_party')", $method);
+        $this->assertStringContainsString("\$this->resolveSpecificAddress(\$notifyParty, \$notifyAddr, 'notify_party', \$notifyPartyName)", $method);
         $this->assertStringContainsString('if ($notifyParty)', $method);
     }
 }

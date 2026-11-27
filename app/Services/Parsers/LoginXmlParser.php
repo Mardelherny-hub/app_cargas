@@ -1591,12 +1591,13 @@ class LoginXmlParser implements ManifestParserInterface
         // Etapa 1: persistir en la ficha si el cliente no tiene dirección.
         // Etapa 2: si difiere de la registrada, guardarla como dirección específica del BL.
         foreach ([
-            ['client' => $shipper,     'addr' => $this->extractAddressFromNode($blData['shipper_name'] ?? null),      'role' => 'shipper'],
-            ['client' => $consignee,   'addr' => $this->extractAddressFromNode($blData['consignee_name'] ?? null),    'role' => 'consignee'],
-            ['client' => $notifyParty, 'addr' => $this->extractAddressFromNode($blData['notify_party_name'] ?? null), 'role' => 'notify_party'],
+            ['client' => $shipper,     'addr' => $this->extractAddressFromNode($blData['shipper_name'] ?? null),      'role' => 'shipper',      'name' => $blData['shipper_name'] ?? null],
+            ['client' => $consignee,   'addr' => $this->extractAddressFromNode($blData['consignee_name'] ?? null),    'role' => 'consignee',    'name' => $blData['consignee_name'] ?? null],
+            ['client' => $notifyParty, 'addr' => $this->extractAddressFromNode($blData['notify_party_name'] ?? null), 'role' => 'notify_party', 'name' => $blData['notify_party_name'] ?? null],
         ] as $p) {
             $this->persistClientAddress($p['client'], $p['addr']);
-            if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'])) {
+            $name = $p['name'] !== null ? $this->cleanClientName($p['name']) : null;
+            if ($c = $this->resolveSpecificAddress($p['client'], $p['addr'], $p['role'], $name)) {
                 $bill->specificContacts()->create($c);
             }
         }

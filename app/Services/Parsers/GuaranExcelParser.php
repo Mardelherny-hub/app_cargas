@@ -874,9 +874,9 @@ class GuaranExcelParser implements ManifestParserInterface
         // Etapa 2: si ya tiene una distinta, se guarda como dirección específica
         // de ESTE conocimiento, en su rol (no se pisa el padrón del cliente).
         $partes = [
-            ['client' => $shipper,     'addr' => $row['SHIPPER_ADDRESS1']      ?? null, 'role' => 'shipper'],
-            ['client' => $consignee,   'addr' => $row['CONSIGNEE_ADDRESS1']    ?? null, 'role' => 'consignee'],
-            ['client' => $notifyParty, 'addr' => $row['NOTIFY_PARTY_ADDRESS1'] ?? null, 'role' => 'notify_party'],
+            ['client' => $shipper,     'addr' => $row['SHIPPER_ADDRESS1']      ?? null, 'role' => 'shipper',      'name' => $row['SHIPPER_NAME'] ?? null],
+            ['client' => $consignee,   'addr' => $row['CONSIGNEE_ADDRESS1']    ?? null, 'role' => 'consignee',    'name' => $row['CONSIGNEE_NAME'] ?? null],
+            ['client' => $notifyParty, 'addr' => $row['NOTIFY_PARTY_ADDRESS1'] ?? null, 'role' => 'notify_party', 'name' => $row['NOTIFY_PARTY_NAME'] ?? null],
         ];
 
         foreach ($partes as $parte) {
@@ -885,15 +885,11 @@ class GuaranExcelParser implements ManifestParserInterface
             $specific = $this->resolveSpecificAddress(
                 $parte['client'],
                 $parte['addr'],
-                $parte['role']
+                $parte['role'],
+                $parte['name']
             );
 
             if ($specific) {
-                // La dirección informada por GUARAN se conserva para este BL,
-                // pero no debe sustituir automáticamente la dirección de la
-                // ficha del cliente. El operador decide si desea utilizarla.
-                $specific['use_specific_data'] = false;
-
                 $bill->specificContacts()->create($specific);
             }
         }

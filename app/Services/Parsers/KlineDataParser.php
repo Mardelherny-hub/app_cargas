@@ -812,12 +812,12 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             : null;
 
         $this->persistClientAddress($shipper, $shipperAddr);
-        if ($c = $this->resolveSpecificAddress($shipper, $shipperAddr, 'shipper')) {
+        if ($c = $this->resolveSpecificAddress($shipper, $shipperAddr, 'shipper', $this->klineBillPartyName($shipperData))) {
             $bill->specificContacts()->create($c);
         }
 
         $this->persistClientAddress($consignee, $consigneeAddr);
-        if ($c = $this->resolveSpecificAddress($consignee, $consigneeAddr, 'consignee')) {
+        if ($c = $this->resolveSpecificAddress($consignee, $consigneeAddr, 'consignee', $this->klineBillPartyName($consigneeData))) {
             $bill->specificContacts()->create($c);
         }
 
@@ -827,7 +827,8 @@ protected function findOrCreatePort(string $portCode, string $defaultName = null
             if ($c = $this->resolveSpecificAddress(
                 $notify,
                 $notifyAddr,
-                'notify_party'
+                'notify_party',
+                $this->klineBillPartyName($notifyData)
             )) {
                 $bill->specificContacts()->create($c);
             }
@@ -3854,4 +3855,14 @@ protected function extractPortInfo(array $data): array
         return $this->cleanFileAddress(implode(' ', $parts));
     }
 
+    /**
+     * Nombre de la parte para el conocimiento; el marcador interno de parte sin
+     * nombre no es un dato del archivo.
+     */
+    protected function klineBillPartyName(?array $partyData): ?string
+    {
+        $name = trim((string) ($partyData['name'] ?? ''));
+
+        return $name === '' || $name === 'Desconocido' ? null : $name;
+    }
 }

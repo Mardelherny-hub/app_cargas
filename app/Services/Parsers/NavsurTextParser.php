@@ -1170,16 +1170,19 @@ class NavsurTextParser implements ManifestParserInterface
                 'client' => $shipper,
                 'addr' => $data['cargador_domicilio'] ?? null,
                 'role' => 'shipper',
+                'name' => $data['cargador_nombre'] ?? null,
             ],
             [
                 'client' => $consignee,
                 'addr' => $data['consignatario_domicilio'] ?? null,
                 'role' => 'consignee',
+                'name' => $data['consignatario_nombre'] ?? null,
             ],
             [
                 'client' => $notify,
                 'addr' => $data['notificatario1_domicilio'] ?? null,
                 'role' => 'notify_party',
+                'name' => $data['notificatario1_nombre'] ?? null,
             ],
         ] as $party) {
             if (!$party['client']) {
@@ -1195,7 +1198,8 @@ class NavsurTextParser implements ManifestParserInterface
                 $contact = $this->resolveSpecificAddress(
                     $party['client'],
                     $party['addr'],
-                    $party['role']
+                    $party['role'],
+                    $party['name']
                 )
             ) {
                 $bill->specificContacts()->create($contact);

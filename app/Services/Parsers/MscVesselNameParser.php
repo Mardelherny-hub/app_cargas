@@ -498,7 +498,7 @@ class MscVesselNameParser implements ManifestParserInterface
                             }
                             $address = $this->value($h, $label . '´S ADRESS');
                             $this->persistClientAddress($client, $address);
-                            $specific = $this->resolveSpecificAddress($client, $address, $role);
+                            $specific = $this->resolveSpecificAddress($client, $address, $role, $this->value($h, $label));
                             if ($specific !== null) {
                                 $bill->specificContacts()->create($specific);
                             }
