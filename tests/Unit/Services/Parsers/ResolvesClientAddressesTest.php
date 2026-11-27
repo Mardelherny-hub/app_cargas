@@ -57,6 +57,25 @@ class ResolvesClientAddressesTest extends TestCase
         );
     }
 
+    public function test_alphanumeric_tax_id_is_removed_without_losing_address_components(): void
+    {
+        $resolver = $this->resolver();
+        $client = new Client();
+        foreach ([
+            "CECIL STREET NO.07-01/02 SINGAPORE 069545\nTAX ID:200800970G\nTEL: +86-152-5556-5753"
+                => 'CECIL STREET NO.07-01/02 SINGAPORE 069545',
+            "158 CECIL STREET NR.07-01/02.\n069545 SINGAPORE\nTHE LEGAL/TAX ID:200800970G"
+                => '158 CECIL STREET NR.07-01/02. 069545 SINGAPORE',
+            "SHANGHAI, P.R.CHINA.\nTAX ID:91310109593111506H"
+                => 'SHANGHAI, P.R.CHINA.',
+            "TAX ID: 91320903MA22XL4D1N\nADD: 2 JINGSAN ROAD, YANDU STREET"
+                => '2 JINGSAN ROAD, YANDU STREET',
+            'AVENIDA 200800970G, SINGAPORE' => 'AVENIDA 200800970G, SINGAPORE',
+        ] as $source => $expected) {
+            $this->assertSame($expected, $resolver->cleanForClient($client, $source));
+        }
+    }
+
     public function test_known_tax_id_is_removed_from_start_of_imported_address(): void
     {
         $client = new Client();

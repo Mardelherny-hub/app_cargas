@@ -221,6 +221,10 @@ trait ResolvesClientAddresses
         // 0. Ruido temprano (*, #) ANTES de los patrones, para que "RUC#123" y "* ADDRESS:" matcheen
         $s = preg_replace('/[*#]+/', ' ', $s) ?? $s;
 
+        // El TAX ID alfanumérico es un token continuo. Quitar primero el
+        // token completo evita que la limpieza numérica deje letras sueltas.
+        $s = preg_replace('/\b(?:THE[ \t]+LEGAL\/)?TAX[ \t]*\.?[ \t]*ID(?:1(?!\d))?[ \t]*[:.+=-][ \t]*(?=[A-Z0-9.\/-]*[A-Z])\d[A-Z0-9.\/-]*[A-Z0-9]\b/i', ' ', $s) ?? $s;
+
         // 1. Marcadores fiscales + su número: RUC, R.U.C., CUIT, TAX ID, TAXID, TAX.ID, TAXID1,
         //    RUT, VAT NO, RUC / TAX ID, ID.FISCAL, RUC NUMBER/NRO/NO. Separadores: : espacio - + =
         $s = preg_replace('/\b(R\.?U\.?[CT]\.?\s*(\/\s*(TAX\s*ID|VAT))?|CUIT|NIT|C[NP]{2}J|TAX\s*\.?\s*ID(?:1(?!\d))?|VAT(\s*NO\.?)?|ID\.?\s*FISCAL)\s*(NUMBER|NBR\.?|NRO\.?|NO\.?)?\s*[:\s\-+=\.]\s*[0-9][0-9\-\.\h\/]*/i', ' ', $s) ?? $s;
