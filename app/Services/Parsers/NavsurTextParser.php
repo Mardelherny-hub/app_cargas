@@ -1415,6 +1415,8 @@ protected function createContainer(
                         $data['cod_contenedor'],
                     'full_container_number' =>
                         $data['cod_contenedor'],
+                    // Navsur no informa casa/muelle: House (regla del cliente).
+                    'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
                 ],
                 $attributes
             )

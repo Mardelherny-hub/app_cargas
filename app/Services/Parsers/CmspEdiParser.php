@@ -3083,6 +3083,8 @@ class CmspEdiParser implements ManifestParserInterface
                 'container_number' => $containerNumber,
                 'container_type_id' => null,
                 'condition' => 'V',
+                // CUSCAR no informa casa/muelle: House (regla del cliente).
+                'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
                 'shipper_seal' => null,
                 'customs_seal' => null,
                 'carrier_seal' => null,
@@ -3216,6 +3218,8 @@ class CmspEdiParser implements ManifestParserInterface
             'container_number' => $containerNumber,
             'container_type_id' => $containerType?->id,
             'condition' => $condition,
+            // CUSCAR no informa casa/muelle: House (regla del cliente).
+            'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
 
             // Precintos clasificados según el emisor declarado en SEL.
             'shipper_seal' => $equipment['shipper_seal'] ?? null,

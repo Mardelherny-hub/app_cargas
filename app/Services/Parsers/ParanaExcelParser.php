@@ -879,6 +879,8 @@ class ParanaExcelParser implements ManifestParserInterface
             'max_gross_weight_kg' =>
                 $containerType?->max_gross_weight_kg,
             'condition' => $state['condition'],
+            // Parana no informa casa/muelle: House (regla del cliente).
+            'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
             'shipper_seal' => $data['SEAL_NO'] ?? null,
             'operational_status' =>
                 $state['operational_status'],

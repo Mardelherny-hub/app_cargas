@@ -901,9 +901,10 @@ protected function extractValue(string $scope, string $label): ?string
             return ['condition' => 'L', 'container_condition' => $valor];
         }
 
-        // Catalogo de estado del contenedor -> condition
+        // Catalogo de estado del contenedor -> condition. El archivo no
+        // informa casa/muelle: House, igual que sin CONDICION.
         if (in_array($valor, ['V', 'D', 'S', 'L', 'R'], true)) {
-            return ['condition' => $valor, 'container_condition' => 'P'];
+            return ['condition' => $valor, 'container_condition' => 'H'];
         }
 
         /*
