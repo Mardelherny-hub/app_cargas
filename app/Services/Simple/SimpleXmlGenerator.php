@@ -2379,11 +2379,11 @@ class SimpleXmlGenerator
                 );
             }
 
+            // Orden del XSD: codPais, codAdu, codLugOper, codCiu, fecha, id, orden.
             $w->writeElement(
                 'codAdu',
                 $this->getPortCustomsCode($portCode)
             );
-            $w->writeElement('codCiu', $portCode);
 
             $resolvedOperative = trim((string) $codLugOper);
             if ($resolvedOperative === '' && $codPais === 'AR') {
@@ -2412,6 +2412,7 @@ class SimpleXmlGenerator
             }
 
             $w->writeElement('codLugOper', $resolvedOperative);
+            $w->writeElement('codCiu', $portCode);
             $w->writeElement(
                 'fecha',
                 $fecha->format('Ymd') . '000000-03'
