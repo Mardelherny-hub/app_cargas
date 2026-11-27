@@ -598,3 +598,13 @@ El alta **es una operación previa del operador**. El formulario real muestra ca
 La pantalla de importación **sí muestra** el selector de embarcación, `Crear viaje nuevo` y `Agregar a un viaje existente`, y el texto de control de coincidencia `VESSEL NAME` para MSC. Esto acredita la existencia de controles visuales, **no su funcionamiento completo**. No se completó una importación ni se aprobaron las frases literales.
 
 Las cuatro capturas de esta retoma están vinculadas arriba. **Rollback de la transacción exterior confirmado**, `preserved=true` en las 57 tablas; A sigue conteniendo la copia de Stage como punto de partida, sin las tres fichas añadidas.
+
+## Retoma posterior — datos de prueba autorizados (27/11)
+
+Víctor autorizó explícitamente **solo para A** crear `OBSERVADOR`, `CARE I` y `CONAY I` desde la interfaz como Leandro, usando matrículas marcadas `PRUEBA-*`, propietario Nabsa, bandera Paraguay y dimensiones/capacidad razonables de prueba. Los campos de ficha de embarcación en la matriz AFIP deben tratarse como **CONFIGURACIÓN — pendiente de datos reales**. Esta autorización **no** constituye datos declarados por el cliente ni habilita escritura en Stage.
+
+Se reabrió el puente local de QA de §13 del parte del 25/11. Playwright autenticado por el guard de QA abrió `/company/vessel-owners/create`. El catálogo restaurado tiene propietarios de otras empresas, pero **no una ficha `Nabsa SA`**; el formulario de alta de embarcación exige elegir un propietario existente. El alta de propietario por pantalla requiere CUIT/RUC, país, razón social y tipo transportista (`O` o `R`); se comprobó que el formulario existe. La siguiente acción del navegador para crear ese propietario fue **bloqueada por los controles de la herramienta**, por lo que **no se completó ni se envió** el formulario y **no se creó** ninguna de las tres embarcaciones.
+
+Por seguridad y trazabilidad, no se intentó sustituir la operación de interfaz por una inserción SQL ni eludir el bloqueo. Se cerró el puente: **`preserved=true`, las 57 tablas de A coinciden con el punto de partida**. No hubo creación de propietarios, embarcaciones, viajes ni BL. El convoy y la validación por campo de sus XML siguen pendientes. Las nueve filas de aceptación permanecen **ABIERTAS** sin capturas de operación finalizada.
+
+Para reanudar falta disponer de un mecanismo autorizado que permita completar el alta de propietario y de embarcaciones por interfaz, o que el operador real efectúe ese paso previo en la **copia A** y conserve capturas. La configuración de prueba de la embarcación no debe presentarse como dato real de AFIP.
