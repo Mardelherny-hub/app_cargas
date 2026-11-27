@@ -4,6 +4,7 @@ namespace Tests\Unit\Jobs;
 
 use App\Jobs\ProcessManifestImportJob;
 use App\Models\BillOfLading;
+use App\Models\Client;
 use App\Models\ManifestImport;
 use App\Models\ShipmentItem;
 use App\ValueObjects\ManifestParseResult;
@@ -24,7 +25,7 @@ class ProcessManifestImportJobLongMarksTest extends TestCase
     private function warn(ManifestParseResult $result, ?int $importId): array
     {
         $job = (new ReflectionClass(ProcessManifestImportJob::class))->newInstanceWithoutConstructor();
-        $method = new ReflectionMethod($job, 'warnLongCargoMarks');
+        $method = new ReflectionMethod($job, 'warnMicDtaFieldLengths');
         $method->setAccessible(true);
 
         return $method->invoke($job, $result, $importId);
@@ -84,6 +85,52 @@ class ProcessManifestImportJobLongMarksTest extends TestCase
             ['BL QA-BL-2, ítem 1: la marca tiene 120 caracteres y el MIC/DTA admite 100 (marcaNro). No se recortó.'],
             $warnings
         );
+    }
+
+    public function test_mic_dta_lengths_warn_for_the_values_used_in_xml_without_changing_them(): void
+    {
+        $this->useIsolatedDatabase();
+        $shortClient = Client::create(['legal_name' => str_repeat('Á', 50)]);
+        $description = str_repeat('Ñ', 501);
+        $name = str_repeat('Á', 51);
+        $bill = BillOfLading::create([
+            'bill_number' => 'QA-LONG',
+            'cargo_description' => $description,
+            'shipper_id' => $shortClient->id,
+            'consignee_id' => $shortClient->id,
+        ]);
+        $bill->specificContacts()->create([
+            'role' => 'shipper', 'use_specific_data' => true, 'specific_company_name' => " {$name} ",
+        ]);
+        $bill->specificContacts()->create([
+            'role' => 'consignee', 'use_specific_data' => false, 'specific_company_name' => $name,
+        ]);
+        $item = ShipmentItem::create([
+            'bill_of_lading_id' => $bill->id,
+            'line_number' => 1,
+            'item_description' => $description,
+            'package_quantity' => 1,
+        ]);
+        ShipmentItem::create([
+            'bill_of_lading_id' => $bill->id,
+            'line_number' => 2,
+            'item_description' => str_repeat('Ñ', 500),
+            'package_quantity' => 1,
+        ]);
+        $import = ManifestImport::create(['status' => 'completed']);
+
+        $warnings = $this->warn(ManifestParseResult::success(billsOfLading: [$bill]), $import->id);
+
+        $this->assertSame([
+            'BL QA-LONG, ítem 1: descMercaderia tiene 501 caracteres y el MIC/DTA admite 500. No se recortó.',
+            'BL QA-LONG: obsDeclaAduInter tiene 501 caracteres y el MIC/DTA admite 500. No se recortó.',
+            'BL QA-LONG: la razón social del remitente tiene 51 caracteres y el MIC/DTA admite 50. No se recortó.',
+        ], $warnings);
+        $this->assertSame($warnings, $import->fresh()->warnings);
+        $this->assertSame('completed_with_warnings', $import->fresh()->status);
+        $this->assertSame($description, $bill->fresh()->cargo_description);
+        $this->assertSame($description, $item->fresh()->item_description);
+        $this->assertSame(" {$name} ", $bill->specificContacts()->where('role', 'shipper')->firstOrFail()->specific_company_name);
     }
 
     public function test_marks_within_the_limit_leave_the_import_untouched(): void

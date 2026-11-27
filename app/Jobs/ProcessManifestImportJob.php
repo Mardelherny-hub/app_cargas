@@ -23,6 +23,8 @@ class ProcessManifestImportJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     private const MIC_DTA_MARKS_MAX_LENGTH = 100;
+    private const MIC_DTA_DESCRIPTION_MAX_LENGTH = 500;
+    private const MIC_DTA_PARTY_NAME_MAX_LENGTH = 50;
 
     public int $tries = 1;
     public int $timeout = 600;
@@ -97,10 +99,10 @@ class ProcessManifestImportJob implements ShouldQueue
 
                 $voyageId = $result->voyage?->id;
                 $manifestImportId = $this->resolveManifestImportId($voyageId);
-                $longMarkWarnings = $this->warnLongCargoMarks($result, $manifestImportId);
+                $lengthWarnings = $this->warnMicDtaFieldLengths($result, $manifestImportId);
 
                 $tracking->markCompleted(
-                    $result->hasWarnings() || $longMarkWarnings !== [],
+                    $result->hasWarnings() || $lengthWarnings !== [],
                     $manifestImportId,
                     $voyageId
                 );
@@ -108,7 +110,7 @@ class ProcessManifestImportJob implements ShouldQueue
                 Log::info('ProcessManifestImportJob: completado', [
                     'tracking_id' => $this->trackingId,
                     'voyage_id' => $voyageId,
-                    'warnings' => $result->hasWarnings(),
+                    'warnings' => $result->hasWarnings() || $lengthWarnings !== [],
                 ]);
 
                 $importacionExitosa = true;
@@ -381,13 +383,13 @@ class ProcessManifestImportJob implements ShouldQueue
     }
 
     /**
-     * El MIC/DTA admite hasta 100 caracteres en marcaNro. Se avisa al importar,
-     * para cualquier formato de origen, qué ítems lo superan; la marca se
-     * conserva completa, sin recorte.
+     * Se avisa al importar los excesos de longitud del MIC/DTA,
+     * para cualquier formato de origen, qué campos exceden los límites.
+     * Los valores importados se conservan completos.
      *
      * @return string[] advertencias agregadas a la importación
      */
-    protected function warnLongCargoMarks(
+    protected function warnMicDtaFieldLengths(
         ManifestParseResult $result,
         ?int $manifestImportId
     ): array {
@@ -411,25 +413,58 @@ class ProcessManifestImportJob implements ShouldQueue
         $warnings = [];
         $items = \App\Models\ShipmentItem::with('billOfLading')
             ->whereIn('bill_of_lading_id', $billIds)
-            ->whereNotNull('cargo_marks')
             ->orderBy('bill_of_lading_id')
             ->orderBy('line_number')
             ->get();
 
         foreach ($items as $item) {
-            $length = mb_strlen(trim((string) $item->cargo_marks));
-
-            if ($length <= self::MIC_DTA_MARKS_MAX_LENGTH) {
-                continue;
+            $context = sprintf('BL %s, ítem %s', $item->billOfLading?->bill_number ?? $item->bill_of_lading_id, $item->line_number);
+            $marksLength = mb_strlen(trim((string) $item->cargo_marks));
+            if ($marksLength > self::MIC_DTA_MARKS_MAX_LENGTH) {
+                $warnings[] = sprintf(
+                    '%s: la marca tiene %d caracteres y el MIC/DTA admite %d (marcaNro). No se recortó.',
+                    $context,
+                    $marksLength,
+                    self::MIC_DTA_MARKS_MAX_LENGTH
+                );
             }
 
-            $warnings[] = sprintf(
-                'BL %s, ítem %s: la marca tiene %d caracteres y el MIC/DTA admite %d (marcaNro). No se recortó.',
-                $item->billOfLading?->bill_number ?? $item->bill_of_lading_id,
-                $item->line_number,
-                $length,
-                self::MIC_DTA_MARKS_MAX_LENGTH
-            );
+            $descriptionLength = mb_strlen(trim((string) $item->item_description));
+            if ($descriptionLength > self::MIC_DTA_DESCRIPTION_MAX_LENGTH) {
+                $warnings[] = "{$context}: descMercaderia tiene {$descriptionLength} caracteres y el MIC/DTA admite 500. No se recortó.";
+            }
+        }
+
+        $bills = \App\Models\BillOfLading::with([
+            'shipper', 'consignee', 'notifyParty',
+            'specificContacts' => fn ($query) => $query->where('use_specific_data', true),
+        ])->whereIn('id', $billIds)->orderBy('id')->get();
+
+        foreach ($bills as $bill) {
+            $observationsLength = mb_strlen(trim((string) $bill->cargo_description));
+            if ($observationsLength > self::MIC_DTA_DESCRIPTION_MAX_LENGTH) {
+                $warnings[] = "BL {$bill->bill_number}: obsDeclaAduInter tiene {$observationsLength} caracteres y el MIC/DTA admite 500. No se recortó.";
+            }
+
+            foreach ([
+                'shipper' => [$bill->shipper, 'remitente'],
+                'consignee' => [$bill->consignee, 'consignatario'],
+                'notify_party' => [$bill->notifyParty, 'notificatario'],
+            ] as $role => [$client, $party]) {
+                if (!$client) {
+                    continue;
+                }
+
+                $specific = $bill->specificContacts->firstWhere('role', $role);
+                $name = trim((string) $specific?->specific_company_name);
+                if ($name === '') {
+                    $name = trim((string) ($client->legal_name ?: $client->commercial_name));
+                }
+                $nameLength = mb_strlen($name);
+                if ($nameLength > self::MIC_DTA_PARTY_NAME_MAX_LENGTH) {
+                    $warnings[] = "BL {$bill->bill_number}: la razón social del {$party} tiene {$nameLength} caracteres y el MIC/DTA admite 50. No se recortó.";
+                }
+            }
         }
 
         if ($warnings !== [] && $import) {
