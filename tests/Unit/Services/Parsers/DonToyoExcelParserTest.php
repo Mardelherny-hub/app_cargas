@@ -155,6 +155,37 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertStringContainsString('Se creó una ficha nueva', implode(' ', $result->warnings));
     }
 
+    public function test_existing_pier_container_is_declared_house_for_this_voyage(): void
+    {
+        $this->addPreviousVoyage('TSTU0000001', '45G0');
+        DB::table('containers')->where('container_number', 'TSTU0000001')->update(['container_condition' => 'P']);
+        \Illuminate\Support\Facades\Schema::table('container_shipment_item', function (\Illuminate\Database\Schema\Blueprint $t) {
+            foreach (['quantity_percentage', 'weight_percentage', 'volume_percentage', 'loaded_at', 'sealed_at', 'loading_sequence'] as $column) {
+                $t->text($column)->nullable();
+            }
+        });
+
+        $result = $this->import($this->workbook($this->sheets()));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        // El contenedor maestro no cambia; el vínculo de este viaje va House.
+        $this->assertSame('P', DB::table('containers')->where('container_number', 'TSTU0000001')->value('container_condition'));
+        $item = \App\Models\ShipmentItem::whereHas('billOfLading', fn ($q) => $q->where('bill_number', 'DEMOBL000001'))->sole();
+        $linked = $item->containers()->with('containerType')->get();
+        $existing = $linked->firstWhere('container_number', 'TSTU0000001');
+        $this->assertSame('H', $existing->pivot->container_condition);
+
+        $generator = (new \ReflectionClass(\App\Services\Simple\SimpleXmlGenerator::class))->newInstanceWithoutConstructor();
+        $seals = (new \ReflectionMethod($generator, 'linkSealsByContainer'))->invoke($generator, $linked);
+        $conditions = (new \ReflectionMethod($generator, 'linkConditionByContainer'))->invoke($generator, $linked, 'QA');
+        $w = new \XMLWriter();
+        $w->openMemory();
+        (new \ReflectionMethod($generator, 'writeMicDtaContainer'))
+            ->invoke($generator, $w, $existing, 'QA', $seals['TSTU0000001'] ?? [], $conditions['TSTU0000001'] ?? null);
+
+        $this->assertStringContainsString('<condicion>H</condicion>', $w->outputMemory());
+    }
+
     public function test_bill_keeps_the_file_shipper_name_when_cuit_sim_finds_another_card_name(): void
     {
         $docId = DB::table('document_types')->where('code', 'CUIT')->value('id');

@@ -633,8 +633,9 @@ class DonToyoExcelParser implements ManifestParserInterface
                                 'volume_m3' => $containerRow['Volumen'], 'verified_gross_mass_kg' => $containerRow['VGM'],
                                 'required_temperature' => $containerRow['Temperatura'],
                                 'source_seals' => $this->sourceSealList($containerRow['Seal']),
-                                'container_condition' => in_array($container->container_condition, ['H', 'P'], true)
-                                    ? $container->container_condition : Container::CONDITION_HOUSE_TO_HOUSE,
+                                // Condición de este viaje: el archivo no informa casa/muelle, va
+                                // House. La del contenedor existente no se copia ni se modifica.
+                                'container_condition' => Container::CONDITION_HOUSE_TO_HOUSE,
                                 'status' => 'planned',
                                 'webservice_data' => json_encode(['don_toyo_source' => $containerRow], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
                                 'created_by_user_id' => auth()->id(), 'created_date' => now(), 'created_at' => now(), 'updated_at' => now(),
