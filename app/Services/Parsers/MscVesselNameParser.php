@@ -418,12 +418,9 @@ class MscVesselNameParser implements ManifestParserInterface
             if (!$cargoType) {
                 throw new DomainException('MSC: falta el tipo de carga CON001 activo en el catálogo.');
             }
-            // El embalaje del archivo no tiene equivalente en el catálogo: el ítem
-            // va NO RETORNABLE, igual que K-Line y Guaraní. El código EDIFACT del
-            // archivo se conserva en packaging_code.
-            $packagingTypeId = PackagingType::where('code', 'N')->where('active', true)->value('id');
+            $packagingTypeId = PackagingType::where('name', 'CONTENEDOR')->where('active', true)->value('id');
             if ($packagingTypeId === null) {
-                throw new DomainException('MSC: falta el tipo de embalaje activo NO RETORNABLE (N) en el catálogo.');
+                throw new DomainException('MSC: falta el tipo de embalaje activo CONTENEDOR en el catálogo.');
             }
             $types = [];
             foreach ($data as $bill) {
