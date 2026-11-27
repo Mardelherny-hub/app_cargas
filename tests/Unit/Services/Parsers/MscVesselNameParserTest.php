@@ -232,7 +232,7 @@ class MscVesselNameParserTest extends TestCase
             'CHRISTMAS TREE NCM NO.9505.10(CHRISTMAS TREE)' => '950510',
             'GREIGE CLOTH H.S.CODE:5208.12' => '520812',
             'MIDEA HOOD NCM 8421.39.90.000U AND 8414.60.00.000A' => '84213990',
-            'GALVANIZED WIRE 721720' => null,
+            'GALVANIZED WIRE 721720' => '721720',
             'TOOLS HS CODE AS PER INVOICE' => null,
         ];
         $items = [];
@@ -254,6 +254,46 @@ class MscVesselNameParserTest extends TestCase
             'BL DEMO00000001, línea 1: la descripción trae varios NCM/HS; se cargó 84834090. Otros códigos: 84839000.',
             'BL DEMO00000001, línea 8: la descripción trae varios NCM/HS; se cargó 84213990. Otros códigos: 84146000.',
             'BL DEMO00000001, línea 10: rótulo NCM/HS sin código legible; el código queda vacío.',
+        ], $result->warnings);
+    }
+
+    public function test_unlabelled_commodity_code_is_taken_only_with_an_unequivocal_ncm_format(): void
+    {
+        // Formas tomadas de archivos MSC reales; textos ficticios.
+        $cases = [
+            'BICYCLE PARTS 8714.10' => '871410',
+            'BICYCLE PARTS 871410' => '871410',
+            'BICYCLE PARTS 8714.10.00' => '87141000',
+            'STEEL PISTON  87088099 ABS SENSOR' => '87088099',
+            'GOODS IN CONTAINERS CUSTOM CLEARANCE NUMBER 8528.72' => '852872',
+            '25 BICICLETAS 8712.00.10 6 CORTADORAS DE PASTO 8433.19.00 4 OTOMANO' => '87120010',
+            'BICYCLE PARTS GROSS WEIGHT 8714.10 KGS' => null,
+            'BICYCLE PARTS USD 8714.10' => null,
+            'BICYCLE PARTS INVOICE NO 871410' => null,
+            'BICYCLE PARTS TEL 595 871410' => null,
+            'BICYCLE PARTS IN MSCU8714101' => null,
+            'LC NO AND DATE:CCI000000001, 260203 ISSUING BANK' => null,
+            'THE DATE OF THE CREDIT:260216' => null,
+            'ENGINE NO: LETADCE12VH000889 41040510 LETADCE19VH000890' => null,
+            'BICYCLE PARTS 98714.10 AND 1234' => null,
+        ];
+        $items = [];
+        foreach (array_keys($cases) as $index => $description) {
+            $items[] = str_replace(
+                'MERCADERIA GENERAL DE PRUEBA',
+                $description,
+                $this->item(sprintf('TSTU%07d', $index + 1), '40', 'HC', '1', '1000,000', '3750,00')
+            );
+        }
+
+        $result = $this->import($this->file($this->bill('DEMO00000001', $items, '15000,000', '56250,00', '15')));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $importedItems = ShipmentItem::orderBy('id')->get();
+        $this->assertSame(array_keys($cases), $importedItems->pluck('item_description')->all());
+        $this->assertSame(array_values($cases), $importedItems->pluck('commodity_code')->all());
+        $this->assertSame([
+            'BL DEMO00000001, línea 6: la descripción trae varios códigos NCM/HS sin rótulo; se cargó 87120010. Otros códigos: 84331900.',
         ], $result->warnings);
     }
 

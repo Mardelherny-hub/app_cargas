@@ -235,14 +235,21 @@ class MscVesselNameParser implements ManifestParserInterface
     }
 
     /**
-     * NCM/HS rotulado en la descripción. Con varios códigos distintos se carga
-     * el primero y se avisan los demás.
+     * NCM/HS rotulado en la descripción; sin rótulo, el código con formato
+     * inequívoco de NCM. Con varios códigos distintos se carga el primero y
+     * se avisan los demás.
      */
     private function sourceCommodityCode(string $description, string $billNumber, int $line): ?string
     {
         $codes = $this->labelledNcmCodes($description);
         if ($codes === null) {
-            return null;
+            $codes = $this->unlabelledNcmCodes($description);
+            if (count($codes) > 1) {
+                $this->warnings[] = "BL {$billNumber}, línea {$line}: la descripción trae varios códigos NCM/HS sin rótulo; se cargó {$codes[0]}. "
+                    . 'Otros códigos: ' . implode(', ', array_slice($codes, 1)) . '.';
+            }
+
+            return $codes[0] ?? null;
         }
         if ($codes === []) {
             $this->warnings[] = "BL {$billNumber}, línea {$line}: rótulo NCM/HS sin código legible; el código queda vacío.";
