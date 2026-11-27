@@ -186,3 +186,12 @@ En el mismo directorio privado E del anexo anterior:
 - Las **10 instantáneas antes/después** de los cinco procesos de QA posteriores a migrar coinciden con SHA-256 **cd644c1d2b0f727fb84b791c836beef508d8eacecd391cca563f3e78a4d486db**. Cada muestra se comprobó además al terminar su rollback.
 
 No se construyó SOAP autenticado ni se solicitaron tokens WSAA; solo se invocaron escritores locales reales. Sin envíos ni certificados, Stage/B/producción, restore o cambios de producto. La única escritura persistente en A es la migración de pesos expresamente autorizada y documentada arriba.
+
+
+## Aclaración de EventoProg solicitada — cinco líneas · 27/11/2026
+
+1. Afecta al mensaje **RegistrarMicDta**, en `micDta/rutasInf/RutInf/eventosProg/EventoProg`.
+2. **No es una respuesta de AFIP observada**: la validación XSD local rechaza `codLugOper` después de `codCiu`; no se asigna código de error AFIP inventado.
+3. `wgesregsintia2.wsdl` de 9863e6f9, líneas **620–626**, exige `codPais → codAdu → codLugOper → codCiu → fecha → id → orden`.
+4. `app/Services/Simple/SimpleXmlGenerator.php` de 9863e6f9 escribe `codCiu` en **2349** y luego `codLugOper` en **2377**.
+5. **Ya pasaba en 9863e6f94b4935b5b5994f72e3c7851bfc1f67e2**: es previo a estas ramas; se comprobó con git show, sin corregir código ni XML.
