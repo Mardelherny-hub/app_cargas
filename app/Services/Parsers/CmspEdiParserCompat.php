@@ -722,10 +722,9 @@ class CmspEdiParserCompat extends CmspEdiParser
         $identity = $this->resolvePartyTaxIdentity($partyData);
         $taxId = $identity['tax_id'];
         $taxType = $identity['tax_type'];
-        $countryId = $this->resolveClientCountryId(
-            $partyData,
-            $taxType
-        );
+        $countryId = $taxId === null
+            ? $this->resolveCountryWithoutTaxId($partyData)
+            : $this->resolveClientCountryId($partyData, $taxType);
 
         $this->contextualizePartyWarnings(
             $warningStart,

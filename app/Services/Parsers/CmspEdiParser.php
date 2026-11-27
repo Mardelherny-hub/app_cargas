@@ -3691,6 +3691,44 @@ class CmspEdiParser implements ManifestParserInterface
         )->country_id;
     }
 
+    protected function resolveCountryWithoutTaxId(array $partyData): int
+    {
+        $normalize = static fn (string $value): string => trim(preg_replace(
+            '/[^A-Z0-9]+/',
+            ' ',
+            strtoupper(\Illuminate\Support\Str::ascii($value))
+        ));
+        $address = ' ' . $normalize((string) ($partyData['address'] ?? '')) . ' ';
+        $matches = [];
+        $shortCode = null;
+        foreach (Country::query()->get(['id', 'name', 'alpha2_code']) as $country) {
+            $name = $normalize($country->name);
+            if ($name !== '' && str_contains($address, " {$name} ")) {
+                $matches[$country->id] = $name;
+            }
+            // Hapag-Lloyd también identifica Hong Kong como «KWAI CHUNG HK».
+            if ($country->alpha2_code === 'HK' && str_ends_with($address, ' KWAI CHUNG HK ')) {
+                $shortCode = $country->id;
+            }
+        }
+
+        // Un nombre compuesto prevalece sobre los nombres contenidos en él.
+        uasort($matches, static fn ($a, $b) => strlen($b) <=> strlen($a));
+        $countryId = array_key_first($matches);
+        $name = $matches[$countryId] ?? null;
+        if ($name !== null && array_filter($matches, static fn ($match) => !str_contains(" {$name} ", " {$match} ")) === []) {
+            return (int) $countryId;
+        }
+        if ($matches === [] && $shortCode !== null) {
+            return (int) $shortCode;
+        }
+
+        $this->stats['warnings'][] =
+            "País no identificado para {$partyData['name']}: se asignó Argentina; revisar la ficha";
+
+        return $this->countryIdForAlpha2('AR');
+    }
+
     protected function resolveClientCountryId(
         array $partyData,
         ?string $taxType
@@ -3805,10 +3843,9 @@ class CmspEdiParser implements ManifestParserInterface
         $taxId = $identity['tax_id'];
         $taxType = $identity['tax_type'];
 
-        $countryId = $this->resolveClientCountryId(
-            $partyData,
-            $taxType
-        );
+        $countryId = $taxId === null
+            ? $this->resolveCountryWithoutTaxId($partyData)
+            : $this->resolveClientCountryId($partyData, $taxType);
 
         $name = trim((string) $partyData['name']);
 

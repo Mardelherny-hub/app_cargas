@@ -9,6 +9,27 @@ use Tests\TestCase;
 
 class CmspEdiParserClientIdentityTest extends TestCase
 {
+    use Concerns\BuildsManifestImportSchema;
+
+    public function test_parties_without_tax_resolve_country_from_the_catalog_or_warn(): void
+    {
+        $this->useIsolatedDatabase();
+        \Illuminate\Support\Facades\DB::table('countries')->insert([
+            'id' => 333, 'name' => 'Hong Kong', 'alpha2_code' => 'HK',
+        ]);
+        $parser = new CmspEdiParserCompat();
+        foreach (['794-802 NATHAN ROAD, HONG-KONG', 'KWAI CHUNG HK'] as $address) {
+            $this->assertSame(333, $this->invoke($parser, 'resolveCountryWithoutTaxId', [[
+                'name' => 'EASTSUN CHEMICAL CO.,LTD.', 'address' => $address,
+            ]]));
+        }
+        $this->assertSame(self::AR, $this->invoke($parser, 'resolveCountryWithoutTaxId', [[
+            'name' => 'SIN PAIS', 'address' => 'CALLE 123',
+        ]]));
+        $stats = (new \ReflectionProperty(CmspEdiParser::class, 'stats'))->getValue($parser);
+        $this->assertSame(['País no identificado para SIN PAIS: se asignó Argentina; revisar la ficha'], $stats['warnings']);
+    }
+
     protected function invoke(
         CmspEdiParser $parser,
         string $method,
