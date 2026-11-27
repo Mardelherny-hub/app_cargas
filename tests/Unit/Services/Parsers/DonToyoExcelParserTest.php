@@ -155,6 +155,51 @@ class DonToyoExcelParserTest extends TestCase
         $this->assertStringContainsString('Se creó una ficha nueva', implode(' ', $result->warnings));
     }
 
+    public function test_bill_keeps_the_file_shipper_name_when_cuit_sim_finds_another_card_name(): void
+    {
+        $docId = DB::table('document_types')->where('code', 'CUIT')->value('id');
+        $this->addClient('FICHA ARGENTINA QA', '30585343427', self::AR);
+        $cardId = DB::table('clients')->where('tax_id', '30585343427')->value('id');
+        DB::table('clients')->where('id', $cardId)->update(['document_type_id' => $docId]);
+        DB::table('client_contact_data')->insert([
+            'client_id' => $cardId, 'is_primary' => 1, 'active' => 1, 'address_line_1' => 'CALLE DE LA FICHA 123',
+        ]);
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][5] = '30-58534342-7';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        [$byCuit, $byName] = \App\Models\BillOfLading::with('shipper')->orderBy('bill_number')->get()->all();
+        $this->assertSame('FICHA ARGENTINA QA', $byCuit->shipper->legal_name);
+        $contact = DB::table('bill_of_lading_contacts')->where('bill_of_lading_id', $byCuit->id)->sole();
+        $this->assertSame('shipper', $contact->role);
+        $this->assertSame('EXPORTADORA DEMO SA', $contact->specific_company_name);
+        $this->assertNull($contact->specific_address_line_1);
+        $this->assertFalse(DB::table('bill_of_lading_contacts')->where('bill_of_lading_id', $byName->id)->exists());
+
+        $generator = (new \ReflectionClass(\App\Services\Simple\SimpleXmlGenerator::class))->newInstanceWithoutConstructor();
+        $party = (new \ReflectionMethod($generator, 'micDtaPartyData'))->invoke($generator, $byCuit, 'shipper', $byCuit->shipper);
+        $this->assertSame('EXPORTADORA DEMO SA', $party['name']);
+        $this->assertSame('CALLE DE LA FICHA 123', $party['address_line_1']);
+        $this->assertSame('30585343427', $party['tax_id']);
+    }
+
+    public function test_card_without_contact_keeps_its_name_and_warns(): void
+    {
+        $docId = DB::table('document_types')->where('code', 'CUIT')->value('id');
+        $this->addClient('FICHA ARGENTINA QA', '30585343427', self::AR);
+        DB::table('clients')->where('tax_id', '30585343427')->update(['document_type_id' => $docId]);
+        $sheets = $this->sheets();
+        $sheets['BLS'][1][5] = '30-58534342-7';
+
+        $result = $this->import($this->workbook($sheets));
+
+        $this->assertTrue($result->success, implode(' | ', $result->errors));
+        $this->assertSame(0, DB::table('bill_of_lading_contacts')->count());
+        $this->assertStringContainsString('BL DEMOBL000001: el cargador EXPORTADORA DEMO SA difiere de la ficha', implode(' ', $result->warnings));
+    }
+
     public function test_cuit_sim_completes_missing_tax_id_and_warns_about_missing_or_invalid_values(): void
     {
         $shipperId = DB::table('clients')->where('tax_id', '9999991')->value('id');

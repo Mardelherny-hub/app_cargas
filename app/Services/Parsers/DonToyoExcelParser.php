@@ -5,7 +5,7 @@ namespace App\Services\Parsers;
 use App\Contracts\ManifestParserInterface;
 use App\Models\{BillOfLading, Client, Company, Container, ContainerType, Country, DocumentType, ManifestImport, Shipment, ShipmentItem, Vessel, Voyage};
 use App\Services\ClientValidationService;
-use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ExtractsLabelledNcm, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
+use App\Services\Parsers\Concerns\{EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ExtractsLabelledNcm, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType};
 use App\ValueObjects\ManifestParseResult;
 use Carbon\Carbon;
 use DomainException;
@@ -17,7 +17,7 @@ use Throwable;
 
 class DonToyoExcelParser implements ManifestParserInterface
 {
-    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ExtractsLabelledNcm, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType;
+    use EnsuresUniqueVoyageNumber, ExtractsEmbeddedTaxId, ExtractsLabelledNcm, ResolvesClientAddresses, ResolvesExistingClient, ResolvesPorts, ResolvesVoyageCargoType;
 
     private const HEADERS = [
         'BUQUE' => ['Armador', 'CODIGO IMO BUQUE:', 'VIAJE:', 'IMPO/EXPO'],
@@ -526,6 +526,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                     $this->guardVoyageNumberIsFree($plan['voyageNumber'], (int) $plan['vessel']->id);
                     $created = array_fill_keys(['voyage', 'shipment', 'bill', 'item', 'container', 'client', 'port'], []);
                     $clients = [];
+                    $clientsById = [];
                     $billClients = [];
                     $this->clientIdentityIndex = null;
                     foreach ($data['bills'] as $row) {
@@ -545,6 +546,7 @@ class DonToyoExcelParser implements ManifestParserInterface
                                 $clients[$key] = $client;
                             }
                             $billClients[$row['BL']][$role] = $clients[$key]->id;
+                            $clientsById[$clients[$key]->id] = $clients[$key];
                         }
                     }
                     $voyage = Voyage::create([
@@ -583,6 +585,18 @@ class DonToyoExcelParser implements ManifestParserInterface
                         ]);
                         $bills[] = $bill;
                         $created['bill'][] = $bill->id;
+                        // El archivo no trae domicilios: si el cargador se encontró por CUIT SIM
+                        // y su nombre difiere del de la ficha, el conocimiento guarda el nombre del
+                        // archivo; el domicilio sigue siendo el de la ficha.
+                        if ($row['resolved_shipper_cuit'] !== null) {
+                            $shipperClient = $clientsById[$billClients[$number]['Shipper']];
+                            $specific = $this->resolveSpecificAddress($shipperClient, null, 'shipper', $row['Shipper']);
+                            if ($specific !== null) {
+                                $bill->specificContacts()->create($specific);
+                            } elseif ($this->billPartyName($shipperClient, $row['Shipper']) !== null) {
+                                $warnings[] = "BL {$number}: el cargador {$row['Shipper']} difiere de la ficha #{$shipperClient->id}, que no tiene contacto; el conocimiento usa el nombre de la ficha.";
+                            }
+                        }
                         // One aggregate cargo item per source BL; package distribution is not supplied.
                         $item = ShipmentItem::create([
                             'bill_of_lading_id' => $bill->id, 'line_number' => 1,
